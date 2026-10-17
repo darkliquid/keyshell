@@ -66,6 +66,22 @@ History lives at `${XDG_STATE_HOME:-~/.local/state}/keyshell/frecency.json`.
 Delete that file to reset ranking; entries older than `frecencyMaxAgeDays` are
 dropped automatically on load.
 
+## Calculator and run command
+
+`=` opens the calculator: type `=` then an expression such as `8/2`, and Enter
+copies the answer to the clipboard. It understands `+ - * / % ^`, parentheses,
+unary minus, `pi`/`e`, and `sqrt abs round floor ceil pow min max`. Anything it
+cannot parse shows no result rather than an error, so divide-by-zero and typos
+are simply inert.
+
+`:` opens run command: type `:` then a command, and Enter runs it in a terminal
+so you can see the output. The terminal is `$TERMINAL` if set, else `ghostty`,
+else `alacritty`; if none is found, Enter copies the command instead. The
+candidate list is `Config.terminalCandidates`.
+
+Neither mode joins the merged default query, so `=` and `:` are the only ways
+in unless you cycle to them with `Tab`.
+
 ## Tuning
 
 All tunables are constants in `quickshell/keyshell/Config.qml`: the rotation

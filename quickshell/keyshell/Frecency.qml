@@ -19,6 +19,11 @@ Singleton {
         running: true
     }
 
+    Process {
+        id: quarantine
+        command: ["mv", "-f", frecency.storePath, frecency.storePath + ".bad"]
+    }
+
     FileView {
         id: storeFile
         path: frecency.storePath
@@ -44,6 +49,7 @@ Singleton {
         } catch (e) {
             console.warn("keyshell: frecency store unreadable, starting empty");
             entries = ({});
+            quarantine.running = true;
         }
         dirty = false;
         prune();

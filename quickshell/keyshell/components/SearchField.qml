@@ -20,7 +20,7 @@ Row {
         Text {
             id: modeBadgeText
             anchors.centerIn: parent
-            text: BackendManager.activeBackend ? BackendManager.activeBackend.badge : "APPS"
+            text: BackendManager.activeBadge
             font: Theme.heavy(12)
             color: Theme.slab
             renderType: Text.QtRendering

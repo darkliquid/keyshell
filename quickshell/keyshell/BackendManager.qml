@@ -1,24 +1,32 @@
 pragma Singleton
 import QtQuick
+import QtQml.Models
 import Quickshell
 
 Singleton {
     id: backendManager
 
-    property string activeMode: "apps"
+    readonly property string mergedMode: Config.mergedModeId
+    property string activeMode: Config.mergedModeId
 
     readonly property var backends: [AppBackend, WindowBackend, FileBackend, AudioBackend, MediaBackend, TrayBackend, BluetoothBackend, PowerBackend, NetworkBackend]
 
     readonly property var activeBackend: getBackend(activeMode)
+    readonly property string activeBadge: isMerged() ? "SEARCH" : (activeBackend ? activeBackend.badge : "SEARCH")
 
     signal resultsReady(var items)
+    signal sourceResults(string sourceId, string query, var items)
+
+    function isMerged() {
+        return activeMode === mergedMode;
+    }
 
     function getBackend(modeId) {
         for (let i = 0; i < backends.length; i++) {
             if (backends[i].id === modeId)
                 return backends[i];
         }
-        return AppBackend;
+        return null;
     }
 
     function setMode(modeId) {
@@ -28,12 +36,13 @@ Singleton {
             BluetoothBackend.stopDiscovery();
         if (activeMode === "network" && modeId !== "network")
             NetworkBackend.stopScan();
-        for (let i = 0; i < backends.length; i++) {
-            if (backends[i].id === modeId) {
-                activeMode = modeId;
-                refresh();
-                return;
-            }
+        if (modeId === mergedMode) {
+            activeMode = modeId;
+            return;
+        }
+        if (getBackend(modeId)) {
+            activeMode = modeId;
+            refresh();
         }
     }
 
@@ -47,33 +56,43 @@ Singleton {
         return true;
     }
 
-    function nextCycleBackend(delta) {
+    function canCycleToMode(modeId) {
+        if (modeId === mergedMode)
+            return true;
+        return canCycleTo(getBackend(modeId));
+    }
+
+    function nextCycleMode(delta) {
+        const modes = [mergedMode];
+        for (let i = 0; i < backends.length; i++)
+            modes.push(backends[i].id);
+
         const step = delta >= 0 ? 1 : -1;
         let currentIndex = 0;
-        for (let i = 0; i < backends.length; i++) {
-            if (backends[i].id === activeMode) {
+        for (let i = 0; i < modes.length; i++) {
+            if (modes[i] === activeMode) {
                 currentIndex = i;
                 break;
             }
         }
-        for (let offset = 1; offset <= backends.length; offset++) {
-            const idx = ((currentIndex + step * offset) % backends.length + backends.length) % backends.length;
-            const candidate = backends[idx];
-            if (canCycleTo(candidate))
-                return candidate;
+        for (let offset = 1; offset <= modes.length; offset++) {
+            const idx = ((currentIndex + step * offset) % modes.length + modes.length) % modes.length;
+            if (canCycleToMode(modes[idx]))
+                return modes[idx];
         }
-        return AppBackend;
+        return mergedMode;
     }
 
     function nextCycleModeBadge() {
-        const b = nextCycleBackend(1);
-        return b ? b.badge : "APPS";
+        const modeId = nextCycleMode(1);
+        if (modeId === mergedMode)
+            return "SEARCH";
+        const b = getBackend(modeId);
+        return b ? b.badge : "SEARCH";
     }
 
     function cycleMode(delta) {
-        const nextBackend = nextCycleBackend(delta);
-        if (nextBackend)
-            setMode(nextBackend.id);
+        setMode(nextCycleMode(delta));
     }
 
     function checkPrefixTrigger(text) {
@@ -92,7 +111,7 @@ Singleton {
     }
 
     function search(query, limit) {
-        const b = activeBackend;
+        const b = getBackend(activeMode);
         if (!b)
             return;
         const syncResults = b.search(query, limit);
@@ -101,86 +120,31 @@ Singleton {
     }
 
     function refresh() {
-        if (activeBackend && activeBackend.refresh)
-            activeBackend.refresh();
+        if (isMerged())
+            return;
+        const b = activeBackend;
+        if (b && b.refresh)
+            b.refresh();
         search(Launcher.query, Config.maxResults);
     }
 
-    Component.onCompleted: {
-        for (let i = 0; i < backends.length; i++) {
-            const _ = backends[i].id;
-        }
+    function backendResults(sourceId, query, items) {
+        sourceResults(sourceId, query, items);
+        if (!isMerged() && activeMode === sourceId && query === Launcher.query)
+            resultsReady(items);
     }
 
-    Connections {
-        target: AppBackend
-        function onResultsReady(query, items) {
-            if (backendManager.activeMode === "apps" && query === Launcher.query)
-                backendManager.resultsReady(items);
-        }
-    }
+    Instantiator {
+        model: backendManager.backends
 
-    Connections {
-        target: WindowBackend
-        function onResultsReady(query, items) {
-            if (backendManager.activeMode === "windows" && query === Launcher.query)
-                backendManager.resultsReady(items);
-        }
-    }
+        delegate: Connections {
+            required property var modelData
 
-    Connections {
-        target: FileBackend
-        function onResultsReady(query, items) {
-            if (backendManager.activeMode === "files" && query === Launcher.query)
-                backendManager.resultsReady(items);
-        }
-    }
+            target: modelData
 
-    Connections {
-        target: AudioBackend
-        function onResultsReady(query, items) {
-            if (backendManager.activeMode === "audio" && query === Launcher.query)
-                backendManager.resultsReady(items);
-        }
-    }
-
-    Connections {
-        target: MediaBackend
-        function onResultsReady(query, items) {
-            if (backendManager.activeMode === "media" && query === Launcher.query)
-                backendManager.resultsReady(items);
-        }
-    }
-
-    Connections {
-        target: TrayBackend
-        function onResultsReady(query, items) {
-            if (backendManager.activeMode === "tray" && query === Launcher.query)
-                backendManager.resultsReady(items);
-        }
-    }
-
-    Connections {
-        target: BluetoothBackend
-        function onResultsReady(query, items) {
-            if (backendManager.activeMode === "bluetooth" && query === Launcher.query)
-                backendManager.resultsReady(items);
-        }
-    }
-
-    Connections {
-        target: PowerBackend
-        function onResultsReady(query, items) {
-            if (backendManager.activeMode === "power" && query === Launcher.query)
-                backendManager.resultsReady(items);
-        }
-    }
-
-    Connections {
-        target: NetworkBackend
-        function onResultsReady(query, items) {
-            if (backendManager.activeMode === "network" && query === Launcher.query)
-                backendManager.resultsReady(items);
+            function onResultsReady(query, items) {
+                BackendManager.backendResults(modelData.id, query, items);
+            }
         }
     }
 }

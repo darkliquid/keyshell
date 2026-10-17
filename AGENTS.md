@@ -96,6 +96,7 @@ keyshell/
         ├── Frecency.qml               # Singleton: persisted usage scores (XDG state)
         ├── SearchAggregator.qml       # Singleton: merged fan-out, ranking, settle timer
         ├── rank.js                    # Plain JS: match tiers, frecency decay, merge/sort
+        ├── calc.js                    # Plain JS: calculator expression parser & formatter
         │
         ├── AppBackend.qml             # Applications backend (DesktopEntries)
         ├── WindowBackend.qml          # Open windows backend (ToplevelManager + WM IPC)
@@ -106,6 +107,8 @@ keyshell/
         ├── BluetoothBackend.qml       # BlueZ Bluetooth adapter & device management
         ├── PowerBackend.qml           # UPower battery & systemd power/session management
         ├── NetworkBackend.qml         # NetworkManager Wi-Fi/Ethernet management
+        ├── CalculatorBackend.qml      # Calculator backend (calc.js evaluation, copies result)
+        ├── RunBackend.qml             # Run-command backend (launches the command in a terminal)
         │
         └── components/
             ├── LauncherWindow.qml     # PanelWindow overlay, keyboard routing, reveal animations
@@ -123,6 +126,8 @@ keyshell/
             ├── BluetoothCardDelegate.qml  # Card presentation for Bluetooth devices + signal
             ├── PowerCardDelegate.qml      # Card presentation for power profiles & power actions
             ├── NetworkCardDelegate.qml    # Card presentation for Wi-Fi networks + RSSI
+            ├── CalcCardDelegate.qml       # Card presentation for calculator results
+            ├── RunCardDelegate.qml        # Card presentation for run-command entries
             │
             ├── VolumeSliderView.qml      # Full console: discrete block audio slider
             ├── MediaConsoleView.qml      # Full console: playback controls & scrub bar
@@ -150,6 +155,10 @@ Users can navigate backends via `Tab` / `Shift+Tab`, dedicated compositor keybin
 | **Bluetooth** | `BT` | `*` | `Mod+B` | Open `BluetoothConsoleView` (`E` toggle power, `S` scan) |
 | **Power** | `POWER` | `%` | `Mod+P` | Open `PowerConsoleView` (destructive actions require 1s hold or double-tap) |
 | **Network** | `NET` | `&` | `Mod+N` | Open `NetworkConsoleView` (`W` toggle Wi-Fi, `S` scan) |
+| **Calculator** | `CALC` | `=` | *(none)* | Copy the result to the clipboard via `wl-copy` |
+| **Run command** | `RUN` | `:` | *(none)* | Run the query in a terminal (`$TERMINAL`, else `ghostty`, else `alacritty`) |
+
+The `CALC` and `RUN` backends declare `searchable: false` and `trackable: false`, so they stay out of the merged default query and never contribute to frecency. They are reached only by their prefix or by `Tab` cycling.
 
 ### Global Keyboard Map (Inside Overlay)
 - `printable characters`: Appends to query filter (or triggers prefix mode switch if query is empty).

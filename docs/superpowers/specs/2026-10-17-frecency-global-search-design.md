@@ -48,7 +48,9 @@ foundation the plugin backend will lean on, so it is designed first.
 - **`BackendManager.qml`** — keeps registry, mode cycling, and prefix dispatch.
   The nine hardcoded `Connections` blocks (`BackendManager.qml:115-185`) collapse
   into one registry-driven collection that the aggregator consumes. No-prefix
-  resolves to a merged sentinel mode.
+  resolves to a merged sentinel mode. Results it emits for an explicit mode are
+  tagged with that backend's `id` as `source`, so activation recording works in
+  explicit modes and not only in merged search.
 - **`Launcher.qml`** — `refresh()` routes to the aggregator in merged mode, else
   to `BackendManager`. `activate()` (`Launcher.qml:322`) records the hit before
   executing. Selection becomes keyed by item identity rather than index.

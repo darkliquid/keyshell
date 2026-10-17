@@ -116,7 +116,7 @@ Singleton {
             return;
         const syncResults = b.search(query, limit);
         if (syncResults !== null && syncResults !== undefined)
-            resultsReady(syncResults);
+            resultsReady(tagSource(syncResults, activeMode));
     }
 
     function refresh() {
@@ -131,7 +131,19 @@ Singleton {
     function backendResults(sourceId, query, items) {
         sourceResults(sourceId, query, items);
         if (!isMerged() && activeMode === sourceId && query === Launcher.query)
-            resultsReady(items);
+            resultsReady(tagSource(items, sourceId));
+    }
+
+    function tagSource(items, sourceId) {
+        if (!items)
+            return items;
+        const tagged = [];
+        for (let i = 0; i < items.length; i++) {
+            const copy = Object.assign({}, items[i]);
+            copy.source = sourceId;
+            tagged.push(copy);
+        }
+        return tagged;
     }
 
     Instantiator {

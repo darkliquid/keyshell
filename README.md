@@ -46,12 +46,25 @@ binds {
 
 | Key | Action |
 | --- | --- |
-| printable characters | filter the app list |
+| printable characters | filter the merged result list |
 | Backspace | edit the query |
 | Left / Right | move the selection |
 | Tab / Shift+Tab | move the selection |
 | Enter | launch the selected app |
 | Escape | dismiss |
+
+## Search & ranking
+
+Typing with no prefix searches everything at once: applications, open windows
+and files. Results are ordered by how well they match, and ties are broken by
+how often and how recently you picked them, so your regulars rise to the top.
+
+Explicit prefixes still jump straight to a single mode (for example `@` for
+windows, `/` for files).
+
+History lives at `${XDG_STATE_HOME:-~/.local/state}/keyshell/frecency.json`.
+Delete that file to reset ranking; entries older than `frecencyMaxAgeDays` are
+dropped automatically on load.
 
 ## Tuning
 

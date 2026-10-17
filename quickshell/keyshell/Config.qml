@@ -52,6 +52,20 @@ Singleton {
 
     readonly property int revealMaxAttempts: 32
 
+    readonly property string mergedModeId: "all"
+    readonly property int mergeSettleMs: 120
+    readonly property int maxMergedResults: 60
+
+    readonly property int frecencyCountCap: 10
+    readonly property int frecencyMaxAgeDays: 90
+    readonly property int frecencyFlushDebounceMs: 2000
+    readonly property var frecencyBuckets: [
+        { "maxAgeMs": 3600000, "weight": 4 },
+        { "maxAgeMs": 86400000, "weight": 3 },
+        { "maxAgeMs": 604800000, "weight": 2 },
+        { "maxAgeMs": 2592000000, "weight": 1 }
+    ]
+
     readonly property real effectiveMinEndHeightPx: Math.min(minEndHeightPx, bandHeightPx)
 
     Component.onCompleted: {

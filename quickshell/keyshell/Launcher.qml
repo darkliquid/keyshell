@@ -11,6 +11,8 @@ Singleton {
     property var displayResults: []
     property int selectedIndex: 0
     property int displayIndex: 0
+    property string selectedItemId: ""
+    property string selectedSource: ""
     property var sliderTargetNode: null
     property var mediaConsolePlayer: null
     property var trayMenuItem: null
@@ -66,7 +68,10 @@ Singleton {
     }
 
     function refresh() {
-        BackendManager.search(query, Config.maxResults);
+        if (BackendManager.isMerged())
+            SearchAggregator.searchAll(query, Config.maxMergedResults);
+        else
+            BackendManager.search(query, Config.maxResults);
     }
 
     function toggle() {
@@ -79,6 +84,8 @@ Singleton {
     function show() {
         query = "";
         selectedIndex = 0;
+        selectedItemId = "";
+        selectedSource = "";
         sliderTargetNode = null;
         mediaConsolePlayer = null;
         trayMenuItem = null;
@@ -90,7 +97,7 @@ Singleton {
         networkTargetItem = null;
         networkPasswordTarget = null;
         networkPasswordBuffer = "";
-        BackendManager.refresh();
+        refresh();
         open = true;
         revealed();
     }
@@ -112,6 +119,7 @@ Singleton {
         networkPasswordBuffer = "";
         BluetoothBackend.stopDiscovery();
         NetworkBackend.stopScan();
+        Frecency.flush();
         dismissed();
     }
 
@@ -306,6 +314,8 @@ Singleton {
     function setQuery(text) {
         query = text;
         selectedIndex = 0;
+        selectedItemId = "";
+        selectedSource = "";
         refresh();
     }
 
@@ -314,6 +324,11 @@ Singleton {
         if (n === 0)
             return;
         selectedIndex = ((selectedIndex + delta) % n + n) % n;
+        const entry = results[selectedIndex];
+        if (entry) {
+            selectedItemId = entry.id || "";
+            selectedSource = entry.source || "";
+        }
         const nextDisplay = displayIndex + delta;
         if (nextDisplay >= 0 && nextDisplay < displayResults.length)
             displayIndex = nextDisplay;
@@ -324,20 +339,47 @@ Singleton {
             return;
         const entry = results[selectedIndex];
         if (entry && entry.actions && entry.actions.length > 0 && entry.actions[0].execute) {
+            SearchAggregator.recordActivation(entry);
             entry.actions[0].execute();
             if (sliderTargetNode === null && mediaConsolePlayer === null && trayMenuItem === null && bluetoothTargetDevice === null && !powerConsoleOpen && networkTargetItem === null && networkPasswordTarget === null)
                 dismiss();
         }
     }
 
+    function installResults(items) {
+        const previous = selectedIndex;
+        results = items || [];
+
+        let idx = -1;
+        if (selectedItemId !== "") {
+            for (let i = 0; i < results.length; i++) {
+                const entry = results[i];
+                if (entry.id === selectedItemId && (entry.source || "") === selectedSource) {
+                    idx = i;
+                    break;
+                }
+            }
+        }
+        if (idx < 0)
+            idx = Math.min(previous, results.length > 0 ? results.length - 1 : 0);
+
+        selectedIndex = idx;
+        buildDisplayResults();
+        modelReset();
+    }
+
     Connections {
         target: BackendManager
         function onResultsReady(items) {
-            launcher.results = items || [];
-            if (launcher.selectedIndex >= launcher.results.length)
-                launcher.selectedIndex = launcher.results.length > 0 ? launcher.results.length - 1 : 0;
-            launcher.buildDisplayResults();
-            launcher.modelReset();
+            launcher.installResults(items);
+        }
+    }
+
+    Connections {
+        target: SearchAggregator
+        function onResultsReady(items) {
+            if (BackendManager.isMerged())
+                launcher.installResults(items);
         }
     }
 }

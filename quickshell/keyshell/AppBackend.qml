@@ -12,6 +12,9 @@ Singleton {
     readonly property string prefix: ""
     readonly property Component cardDelegate: AppCardDelegate {}
 
+    readonly property bool searchable: true
+    readonly property bool trackable: true
+
     property var index: []
     property bool ready: false
 

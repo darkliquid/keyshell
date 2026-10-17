@@ -83,6 +83,8 @@ While optimized for niri, keyshell **must maintain compatibility with other Wayl
 keyshell/
 ├── README.md                          # User installation and quickstart guide
 ├── AGENTS.md                          # This document
+├── tests/
+│   └── run.js                         # Node harness for the rank.js scoring math
 └── quickshell/
     └── keyshell/
         ├── shell.qml                  # ShellRoot, multi-screen Variants, IpcHandler
@@ -91,6 +93,9 @@ keyshell/
         ├── Launcher.qml               # Singleton: core application state, results, selection
         ├── BackendManager.qml         # Singleton: mode registry, cycling, prefix dispatch
         ├── Reveal.qml                 # Singleton: geometry resampling (tilt, shear, bounds)
+        ├── Frecency.qml               # Singleton: persisted usage scores (XDG state)
+        ├── SearchAggregator.qml       # Singleton: merged fan-out, ranking, settle timer
+        ├── rank.js                    # Plain JS: match tiers, frecency decay, merge/sort
         │
         ├── AppBackend.qml             # Applications backend (DesktopEntries)
         ├── WindowBackend.qml          # Open windows backend (ToplevelManager + WM IPC)
@@ -232,11 +237,10 @@ When implementing features, fixing bugs, or refactoring in keyshell, adhere stri
 To add a new backend (e.g. `ClipboardBackend` or `CalculatorBackend`):
 1. Create `quickshell/keyshell/MyBackend.qml` as a `Singleton`:
    - Declare properties: `id`, `name`, `badge`, `prefix`, `cardDelegate`.
+   - Declare `readonly property bool searchable: true` to include it in the merged default query, and `readonly property bool trackable: true` to let activations feed frecency. Both default to `false`, so opting in is explicit.
    - Implement `search(query, limit)` and `refresh()` methods.
    - Emit `signal resultsReady(string query, var items)`.
-2. Register the backend in `BackendManager.qml`:
-   - Add to `backends` array.
-   - Add a `Connections` listener for `onResultsReady`.
+2. Register the backend by adding it to the `backends` array in `BackendManager.qml`. Result collection is registry-driven, so no per-backend `Connections` block is needed.
 3. Create `components/MyCardDelegate.qml` using `Theme.qml` and `Theme.heavy()` typography.
 4. Add IPC trigger endpoints to `shell.qml` if external hotkey launching is desired.
 5. If the backend requires a dedicated console view (e.g. slider or details sheet), add `MyConsoleView.qml` and wire open/close signals in `Launcher.qml` and `Band.qml`.

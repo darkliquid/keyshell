@@ -38,5 +38,30 @@ function matchTier(query, item) {
     return -1;
 }
 
+function frecencyScore(entry, nowMs, buckets, countCap) {
+    if (!entry || !entry.lastUsed)
+        return 0;
+
+    const age = nowMs - entry.lastUsed;
+    if (age < 0)
+        return 0;
+
+    let weight = 0;
+    for (let i = 0; i < buckets.length; i++) {
+        if (age <= buckets[i].maxAgeMs) {
+            weight = buckets[i].weight;
+            break;
+        }
+    }
+    if (weight === 0)
+        return 0;
+
+    const top = buckets[0].weight;
+    const cap = countCap || 10;
+    const countFactor = Math.min(1, Math.log1p(entry.count || 1) / Math.log1p(cap));
+    const score = (weight / top) * countFactor;
+    return Math.max(0, Math.min(1, score));
+}
+
 if (typeof module !== "undefined" && module.exports)
-    module.exports = { matchTier: matchTier };
+    module.exports = { matchTier: matchTier, frecencyScore: frecencyScore };

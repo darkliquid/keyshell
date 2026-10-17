@@ -54,7 +54,7 @@ assert.strictEqual(Rank.matchTier("fire", item("Code Editor", "", ["firefox"])),
 assert.strictEqual(Rank.matchTier("zzz", item("Firefox")), -1, "no match -> -1");
 assert.strictEqual(Rank.matchTier("", item("Firefox")), 0, "empty query -> tier 0");
 
-console.log("all rank assertions passed");
+console.log("all assertions passed");
 ```
 
 - [ ] **Step 2: Run it to make sure it fails**
@@ -114,7 +114,7 @@ if (typeof module !== "undefined" && module.exports)
 - [ ] **Step 4: Run the tests and make sure they pass**
 
 Run: `node tests/run.js`
-Expected: PASS, prints `all rank assertions passed`.
+Expected: PASS, prints `all assertions passed`.
 
 - [ ] **Step 5: Commit (only if authorised)**
 
@@ -206,7 +206,7 @@ if (typeof module !== "undefined" && module.exports)
 - [ ] **Step 4: Run the tests and make sure they pass**
 
 Run: `node tests/run.js`
-Expected: PASS, prints `all rank assertions passed`.
+Expected: PASS, prints `all assertions passed`.
 
 - [ ] **Step 5: Commit (only if authorised)**
 
@@ -314,7 +314,7 @@ if (typeof module !== "undefined" && module.exports)
 - [ ] **Step 4: Run the tests and make sure they pass**
 
 Run: `node tests/run.js`
-Expected: PASS, prints `all rank assertions passed`.
+Expected: PASS, prints `all assertions passed`.
 
 - [ ] **Step 5: Commit (only if authorised)**
 
@@ -1093,7 +1093,7 @@ Add a section covering: typing with no prefix searches applications, open window
 - [ ] **Step 3: Run the unit harness one final time**
 
 Run: `node tests/run.js`
-Expected: PASS, prints `all rank assertions passed`.
+Expected: PASS, prints `all assertions passed`.
 
 - [ ] **Step 4: Run the manual matrix**
 

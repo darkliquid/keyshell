@@ -9,7 +9,7 @@ Singleton {
     readonly property string mergedMode: Config.mergedModeId
     property string activeMode: Config.mergedModeId
 
-    readonly property var backends: [AppBackend, WindowBackend, FileBackend, AudioBackend, MediaBackend, TrayBackend, BluetoothBackend, PowerBackend, NetworkBackend]
+    readonly property var backends: [AppBackend, WindowBackend, FileBackend, AudioBackend, MediaBackend, TrayBackend, BluetoothBackend, PowerBackend, NetworkBackend, CalculatorBackend, RunBackend]
 
     readonly property var activeBackend: getBackend(activeMode)
     readonly property string activeBadge: isMerged() ? "SEARCH" : (activeBackend ? activeBackend.badge : "SEARCH")
@@ -103,7 +103,7 @@ Singleton {
             const b = backends[i];
             if (b.prefix.length > 0 && b.prefix === first) {
                 setMode(b.id);
-                Launcher.setQuery(text.slice(1).trimStart());
+                Launcher.setQuery(text.slice(1).replace(/^\s+/, ""));
                 return true;
             }
         }

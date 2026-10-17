@@ -68,6 +68,10 @@ Singleton {
 
     readonly property real effectiveMinEndHeightPx: Math.min(minEndHeightPx, bandHeightPx)
 
+    readonly property int maxExpressionLength: 120
+    readonly property int calcMaxDecimals: 10
+    readonly property var terminalCandidates: ["ghostty", "alacritty"]
+
     Component.onCompleted: {
         if (minEndHeightPx > bandHeightPx)
             console.warn("keyshell: minEndHeightPx exceeds bandHeightPx; clamped to " + effectiveMinEndHeightPx);

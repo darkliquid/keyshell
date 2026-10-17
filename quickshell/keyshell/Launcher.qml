@@ -66,7 +66,10 @@ Singleton {
     }
 
     function refresh() {
-        BackendManager.search(query, Config.maxResults);
+        if (BackendManager.isMerged())
+            SearchAggregator.searchAll(query, Config.maxMergedResults);
+        else
+            BackendManager.search(query, Config.maxResults);
     }
 
     function toggle() {
@@ -90,7 +93,7 @@ Singleton {
         networkTargetItem = null;
         networkPasswordTarget = null;
         networkPasswordBuffer = "";
-        BackendManager.refresh();
+        refresh();
         open = true;
         revealed();
     }
@@ -330,14 +333,26 @@ Singleton {
         }
     }
 
+    function installResults(items) {
+        results = items || [];
+        if (selectedIndex >= results.length)
+            selectedIndex = results.length > 0 ? results.length - 1 : 0;
+        buildDisplayResults();
+        modelReset();
+    }
+
     Connections {
         target: BackendManager
         function onResultsReady(items) {
-            launcher.results = items || [];
-            if (launcher.selectedIndex >= launcher.results.length)
-                launcher.selectedIndex = launcher.results.length > 0 ? launcher.results.length - 1 : 0;
-            launcher.buildDisplayResults();
-            launcher.modelReset();
+            launcher.installResults(items);
+        }
+    }
+
+    Connections {
+        target: SearchAggregator
+        function onResultsReady(items) {
+            if (BackendManager.isMerged())
+                launcher.installResults(items);
         }
     }
 }

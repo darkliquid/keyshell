@@ -31,4 +31,21 @@ assert.ok(freshOne > oldMany, "recent beats old at equal count");
 assert.strictEqual(Rank.frecencyScore(null, now, buckets, 10), 0, "no entry -> 0");
 assert.strictEqual(Rank.frecencyScore({ count: 5, lastUsed: now - 99999999999 }, now, buckets, 10), 0, "beyond oldest bucket -> 0");
 
+// --- mergeAndSort ---
+const groups = [
+    { source: "apps", items: [ item("Firefox"), item("Files") ] },
+    { source: "windows", items: [ item("Firefox - Tab") ] }
+];
+const entries = { "apps:Firefox": { count: 10, lastUsed: now - 1000 } };
+const opts = { buckets: buckets, countCap: 10, limit: 10 };
+
+const merged = Rank.mergeAndSort("fir", groups, entries, now, opts);
+assert.strictEqual(merged.length, 2, "only matching items survive");
+assert.strictEqual(merged[0].source, "apps", "frecency boosts the app hit");
+assert.strictEqual(merged[1].source, "windows", "lower frecency sorts second");
+assert.ok(merged.every(function (m) { return typeof m.tier === "number" && typeof m.frecency === "number"; }), "tier and frecency attached");
+
+assert.strictEqual(Rank.mergeAndSort("zzz", groups, entries, now, opts).length, 0, "non-matching dropped");
+assert.strictEqual(Rank.mergeAndSort("", groups, {}, now, opts).length, 3, "empty query keeps everything");
+
 console.log("all rank assertions passed");

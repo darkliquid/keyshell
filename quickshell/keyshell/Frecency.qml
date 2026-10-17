@@ -45,8 +45,8 @@ Singleton {
             console.warn("keyshell: frecency store unreadable, starting empty");
             entries = ({});
         }
-        prune();
         dirty = false;
+        prune();
     }
 
     function keyFor(source, itemId) {

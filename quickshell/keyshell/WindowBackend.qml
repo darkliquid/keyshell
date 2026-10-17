@@ -14,6 +14,9 @@ Singleton {
     readonly property string prefix: "@"
     readonly property Component cardDelegate: WindowCardDelegate {}
 
+    readonly property bool searchable: true
+    readonly property bool trackable: true
+
     property var wmWindows: ({})
 
     signal resultsReady(string query, var items)

@@ -13,6 +13,9 @@ Singleton {
     readonly property string prefix: "/"
     readonly property Component cardDelegate: FileCardDelegate {}
 
+    readonly property bool searchable: true
+    readonly property bool trackable: false
+
     property int generation: 0
     property string pendingQuery: ""
     property int pendingLimit: Config.maxFileResults

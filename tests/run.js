@@ -1,6 +1,7 @@
 const assert = require("assert");
 const Rank = require("../quickshell/keyshell/rank.js");
 const Calc = require("../quickshell/keyshell/calc.js");
+const PluginProto = require("../quickshell/keyshell/plugin-proto.js");
 
 function item(title, subtitle, keywords) {
     return { "id": title, "title": title, "subtitle": subtitle || "", "keywords": keywords || "" };
@@ -85,5 +86,59 @@ assert.strictEqual(Calc.format(1234567, 10), "1,234,567", "thousands separators"
 assert.strictEqual(Calc.format(-42, 10), "-42", "negative integer");
 assert.strictEqual(Calc.format(1 / 3, 4), "0.3333", "decimals limited");
 assert.strictEqual(Calc.format(1e21, 10), "1e+21", "very large uses exponent form");
+
+// --- plugin-proto: matchTrigger ---
+assert.deepStrictEqual(PluginProto.matchTrigger(";docker ps", [";docker"]), { trigger: ";docker", remainder: "ps" }, "trigger matches and remainder extracted");
+assert.strictEqual(PluginProto.matchTrigger(";docker   ps", [";docker"]).remainder, "ps", "leading space trimmed from remainder");
+assert.strictEqual(PluginProto.matchTrigger(";docker", [";docker"]).remainder, "", "bare trigger yields empty remainder");
+assert.strictEqual(PluginProto.matchTrigger(";docker ps", [";d", ";docker"]).trigger, ";docker", "longest match wins");
+assert.strictEqual(PluginProto.matchTrigger("x;docker", [";docker"]), null, "trigger must anchor at the start");
+assert.strictEqual(PluginProto.matchTrigger("=8/2", [";docker"]), null, "a built-in sigil is not a plugin trigger");
+assert.strictEqual(PluginProto.matchTrigger("", [";docker"]), null, "empty query matches nothing");
+assert.strictEqual(PluginProto.matchTrigger(";docker ps", []), null, "no triggers matches nothing");
+
+// --- plugin-proto: items ---
+const goodItem = { id: "a", title: "A", subtitle: "s", glyph: "x", badge: "UP", actions: [{ type: "exec", argv: ["echo", "hi"] }] };
+const parsedItem = PluginProto.parseLine(JSON.stringify(goodItem));
+assert.strictEqual(parsedItem.done, false, "an item line is not the terminator");
+assert.strictEqual(parsedItem.item.title, "A", "title survives normalisation");
+assert.strictEqual(parsedItem.item.subtitle, "s", "subtitle survives normalisation");
+assert.strictEqual(PluginProto.parseLine(JSON.stringify({ done: true })).done, true, "done line detected");
+assert.strictEqual(PluginProto.parseLine("not json"), null, "malformed line ignored");
+assert.strictEqual(PluginProto.parseLine(""), null, "blank line ignored");
+assert.strictEqual(PluginProto.parseLine(JSON.stringify({ id: "b" })), null, "item without a title is dropped");
+assert.strictEqual(PluginProto.parseLine(JSON.stringify({ title: "B" })), null, "item without an id is dropped");
+assert.strictEqual(PluginProto.parseLine(JSON.stringify({ id: "c", title: "C", actions: [{ type: "nope" }] })), null, "unknown action type rejected");
+assert.strictEqual(PluginProto.parseLine(JSON.stringify({ id: "d", title: "D", actions: [{ type: "exec", argv: [] }] })), null, "empty argv rejected");
+assert.strictEqual(PluginProto.parseLine(JSON.stringify({ id: "e", title: "E", actions: [{ type: "copy" }] })), null, "copy without text rejected");
+
+const sibling = PluginProto.parseLine(JSON.stringify({
+    id: "f", title: "F",
+    actions: [{ type: "copy", text: "hi" }, { type: "nope" }]
+}));
+assert.strictEqual(sibling.item.actions.length, 1, "a valid action survives a rejected sibling");
+
+const defaults = PluginProto.parseLine(JSON.stringify({ id: "g", title: "G", actions: [{ type: "set-query", query: "x" }] })).item;
+assert.strictEqual(defaults.subtitle, "", "subtitle defaults to empty");
+assert.strictEqual(defaults.glyph, "", "glyph defaults to empty");
+assert.strictEqual(defaults.badge, "", "badge defaults to empty");
+
+// --- plugin-proto: manifests ---
+const manifestText = PluginProto.MANIFEST_SEPARATOR + "\n" + JSON.stringify({
+    name: "Docker", badge: "DOCKER", trigger: ";docker", command: ["/bin/true"], glyph: "🐳", trackable: true
+});
+const manifests = PluginProto.parseManifests(manifestText, 2);
+assert.strictEqual(manifests.length, 1, "one manifest parsed");
+assert.strictEqual(manifests[0].badge, "DOCKER", "badge read");
+assert.strictEqual(manifests[0].trigger, ";docker", "trigger read");
+assert.strictEqual(manifests[0].searchable, false, "searchable defaults to false");
+assert.strictEqual(manifests[0].trackable, true, "trackable read");
+assert.strictEqual(manifests[0].id, "plugin-docker", "id derived from the name");
+
+assert.strictEqual(PluginProto.parseManifests(PluginProto.MANIFEST_SEPARATOR + "\n" + JSON.stringify({ name: "X", trigger: ";", command: ["/bin/true"] }), 2).length, 0, "trigger shorter than the minimum is skipped");
+assert.strictEqual(PluginProto.parseManifests(PluginProto.MANIFEST_SEPARATOR + "\n" + JSON.stringify({ trigger: ";x", command: ["/bin/true"] }), 2).length, 0, "manifest without a name is skipped");
+assert.strictEqual(PluginProto.parseManifests(PluginProto.MANIFEST_SEPARATOR + "\n" + JSON.stringify({ name: "X", trigger: ";xx" }), 2).length, 0, "manifest without a command is skipped");
+assert.strictEqual(PluginProto.parseManifests(PluginProto.MANIFEST_SEPARATOR + "\nnot json", 2).length, 0, "malformed manifest skipped");
+assert.strictEqual(PluginProto.parseManifests("", 2).length, 0, "no manifests yields nothing");
 
 console.log("all assertions passed");

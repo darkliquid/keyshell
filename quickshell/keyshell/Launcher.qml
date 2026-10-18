@@ -119,6 +119,7 @@ Singleton {
         networkPasswordBuffer = "";
         BluetoothBackend.stopDiscovery();
         NetworkBackend.stopScan();
+        PluginRegistry.stopAll();
         Frecency.flush();
         dismissed();
     }

@@ -82,6 +82,53 @@ candidate list is `Config.terminalCandidates`.
 Neither mode joins the merged default query, so `=` and `:` are the only ways
 in unless you cycle to them with `Tab`.
 
+## Plugins
+
+A plugin is any executable plus a manifest, so you can write one in any
+language without touching QML. Put it at
+`${XDG_CONFIG_HOME:-~/.config}/keyshell/plugins/<name>/plugin.json`:
+
+```json
+{
+  "name": "Docker",
+  "badge": "DOCKER",
+  "trigger": ";docker",
+  "command": ["/usr/bin/docker-plugin"],
+  "glyph": "🐳",
+  "searchable": false,
+  "trackable": false
+}
+```
+
+The trigger must be at least two characters, so it can never collide with a
+single-character mode such as `=` or `@`. Type the trigger to open the plugin's
+mode, or reach it with `Tab`. A manifest is read at startup, so a newly added
+plugin appears after you restart the shell.
+
+The plugin is started when its mode opens and stopped when you leave it or
+dismiss the launcher. Your plugin reads one JSON request per line on stdin:
+
+```json
+{"query": "ps", "limit": 60}
+```
+
+and writes one JSON object per line on stdout, ending the response with
+`{"done": true}`:
+
+```json
+{"id": "web-1", "title": "web-1", "subtitle": "running", "glyph": "🐳", "badge": "UP",
+ "actions": [{"type": "exec", "argv": ["docker", "logs", "web-1"]}]}
+{"done": true}
+```
+
+Actions are declarative and only these five run: `copy` (`text`), `open-url`
+(`url`), `exec` (`argv`), `exec-terminal` (`argv`) and `set-query` (`query`).
+Anything malformed is ignored, so a broken plugin shows no results rather than
+breaking the launcher.
+
+Set `"searchable": true` to let a plugin answer the merged default query, and
+`"trackable": true` to let its activations feed the ranking history.
+
 ## Tuning
 
 All tunables are constants in `quickshell/keyshell/Config.qml`: the rotation

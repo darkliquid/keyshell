@@ -1,0 +1,10 @@
+{
+  "name": "Fixture",
+  "badge": "FIXTURE",
+  "trigger": ",fx",
+  "glyph": "🧪",
+  "trackable": false,
+  "searchable": false,
+  "description": "Test fixture plugin",
+  "command": ["/ABSOLUTE/PATH/TO/tests/fixtures/fixture-plugin.sh"]
+}

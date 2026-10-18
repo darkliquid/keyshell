@@ -534,7 +534,7 @@ PanelWindow {
             if ((event.modifiers & blocked) === 0
                     && event.text.length === 1
                     && event.text.charCodeAt(0) >= 0x20) {
-                if (Launcher.query === "" && BackendManager.checkPrefixTrigger(event.text)) {
+                if (BackendManager.tryTrigger(Launcher.query + event.text)) {
                     event.accepted = true;
                     return;
                 }

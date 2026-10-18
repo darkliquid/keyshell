@@ -72,6 +72,23 @@ Singleton {
     readonly property int calcMaxDecimals: 10
     readonly property var terminalCandidates: ["ghostty", "alacritty"]
 
+    readonly property int pluginTimeoutMs: 2000
+    readonly property int pluginQueryDebounceMs: 120
+    readonly property int maxPluginResults: 40
+    readonly property int minTriggerLength: 2
+    readonly property var pluginSearchDirs: {
+        const home = Quickshell.env("HOME") || "";
+        const configHome = Quickshell.env("XDG_CONFIG_HOME") || (home + "/.config");
+        const dataHome = Quickshell.env("XDG_DATA_HOME") || (home + "/.local/share");
+        const dataDirs = (Quickshell.env("XDG_DATA_DIRS") || "/usr/local/share:/usr/share").split(":");
+        const dirs = [configHome + "/keyshell/plugins", dataHome + "/keyshell/plugins"];
+        for (let i = 0; i < dataDirs.length; i++) {
+            if (dataDirs[i].length > 0)
+                dirs.push(dataDirs[i] + "/keyshell/plugins");
+        }
+        return dirs;
+    }
+
     Component.onCompleted: {
         if (minEndHeightPx > bandHeightPx)
             console.warn("keyshell: minEndHeightPx exceeds bandHeightPx; clamped to " + effectiveMinEndHeightPx);

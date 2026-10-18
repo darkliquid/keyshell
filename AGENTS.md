@@ -97,6 +97,10 @@ keyshell/
         ├── SearchAggregator.qml       # Singleton: merged fan-out, ranking, settle timer
         ├── rank.js                    # Plain JS: match tiers, frecency decay, merge/sort
         ├── calc.js                    # Plain JS: calculator expression parser & formatter
+        ├── plugin-proto.js            # Plain JS: plugin trigger, line and manifest parsing
+        ├── PluginRegistry.qml         # Singleton: plugin discovery, dynamic backend list
+        ├── PluginBackend.qml          # Component (not a singleton): one instance per plugin
+        ├── Terminal.qml               # Singleton: resolves and launches the terminal
         │
         ├── AppBackend.qml             # Applications backend (DesktopEntries)
         ├── WindowBackend.qml          # Open windows backend (ToplevelManager + WM IPC)
@@ -254,7 +258,33 @@ To add a new backend (e.g. `ClipboardBackend` or `CalculatorBackend`):
 4. Add IPC trigger endpoints to `shell.qml` if external hotkey launching is desired.
 5. If the backend requires a dedicated console view (e.g. slider or details sheet), add `MyConsoleView.qml` and wire open/close signals in `Launcher.qml` and `Band.qml`.
 
-### 4. Preserving Wayland Compositor Flexibility
+### 4. Writing a Plugin
+A plugin is an external executable plus a manifest, so it needs no QML and can be written in any language.
+1. Create `$XDG_CONFIG_HOME/keyshell/plugins/<name>/plugin.json`:
+   ```json
+   {
+     "name": "Docker",
+     "badge": "DOCKER",
+     "trigger": ";docker",
+     "command": ["/usr/bin/docker-plugin"],
+     "glyph": "🐳",
+     "searchable": false,
+     "trackable": false
+   }
+   ```
+   `trigger` must be at least `Config.minTriggerLength` (2) characters, so it can never collide with a single-character sigil such as `=` or `@`. `searchable` opts the plugin into the merged default query; `trackable` lets its activations feed frecency. Both default to `false`.
+2. The shell spawns `command` and writes one JSON line per request to its stdin: `{"query": "ps", "limit": 60}`.
+3. Answer with one JSON object per line on stdout, then `{"done": true}` to end the response. The terminator is what makes the end of a response deterministic. Each item needs an `id`, a `title` and at least one valid action:
+   ```json
+   {"id": "web-1", "title": "web-1", "subtitle": "running", "glyph": "🐳", "badge": "UP",
+    "actions": [{"type": "exec", "argv": ["docker", "logs", "web-1"]}]}
+   ```
+4. Actions are declarative and only these five types are executed: `copy` (`text`), `open-url` (`url`), `exec` (`argv`), `exec-terminal` (`argv`), `set-query` (`query`). Unknown types, missing fields and malformed lines are dropped, so a broken plugin degrades to no results.
+5. A plugin process is started when its mode is entered and stopped when the mode changes or the launcher is dismissed. `PluginRegistry.stopAll()` runs on dismiss.
+
+A plugin never runs code inside the shell process. The shell only ever executes a declared action, which is the same trust level as running the plugin executable you installed yourself.
+
+### 5. Preserving Wayland Compositor Flexibility
 - Never write shell commands assuming `niri` is the only compositor in existence.
 - Always check for environment variables (`$NIRI_SOCKET`, `$SWAYSOCK`, `$HYPRLAND_INSTANCE_SIGNATURE`) before dispatching compositor-specific CLI tools.
 - Provide graceful degradation: if compositor-specific metadata (like workspace names) cannot be retrieved, fallback to generic protocol data (`ToplevelManager`) or clean placeholders without throwing errors.

@@ -25,6 +25,11 @@ QtObject {
     property bool unavailable: false
     property var collected: []
 
+    property string queuedQuery: ""
+    property int queuedLimit: Config.maxPluginResults
+    property bool queuedMerged: false
+    property bool hasQueued: false
+
     property Process pluginProcess: Process {
         command: backend.command
         running: false
@@ -66,28 +71,45 @@ QtObject {
     function stop() {
         timeoutTimer.stop();
         waiting = false;
+        hasQueued = false;
         collected = [];
         if (pluginProcess.running)
             pluginProcess.running = false;
     }
 
     function request(query, limit) {
-        pendingQuery = query || "";
-        pendingLimit = limit || Config.maxPluginResults;
+        const wantedQuery = query || "";
+        const wantedLimit = limit || Config.maxPluginResults;
+        const wantedMerged = BackendManager.isMerged();
+
+        if (waiting) {
+            queuedQuery = wantedQuery;
+            queuedLimit = wantedLimit;
+            queuedMerged = wantedMerged;
+            hasQueued = true;
+            return;
+        }
+
+        send(wantedQuery, wantedLimit, wantedMerged);
+    }
+
+    function send(query, limit, merged) {
+        pendingQuery = query;
+        pendingLimit = limit;
         collected = [];
         waiting = true;
         start();
 
         if (!pluginProcess.running) {
             waiting = false;
-            finish();
+            emitItems();
             return;
         }
 
         pluginProcess.write(JSON.stringify({
-            "query": pendingQuery,
-            "limit": pendingLimit,
-            "merged": BackendManager.isMerged()
+            "query": query,
+            "limit": limit,
+            "merged": merged
         }) + "\n");
         timeoutTimer.restart();
     }
@@ -112,7 +134,7 @@ QtObject {
         collected = items;
     }
 
-    function finish() {
+    function emitItems() {
         const source = collected;
         const items = [];
         for (let i = 0; i < source.length && items.length < pendingLimit; i++)
@@ -120,8 +142,32 @@ QtObject {
         resultsReady(pendingQuery, items);
     }
 
+    function finish() {
+        emitItems();
+
+        if (hasQueued) {
+            const nextQuery = queuedQuery;
+            const nextLimit = queuedLimit;
+            const nextMerged = queuedMerged;
+            hasQueued = false;
+            send(nextQuery, nextLimit, nextMerged);
+        }
+    }
+
     function holdHint() {
         return "HOLD [ENTER] " + (Config.powerHoldDurationMs / 1000).toFixed(1) + "s  //  DOUBLE-TAP";
+    }
+
+    function actionHint(actionType) {
+        if (actionType === "copy")
+            return "[ENTER] COPY";
+        if (actionType === "open-url")
+            return "[ENTER] OPEN";
+        if (actionType === "set-query")
+            return "[ENTER] SEARCH";
+        if (actionType === "exec-terminal")
+            return "[ENTER] RUN IN TERMINAL";
+        return "[ENTER] RUN";
     }
 
     function toDisplayItem(raw) {
@@ -138,7 +184,7 @@ QtObject {
             "glyph": raw.glyph.length > 0 ? raw.glyph : backend.glyph,
             "stateBadge": raw.badge,
             "isDestructive": destructive,
-            "hint": destructive ? holdHint() : "[ENTER] RUN",
+            "hint": destructive ? holdHint() : actionHint(raw.actions[0].type),
             "icon": "",
             "previewSource": null,
             "badge": backend.badge,

@@ -46,7 +46,7 @@ Item {
     Item {
         id: middleRow
         anchors.top: topRow.bottom
-        anchors.bottom: footerText.top
+        anchors.bottom: bottomZone.top
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.topMargin: 6
@@ -94,16 +94,73 @@ Item {
         }
     }
 
-    Text {
-        id: footerText
+    Item {
+        id: bottomZone
         anchors.bottom: parent.bottom
         anchors.left: parent.left
         anchors.right: parent.right
-        text: (delegate.itemData && delegate.itemData.hint) ? delegate.itemData.hint : "[ENTER] RUN"
-        font: Theme.heavy(9)
-        color: delegate.active ? Theme.slab : Theme.muted
-        horizontalAlignment: Text.AlignHCenter
-        elide: Text.ElideRight
-        renderType: Text.QtRendering
+        height: 16
+
+        readonly property bool holding: Boolean(delegate.itemData && delegate.itemData.isDestructive) && delegate.active && (Launcher.powerHoldProgress > 0)
+
+        Row {
+            anchors.centerIn: parent
+            spacing: 6
+            visible: bottomZone.holding
+
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: "HOLD " + Math.round((Launcher.powerHoldProgress || 0.0) * 100) + "%"
+                font: Theme.heavy(9)
+                color: delegate.active ? Theme.slab : Theme.ink
+                renderType: Text.QtRendering
+            }
+
+            Rectangle {
+                anchors.verticalCenter: parent.verticalCenter
+                width: ticksRow.width + 6
+                height: 10
+                color: Theme.slab
+                radius: 2
+
+                Row {
+                    id: ticksRow
+                    anchors.centerIn: parent
+                    spacing: 2
+
+                    Repeater {
+                        model: 10
+
+                        delegate: Rectangle {
+                            required property int index
+                            width: 4
+                            height: 6
+                            radius: 1
+                            transform: Matrix4x4 {
+                                matrix: Qt.matrix4x4(
+                                    1, -0.25, 0, 0,
+                                    0,     1, 0, 0,
+                                    0,     0, 1, 0,
+                                    0,     0, 0, 1
+                                )
+                            }
+                            color: ((index + 1) * 0.1 <= (Launcher.powerHoldProgress || 0.0) + 0.01) ? Theme.accent : Theme.surfaceAlt
+                        }
+                    }
+                }
+            }
+        }
+
+        Text {
+            anchors.fill: parent
+            verticalAlignment: Text.AlignVCenter
+            visible: !bottomZone.holding
+            text: (delegate.itemData && delegate.itemData.hint) ? delegate.itemData.hint : "[ENTER] RUN"
+            font: Theme.heavy(9)
+            color: delegate.active ? Theme.slab : Theme.muted
+            horizontalAlignment: Text.AlignHCenter
+            elide: Text.ElideRight
+            renderType: Text.QtRendering
+        }
     }
 }

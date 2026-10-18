@@ -84,7 +84,11 @@ QtObject {
             return;
         }
 
-        pluginProcess.write(JSON.stringify({ "query": pendingQuery, "limit": pendingLimit }) + "\n");
+        pluginProcess.write(JSON.stringify({
+            "query": pendingQuery,
+            "limit": pendingLimit,
+            "merged": BackendManager.isMerged()
+        }) + "\n");
         timeoutTimer.restart();
     }
 
@@ -116,10 +120,16 @@ QtObject {
         resultsReady(pendingQuery, items);
     }
 
+    function holdHint() {
+        return "HOLD [ENTER] " + (Config.powerHoldDurationMs / 1000).toFixed(1) + "s  //  DOUBLE-TAP";
+    }
+
     function toDisplayItem(raw) {
         const actions = [];
         for (let i = 0; i < raw.actions.length; i++)
             actions.push(toAction(raw.actions[i]));
+
+        const destructive = raw.destructive === true;
 
         return {
             "id": raw.id,
@@ -127,7 +137,8 @@ QtObject {
             "subtitle": raw.subtitle,
             "glyph": raw.glyph.length > 0 ? raw.glyph : backend.glyph,
             "stateBadge": raw.badge,
-            "hint": "[ENTER] RUN",
+            "isDestructive": destructive,
+            "hint": destructive ? holdHint() : "[ENTER] RUN",
             "icon": "",
             "previewSource": null,
             "badge": backend.badge,

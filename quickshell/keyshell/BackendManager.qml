@@ -125,8 +125,8 @@ Singleton {
         const backend = backendForPrefix(match.trigger);
         if (!backend || backend.id === activeMode)
             return false;
-        setMode(backend.id);
         Launcher.setQuery(match.remainder);
+        setMode(backend.id);
         return true;
     }
 

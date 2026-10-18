@@ -109,7 +109,7 @@ The plugin is started when its mode opens and stopped when you leave it or
 dismiss the launcher. Your plugin reads one JSON request per line on stdin:
 
 ```json
-{"query": "ps", "limit": 60}
+{"query": "ps", "limit": 60, "merged": false}
 ```
 
 and writes one JSON object per line on stdout, ending the response with
@@ -126,13 +126,20 @@ Actions are declarative and only these five run: `copy` (`text`), `open-url`
 Anything malformed is ignored, so a broken plugin shows no results rather than
 breaking the launcher.
 
+Add `"destructive": true` to an item whose action is dangerous. The shell then
+refuses to run it on a plain Enter and requires the same confirmation the power
+actions use, a hold of Enter for `Config.powerHoldDurationMs` or a double-tap,
+with a meter drawn on the card while you hold.
+
 Set `"searchable": true` to let a plugin answer the merged default query, and
 `"trackable": true` to let its activations feed the ranking history.
 
-A searchable plugin is asked its own mode's query and the merged default query,
-and it cannot tell the two apart: the request carries only the query and a
-limit. So a searchable plugin should answer an empty query with nothing, or it
-will flood the default list every time you open the launcher.
+`merged` says where the request came from: `true` for the merged default query,
+`false` for the plugin's own mode. A searchable plugin is asked both, and the
+same call serves each, so the flag is the only way to tell them apart. The usual
+shape is to return nothing for an empty merged query, so a plain launcher open
+is never flooded, while listing your busiest entries for an empty query in your
+own mode.
 
 ### Bundled example: processes
 
@@ -145,10 +152,15 @@ plugins/processes/install.sh
 
 Then restart keyshell and type `,ps`. Results are sorted by CPU, and you reach a
 specific process either by typing its name prefix (`gho` for `ghostty`) or its
-pid exactly (`2256`). Enter sends `SIGTERM`, never `SIGKILL`, so a process is
-never force-killed from the launcher. The query is deliberately strict and an
-empty query returns nothing, which is what keeps process names out of your
-default results.
+pid exactly (`2256`). The query is deliberately strict, and an empty query
+returns nothing at all, so there is no way to reach the launcher with an
+arbitrary process selected. Both of those rules keep process names out of your
+default results and make accidental termination impossible.
+
+Terminating a process is marked destructive, so a plain Enter will not do it.
+The card draws a hold meter and you must hold Enter for `Config.powerHoldDurationMs`
+(a second, or a double-tap) before the kill runs. It sends `SIGTERM`, never
+`SIGKILL`, so a process is never force-killed from the launcher.
 
 Run `node tests/run.js` to check the plugin still speaks the protocol.
 

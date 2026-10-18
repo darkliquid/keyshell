@@ -11,8 +11,13 @@ closes.
 
 Matching is deliberately strict so the plugin stays quiet when it answers the
 merged default query: a query matches when it is a case-insensitive prefix of
-the process name, or when it is exactly the pid. An empty query returns
-nothing, so a plain launcher open is never flooded with process names.
+the process name, or when it is exactly the pid. An empty query returns nothing
+in either mode, because terminating a process is destructive: you have to name a
+process or give a pid before anything is actionable.
+
+The request carries a ``merged`` flag. This plugin does not need it, since it
+behaves the same in both modes; it is there for plugins that should list entries
+when opened but stay silent in the default query.
 """
 
 import json
@@ -84,6 +89,7 @@ def build_item(pid, name, cpu, mem):
         "subtitle": "PID {} // CPU {:.1f}% // MEM {:.1f}%".format(pid, cpu, mem),
         "glyph": "⚙",
         "badge": badge,
+        "destructive": True,
         "actions": [
             {
                 "type": "exec",

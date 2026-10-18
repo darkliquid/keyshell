@@ -125,6 +125,15 @@ assert.strictEqual(defaults.subtitle, "", "subtitle defaults to empty");
 assert.strictEqual(defaults.glyph, "", "glyph defaults to empty");
 assert.strictEqual(defaults.badge, "", "badge defaults to empty");
 
+const destructiveItem = PluginProto.parseLine(JSON.stringify({ id: "h", title: "H", destructive: true, actions: [{ type: "exec", argv: ["true"] }] })).item;
+assert.strictEqual(destructiveItem.destructive, true, "the destructive flag is read");
+
+const safeItem = PluginProto.parseLine(JSON.stringify({ id: "i", title: "I", actions: [{ type: "exec", argv: ["true"] }] })).item;
+assert.strictEqual(safeItem.destructive, false, "destructive defaults to false");
+
+const truthyItem = PluginProto.parseLine(JSON.stringify({ id: "j", title: "J", destructive: "yes", actions: [{ type: "exec", argv: ["true"] }] })).item;
+assert.strictEqual(truthyItem.destructive, false, "a non-boolean destructive value is not trusted");
+
 // --- plugin-proto: manifests ---
 const manifestText = PluginProto.MANIFEST_SEPARATOR + "\n" + JSON.stringify({
     name: "Docker", badge: "DOCKER", trigger: ";docker", command: ["/bin/true"], glyph: "🐳", trackable: true
@@ -155,7 +164,7 @@ function runProcessPlugin(request) {
     return output.split("\n").filter(function (line) { return line.trim().length > 0; });
 }
 
-const procPidLines = runProcessPlugin({ query: String(process.pid), limit: 5 });
+const procPidLines = runProcessPlugin({ query: String(process.pid), limit: 5, merged: false });
 assert.strictEqual(procPidLines.length, 2, "an exact pid query returns that one process and the terminator");
 assert.strictEqual(PluginProto.parseLine(procPidLines[1]).done, true, "last line is the done terminator");
 
@@ -165,15 +174,22 @@ assert.ok(procItem.title.length > 0, "the item has a title");
 assert.ok(procItem.subtitle.indexOf("PID " + process.pid) !== -1, "the subtitle names the pid");
 assert.strictEqual(procItem.actions[0].type, "exec", "the primary action is exec");
 assert.ok(procItem.actions[0].argv.join(" ").indexOf("kill -TERM") !== -1, "the action terminates rather than force-kills");
+assert.strictEqual(procItem.destructive, true, "the item is marked destructive so it needs a confirmation");
 
-const procEmpty = runProcessPlugin({ query: "", limit: 5 });
-assert.strictEqual(procEmpty.length, 1, "an empty query yields only the terminator, so a plain open stays clean");
-assert.strictEqual(PluginProto.parseLine(procEmpty[0]).done, true, "the only line is the terminator");
+const procEmptyMerged = runProcessPlugin({ query: "", limit: 5, merged: true });
+assert.strictEqual(procEmptyMerged.length, 1, "an empty merged query yields only the terminator");
+assert.strictEqual(PluginProto.parseLine(procEmptyMerged[0]).done, true, "the only line is the terminator");
 
-const procNone = runProcessPlugin({ query: "zzzzdefinitelynotaprocess", limit: 5 });
+const procEmptyOwn = runProcessPlugin({ query: "", limit: 5, merged: false });
+assert.strictEqual(procEmptyOwn.length, 1, "an empty query does nothing in the plugin's own mode either, since terminating is destructive");
+
+const procPidMerged = runProcessPlugin({ query: String(process.pid), limit: 5, merged: true });
+assert.strictEqual(procPidMerged.length, 2, "a named query is still answered when it comes from merged search");
+
+const procNone = runProcessPlugin({ query: "zzzzdefinitelynotaprocess", limit: 5, merged: false });
 assert.strictEqual(procNone.length, 1, "a non-matching query yields only the terminator");
 
-const procBroad = runProcessPlugin({ query: "s", limit: 2 });
+const procBroad = runProcessPlugin({ query: "s", limit: 2, merged: false });
 assert.ok(procBroad.length - 1 <= 2, "the limit is respected as an upper bound");
 
 console.log("all assertions passed");

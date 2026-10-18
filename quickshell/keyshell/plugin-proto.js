@@ -78,6 +78,7 @@ function normalizeItem(raw) {
         "subtitle": typeof raw.subtitle === "string" ? raw.subtitle : "",
         "glyph": typeof raw.glyph === "string" ? raw.glyph : "",
         "badge": typeof raw.badge === "string" ? raw.badge : "",
+        "destructive": raw.destructive === true,
         "actions": actions
     };
 }

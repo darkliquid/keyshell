@@ -94,8 +94,15 @@ live rescans are out of scope for this cut.
 The shell spawns `command` and writes one JSON line per request to stdin:
 
 ```json
-{"query": "ps", "limit": 60}
+{"query": "ps", "limit": 60, "merged": false}
 ```
+
+`merged` is `true` when the request comes from the merged default query and
+`false` when it comes from the plugin's own mode. A searchable plugin needs it:
+the same `search()` call serves both, so without the flag a plugin cannot tell
+an empty merged query from an empty query in its own mode. The usual shape is to
+return nothing for an empty merged query, so opening the launcher is never
+flooded, while listing its busiest entries for an empty query in its own mode.
 
 The plugin writes one JSON object per line to stdout, and terminates each
 response with the line `{"done": true}`, then stays alive while its mode is open.
@@ -110,9 +117,16 @@ response deterministic rather than guessed. Item schema:
   "subtitle": "running",
   "glyph": "🐳",
   "badge": "UP",
-  "actions": [{"type": "exec", "argv": ["docker", "logs", "web-1"]}]
+  "destructive": true,
+  "actions": [{"type": "exec", "argv": ["docker", "rm", "-f", "web-1"]}]
 }
 ```
+
+`destructive` is optional and defaults to `false`. When it is `true` the shell
+refuses to run the item's primary action on a plain Enter: the item needs the
+same confirmation the power actions use, which is a hold of
+`Config.powerHoldDurationMs` or a double-tap. The plugin still owns the
+decision to be destructive; the shell owns the confirmation.
 
 `plugin-proto.js` validates every line and drops anything malformed, so a broken
 plugin cannot take the shell down.
@@ -128,6 +142,9 @@ Actions are declarative. The shell implements this verb set and nothing else:
 | `exec` | `argv` | run detached |
 | `exec-terminal` | `argv` | run in the resolved terminal |
 | `set-query` | `query` | replace the query with `query` |
+
+The confirmation for a `destructive` item is not an action type: it is a gate on
+the whole item, so any of these verbs can sit behind it.
 
 An action with an unknown `type`, a missing required field, or a non-array
 `argv` is rejected when the line is parsed, and the item keeps its other valid

@@ -284,6 +284,8 @@ A plugin is an external executable plus a manifest, so it needs no QML and can b
 
 A plugin never runs code inside the shell process. The shell only ever executes a declared action, which is the same trust level as running the plugin executable you installed yourself.
 
+`plugins/processes` in this repository is the reference implementation: a Python plugin that lists processes and terminates one. Copy its shape, and note two choices it had to make deliberately. A searchable plugin is asked both its own mode's query and the merged default query, and the request carries no flag saying which, so it must return nothing for an empty query or it will flood the default list with process names. And its item ids are pids, which are not stable across runs, which is why `trackable` is `false` there: frecency needs an id that survives a restart.
+
 ### 5. Preserving Wayland Compositor Flexibility
 - Never write shell commands assuming `niri` is the only compositor in existence.
 - Always check for environment variables (`$NIRI_SOCKET`, `$SWAYSOCK`, `$HYPRLAND_INSTANCE_SIGNATURE`) before dispatching compositor-specific CLI tools.

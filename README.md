@@ -129,6 +129,29 @@ breaking the launcher.
 Set `"searchable": true` to let a plugin answer the merged default query, and
 `"trackable": true` to let its activations feed the ranking history.
 
+A searchable plugin is asked its own mode's query and the merged default query,
+and it cannot tell the two apart: the request carries only the query and a
+limit. So a searchable plugin should answer an empty query with nothing, or it
+will flood the default list every time you open the launcher.
+
+### Bundled example: processes
+
+`plugins/processes` is a complete working plugin, written in Python, that lists
+running processes and terminates the one you pick:
+
+```bash
+plugins/processes/install.sh
+```
+
+Then restart keyshell and type `,ps`. Results are sorted by CPU, and you reach a
+specific process either by typing its name prefix (`gho` for `ghostty`) or its
+pid exactly (`2256`). Enter sends `SIGTERM`, never `SIGKILL`, so a process is
+never force-killed from the launcher. The query is deliberately strict and an
+empty query returns nothing, which is what keeps process names out of your
+default results.
+
+Run `node tests/run.js` to check the plugin still speaks the protocol.
+
 ## Tuning
 
 All tunables are constants in `quickshell/keyshell/Config.qml`: the rotation

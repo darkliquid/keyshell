@@ -71,7 +71,7 @@ Singleton {
         if (BackendManager.isMerged())
             SearchAggregator.searchAll(query, Config.maxMergedResults);
         else
-            BackendManager.search(query, Config.maxResults);
+            BackendManager.refresh();
     }
 
     function toggle() {

@@ -11,8 +11,11 @@ closes.
 
 Matching is deliberately strict so the plugin stays quiet when it answers the
 merged default query: a query matches when it is a case-insensitive prefix of
-the process name, or when it is exactly the pid. An empty query returns
-nothing, so a plain launcher open is never flooded with process names.
+the process name, or when it is exactly the pid.
+
+For an empty query the ``merged`` request flag decides: merged search gets
+nothing, so a plain launcher open is never flooded with process names, while the
+plugin's own mode lists the busiest processes.
 """
 
 import json
@@ -67,9 +70,9 @@ def read_processes():
     return rows
 
 
-def matches(query, name, pid):
+def matches(query, name, pid, merged):
     if query == "":
-        return False
+        return not merged
     lowered = query.lower()
     if lowered.isdigit():
         return pid == int(lowered)
@@ -103,6 +106,8 @@ def handle(request):
     if not isinstance(query, str):
         query = ""
 
+    merged = request.get("merged", False) is True
+
     try:
         limit = int(request.get("limit", DEFAULT_LIMIT))
     except (TypeError, ValueError):
@@ -111,7 +116,7 @@ def handle(request):
 
     emitted = 0
     for pid, name, cpu, mem in read_processes():
-        if not matches(query, name, pid):
+        if not matches(query, name, pid, merged):
             continue
         write(build_item(pid, name, cpu, mem))
         emitted += 1

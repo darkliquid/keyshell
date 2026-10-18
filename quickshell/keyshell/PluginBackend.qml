@@ -84,7 +84,11 @@ QtObject {
             return;
         }
 
-        pluginProcess.write(JSON.stringify({ "query": pendingQuery, "limit": pendingLimit }) + "\n");
+        pluginProcess.write(JSON.stringify({
+            "query": pendingQuery,
+            "limit": pendingLimit,
+            "merged": BackendManager.isMerged()
+        }) + "\n");
         timeoutTimer.restart();
     }
 

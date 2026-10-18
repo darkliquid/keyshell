@@ -126,6 +126,11 @@ Actions are declarative and only these five run: `copy` (`text`), `open-url`
 Anything malformed is ignored, so a broken plugin shows no results rather than
 breaking the launcher.
 
+Add `"destructive": true` to an item whose action is dangerous. The shell then
+refuses to run it on a plain Enter and requires the same confirmation the power
+actions use, a hold of Enter for `Config.powerHoldDurationMs` or a double-tap,
+with a meter drawn on the card while you hold.
+
 Set `"searchable": true` to let a plugin answer the merged default query, and
 `"trackable": true` to let its activations feed the ranking history.
 
@@ -147,10 +152,15 @@ plugins/processes/install.sh
 
 Then restart keyshell and type `,ps`. Results are sorted by CPU, and you reach a
 specific process either by typing its name prefix (`gho` for `ghostty`) or its
-pid exactly (`2256`). Enter sends `SIGTERM`, never `SIGKILL`, so a process is
-never force-killed from the launcher. The query is deliberately strict and an
-empty query returns nothing, which is what keeps process names out of your
-default results.
+pid exactly (`2256`). The query is deliberately strict, and an empty query
+returns nothing at all, so there is no way to reach the launcher with an
+arbitrary process selected. Both of those rules keep process names out of your
+default results and make accidental termination impossible.
+
+Terminating a process is marked destructive, so a plain Enter will not do it.
+The card draws a hold meter and you must hold Enter for `Config.powerHoldDurationMs`
+(a second, or a double-tap) before the kill runs. It sends `SIGTERM`, never
+`SIGKILL`, so a process is never force-killed from the launcher.
 
 Run `node tests/run.js` to check the plugin still speaks the protocol.
 

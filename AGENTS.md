@@ -169,7 +169,7 @@ The `CALC` and `RUN` backends declare `searchable: false` and `trackable: false`
 - `Backspace`: Removes last query character; exits submenus or consoles if query is empty.
 - `Tab` / `Shift+Tab`: Cycles through available backends in order (skipping empty media/tray when appropriate).
 - `Left` / `Right`: Moves selection across the horizontal reel.
-- `Enter` / `Return`: Executes the primary action of the selected item, or commits modal input.
+- `Enter` / `Return`: Executes the primary action of the selected item, or commits modal input. An item carrying `isDestructive` is gated instead: it needs a hold of `Config.powerHoldDurationMs` or a double-tap, in any mode, not only `POWER`.
 - `Escape`: Closes active console/submenu; dismisses keyshell if on root reel.
 - `Space`: Quick-action toggle in supported modes (play/pause media, open audio slider, open console).
 
@@ -273,18 +273,19 @@ A plugin is an external executable plus a manifest, so it needs no QML and can b
    }
    ```
    `trigger` must be at least `Config.minTriggerLength` (2) characters, so it can never collide with a single-character sigil such as `=` or `@`. `searchable` opts the plugin into the merged default query; `trackable` lets its activations feed frecency. Both default to `false`.
-2. The shell spawns `command` and writes one JSON line per request to its stdin: `{"query": "ps", "limit": 60}`.
+2. The shell spawns `command` and writes one JSON line per request to its stdin: `{"query": "ps", "limit": 60, "merged": false}`. `merged` is `true` for the merged default query and `false` for the plugin's own mode.
 3. Answer with one JSON object per line on stdout, then `{"done": true}` to end the response. The terminator is what makes the end of a response deterministic. Each item needs an `id`, a `title` and at least one valid action:
    ```json
-   {"id": "web-1", "title": "web-1", "subtitle": "running", "glyph": "🐳", "badge": "UP",
-    "actions": [{"type": "exec", "argv": ["docker", "logs", "web-1"]}]}
+   {"id": "web-1", "title": "web-1", "subtitle": "running", "glyph": "🐳", "badge": "UP", "destructive": true,
+    "actions": [{"type": "exec", "argv": ["docker", "rm", "-f", "web-1"]}]}
    ```
+   `destructive` is optional and defaults to `false`. Set it on any item whose action is dangerous: the shell then refuses to run it on a plain Enter and requires the power actions' confirmation instead, a hold of `Config.powerHoldDurationMs` or a double-tap, drawn as a hold meter on the card. `PluginBackend` maps it to the shell's existing `isDestructive` item field, which is the same field `PowerBackend` sets, so the confirmation path is shared.
 4. Actions are declarative and only these five types are executed: `copy` (`text`), `open-url` (`url`), `exec` (`argv`), `exec-terminal` (`argv`), `set-query` (`query`). Unknown types, missing fields and malformed lines are dropped, so a broken plugin degrades to no results.
 5. A plugin process is started when its mode is entered and stopped when the mode changes or the launcher is dismissed. `PluginRegistry.stopAll()` runs on dismiss.
 
 A plugin never runs code inside the shell process. The shell only ever executes a declared action, which is the same trust level as running the plugin executable you installed yourself.
 
-`plugins/processes` in this repository is the reference implementation: a Python plugin that lists processes and terminates one. Copy its shape, and note two choices it had to make deliberately. A searchable plugin is asked both its own mode's query and the merged default query, so the request carries a `merged` flag saying which; use it to return nothing for an empty merged query, or process names flood the default list. And its item ids are pids, which are not stable across runs, which is why `trackable` is `false` there: frecency needs an id that survives a restart.
+`plugins/processes` in this repository is the reference implementation: a Python plugin that lists processes and terminates one. Copy its shape, and note the choices it had to make deliberately. Terminating is destructive, so its kill item sets `destructive` and the plugin returns nothing for an empty query in either mode, which leaves no way to reach the launcher with an arbitrary process selected; it sends `SIGTERM` and never `SIGKILL`. A searchable plugin is asked both its own mode's query and the merged default query, and the `merged` flag says which, which matters for a plugin that should list entries when opened but stay silent in the default query; this one behaves the same in both, so it ignores the flag. And its item ids are pids, which are not stable across runs, which is why `trackable` is `false` there: frecency needs an id that survives a restart.
 
 ### 5. Preserving Wayland Compositor Flexibility
 - Never write shell commands assuming `niri` is the only compositor in existence.

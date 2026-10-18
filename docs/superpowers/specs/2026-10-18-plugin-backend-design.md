@@ -117,9 +117,16 @@ response deterministic rather than guessed. Item schema:
   "subtitle": "running",
   "glyph": "🐳",
   "badge": "UP",
-  "actions": [{"type": "exec", "argv": ["docker", "logs", "web-1"]}]
+  "destructive": true,
+  "actions": [{"type": "exec", "argv": ["docker", "rm", "-f", "web-1"]}]
 }
 ```
+
+`destructive` is optional and defaults to `false`. When it is `true` the shell
+refuses to run the item's primary action on a plain Enter: the item needs the
+same confirmation the power actions use, which is a hold of
+`Config.powerHoldDurationMs` or a double-tap. The plugin still owns the
+decision to be destructive; the shell owns the confirmation.
 
 `plugin-proto.js` validates every line and drops anything malformed, so a broken
 plugin cannot take the shell down.
@@ -135,6 +142,9 @@ Actions are declarative. The shell implements this verb set and nothing else:
 | `exec` | `argv` | run detached |
 | `exec-terminal` | `argv` | run in the resolved terminal |
 | `set-query` | `query` | replace the query with `query` |
+
+The confirmation for a `destructive` item is not an action type: it is a gate on
+the whole item, so any of these verbs can sit behind it.
 
 An action with an unknown `type`, a missing required field, or a non-array
 `argv` is rejected when the line is parsed, and the item keeps its other valid

@@ -139,6 +139,13 @@ Row {
                     label = "📡 SCANNING...";
                 else if (count === 0)
                     label = "NO NETWORKS";
+            } else if (mode === "clipboard") {
+                if (ClipboardBackend.paused)
+                    label = "CAPTURE PAUSED  //  [P] RESUME";
+                else if (ClipboardBackend.entries.length === 0)
+                    label = "NO CLIPBOARD ENTRIES";
+                else if (count === 0)
+                    label = "NO MATCHES";
             } else {
                 if (count === 0)
                     label = "NO MATCHES";

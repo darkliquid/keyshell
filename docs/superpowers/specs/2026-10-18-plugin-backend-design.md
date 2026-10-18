@@ -94,8 +94,15 @@ live rescans are out of scope for this cut.
 The shell spawns `command` and writes one JSON line per request to stdin:
 
 ```json
-{"query": "ps", "limit": 60}
+{"query": "ps", "limit": 60, "merged": false}
 ```
+
+`merged` is `true` when the request comes from the merged default query and
+`false` when it comes from the plugin's own mode. A searchable plugin needs it:
+the same `search()` call serves both, so without the flag a plugin cannot tell
+an empty merged query from an empty query in its own mode. The usual shape is to
+return nothing for an empty merged query, so opening the launcher is never
+flooded, while listing its busiest entries for an empty query in its own mode.
 
 The plugin writes one JSON object per line to stdout, and terminates each
 response with the line `{"done": true}`, then stays alive while its mode is open.

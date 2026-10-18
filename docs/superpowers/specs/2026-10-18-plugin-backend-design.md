@@ -108,7 +108,13 @@ The plugin writes one JSON object per line to stdout, and terminates each
 response with the line `{"done": true}`, then stays alive while its mode is open.
 The shell collects items per line and emits when it sees the terminator, or when
 `Config.pluginTimeoutMs` elapses; the terminator is what makes the end of a
-response deterministic rather than guessed. Item schema:
+response deterministic rather than guessed.
+
+The shell keeps at most one request in flight. If a query arrives while a
+response is still outstanding, it waits and is sent once that response completes,
+and only the newest pending query is kept. A plugin therefore sees strict
+request, response, request, response, and never has to correlate responses with
+requests. Item schema:
 
 ```json
 {

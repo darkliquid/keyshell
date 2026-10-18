@@ -1,0 +1,10 @@
+{
+  "name": "Emoji",
+  "badge": "EMOJI",
+  "trigger": ",em",
+  "glyph": "😀",
+  "searchable": true,
+  "trackable": true,
+  "description": "Emoji by Unicode name. Enter copies it.",
+  "command": ["python3", "@PLUGIN@"]
+}

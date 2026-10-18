@@ -1,6 +1,7 @@
 const assert = require("assert");
 const Rank = require("../quickshell/keyshell/rank.js");
 const Calc = require("../quickshell/keyshell/calc.js");
+const PluginProto = require("../quickshell/keyshell/plugin-proto.js");
 
 function item(title, subtitle, keywords) {
     return { "id": title, "title": title, "subtitle": subtitle || "", "keywords": keywords || "" };
@@ -85,5 +86,15 @@ assert.strictEqual(Calc.format(1234567, 10), "1,234,567", "thousands separators"
 assert.strictEqual(Calc.format(-42, 10), "-42", "negative integer");
 assert.strictEqual(Calc.format(1 / 3, 4), "0.3333", "decimals limited");
 assert.strictEqual(Calc.format(1e21, 10), "1e+21", "very large uses exponent form");
+
+// --- plugin-proto: matchTrigger ---
+assert.deepStrictEqual(PluginProto.matchTrigger(";docker ps", [";docker"]), { trigger: ";docker", remainder: "ps" }, "trigger matches and remainder extracted");
+assert.strictEqual(PluginProto.matchTrigger(";docker   ps", [";docker"]).remainder, "ps", "leading space trimmed from remainder");
+assert.strictEqual(PluginProto.matchTrigger(";docker", [";docker"]).remainder, "", "bare trigger yields empty remainder");
+assert.strictEqual(PluginProto.matchTrigger(";docker ps", [";d", ";docker"]).trigger, ";docker", "longest match wins");
+assert.strictEqual(PluginProto.matchTrigger("x;docker", [";docker"]), null, "trigger must anchor at the start");
+assert.strictEqual(PluginProto.matchTrigger("=8/2", [";docker"]), null, "a built-in sigil is not a plugin trigger");
+assert.strictEqual(PluginProto.matchTrigger("", [";docker"]), null, "empty query matches nothing");
+assert.strictEqual(PluginProto.matchTrigger(";docker ps", []), null, "no triggers matches nothing");
 
 console.log("all assertions passed");

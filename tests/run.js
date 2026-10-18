@@ -1,4 +1,6 @@
 const assert = require("assert");
+const { execFileSync } = require("child_process");
+const path = require("path");
 const Rank = require("../quickshell/keyshell/rank.js");
 const Calc = require("../quickshell/keyshell/calc.js");
 const PluginProto = require("../quickshell/keyshell/plugin-proto.js");
@@ -140,5 +142,38 @@ assert.strictEqual(PluginProto.parseManifests(PluginProto.MANIFEST_SEPARATOR + "
 assert.strictEqual(PluginProto.parseManifests(PluginProto.MANIFEST_SEPARATOR + "\n" + JSON.stringify({ name: "X", trigger: ";xx" }), 2).length, 0, "manifest without a command is skipped");
 assert.strictEqual(PluginProto.parseManifests(PluginProto.MANIFEST_SEPARATOR + "\nnot json", 2).length, 0, "malformed manifest skipped");
 assert.strictEqual(PluginProto.parseManifests("", 2).length, 0, "no manifests yields nothing");
+
+// --- process plugin: speaks the documented protocol ---
+const processPlugin = path.join(__dirname, "..", "plugins", "processes", "process-plugin.py");
+
+function runProcessPlugin(request) {
+    const output = execFileSync(processPlugin, [], {
+        input: JSON.stringify(request) + "\n",
+        encoding: "utf8",
+        timeout: 20000
+    });
+    return output.split("\n").filter(function (line) { return line.trim().length > 0; });
+}
+
+const procPidLines = runProcessPlugin({ query: String(process.pid), limit: 5 });
+assert.strictEqual(procPidLines.length, 2, "an exact pid query returns that one process and the terminator");
+assert.strictEqual(PluginProto.parseLine(procPidLines[1]).done, true, "last line is the done terminator");
+
+const procItem = PluginProto.parseLine(procPidLines[0]).item;
+assert.strictEqual(procItem.id, String(process.pid), "the item id is the pid");
+assert.ok(procItem.title.length > 0, "the item has a title");
+assert.ok(procItem.subtitle.indexOf("PID " + process.pid) !== -1, "the subtitle names the pid");
+assert.strictEqual(procItem.actions[0].type, "exec", "the primary action is exec");
+assert.ok(procItem.actions[0].argv.join(" ").indexOf("kill -TERM") !== -1, "the action terminates rather than force-kills");
+
+const procEmpty = runProcessPlugin({ query: "", limit: 5 });
+assert.strictEqual(procEmpty.length, 1, "an empty query yields only the terminator, so a plain open stays clean");
+assert.strictEqual(PluginProto.parseLine(procEmpty[0]).done, true, "the only line is the terminator");
+
+const procNone = runProcessPlugin({ query: "zzzzdefinitelynotaprocess", limit: 5 });
+assert.strictEqual(procNone.length, 1, "a non-matching query yields only the terminator");
+
+const procBroad = runProcessPlugin({ query: "s", limit: 2 });
+assert.ok(procBroad.length - 1 <= 2, "the limit is respected as an upper bound");
 
 console.log("all assertions passed");

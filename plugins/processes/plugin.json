@@ -1,0 +1,10 @@
+{
+  "name": "Processes",
+  "badge": "PROC",
+  "trigger": ",ps",
+  "glyph": "⚙",
+  "searchable": true,
+  "trackable": false,
+  "description": "Running processes, sorted by CPU. Enter sends SIGTERM.",
+  "command": ["python3", "@PLUGIN@"]
+}

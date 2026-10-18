@@ -125,6 +125,15 @@ assert.strictEqual(defaults.subtitle, "", "subtitle defaults to empty");
 assert.strictEqual(defaults.glyph, "", "glyph defaults to empty");
 assert.strictEqual(defaults.badge, "", "badge defaults to empty");
 
+const destructiveItem = PluginProto.parseLine(JSON.stringify({ id: "h", title: "H", destructive: true, actions: [{ type: "exec", argv: ["true"] }] })).item;
+assert.strictEqual(destructiveItem.destructive, true, "the destructive flag is read");
+
+const safeItem = PluginProto.parseLine(JSON.stringify({ id: "i", title: "I", actions: [{ type: "exec", argv: ["true"] }] })).item;
+assert.strictEqual(safeItem.destructive, false, "destructive defaults to false");
+
+const truthyItem = PluginProto.parseLine(JSON.stringify({ id: "j", title: "J", destructive: "yes", actions: [{ type: "exec", argv: ["true"] }] })).item;
+assert.strictEqual(truthyItem.destructive, false, "a non-boolean destructive value is not trusted");
+
 // --- plugin-proto: manifests ---
 const manifestText = PluginProto.MANIFEST_SEPARATOR + "\n" + JSON.stringify({
     name: "Docker", badge: "DOCKER", trigger: ";docker", command: ["/bin/true"], glyph: "🐳", trackable: true
@@ -165,14 +174,14 @@ assert.ok(procItem.title.length > 0, "the item has a title");
 assert.ok(procItem.subtitle.indexOf("PID " + process.pid) !== -1, "the subtitle names the pid");
 assert.strictEqual(procItem.actions[0].type, "exec", "the primary action is exec");
 assert.ok(procItem.actions[0].argv.join(" ").indexOf("kill -TERM") !== -1, "the action terminates rather than force-kills");
+assert.strictEqual(procItem.destructive, true, "the item is marked destructive so it needs a confirmation");
 
 const procEmptyMerged = runProcessPlugin({ query: "", limit: 5, merged: true });
-assert.strictEqual(procEmptyMerged.length, 1, "an empty merged query yields only the terminator, so a plain open stays clean");
+assert.strictEqual(procEmptyMerged.length, 1, "an empty merged query yields only the terminator");
 assert.strictEqual(PluginProto.parseLine(procEmptyMerged[0]).done, true, "the only line is the terminator");
 
 const procEmptyOwn = runProcessPlugin({ query: "", limit: 5, merged: false });
-assert.ok(procEmptyOwn.length >= 2, "an empty query in the plugin's own mode lists the busiest processes");
-assert.strictEqual(PluginProto.parseLine(procEmptyOwn[procEmptyOwn.length - 1]).done, true, "last line is the terminator");
+assert.strictEqual(procEmptyOwn.length, 1, "an empty query does nothing in the plugin's own mode either, since terminating is destructive");
 
 const procPidMerged = runProcessPlugin({ query: String(process.pid), limit: 5, merged: true });
 assert.strictEqual(procPidMerged.length, 2, "a named query is still answered when it comes from merged search");

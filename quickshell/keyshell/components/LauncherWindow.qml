@@ -568,7 +568,7 @@ PanelWindow {
                         return;
                     }
                 }
-                if (BackendManager.activeMode === "power" && Launcher.results.length > 0) {
+                if (Launcher.results.length > 0) {
                     const curItem = (Launcher.selectedIndex >= 0 && Launcher.selectedIndex < Launcher.results.length) ? Launcher.results[Launcher.selectedIndex] : null;
                     if (curItem && curItem.isDestructive) {
                         if (!event.isAutoRepeat) {

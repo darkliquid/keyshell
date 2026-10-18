@@ -11,11 +11,13 @@ closes.
 
 Matching is deliberately strict so the plugin stays quiet when it answers the
 merged default query: a query matches when it is a case-insensitive prefix of
-the process name, or when it is exactly the pid.
+the process name, or when it is exactly the pid. An empty query returns nothing
+in either mode, because terminating a process is destructive: you have to name a
+process or give a pid before anything is actionable.
 
-For an empty query the ``merged`` request flag decides: merged search gets
-nothing, so a plain launcher open is never flooded with process names, while the
-plugin's own mode lists the busiest processes.
+The request carries a ``merged`` flag. This plugin does not need it, since it
+behaves the same in both modes; it is there for plugins that should list entries
+when opened but stay silent in the default query.
 """
 
 import json
@@ -70,9 +72,9 @@ def read_processes():
     return rows
 
 
-def matches(query, name, pid, merged):
+def matches(query, name, pid):
     if query == "":
-        return not merged
+        return False
     lowered = query.lower()
     if lowered.isdigit():
         return pid == int(lowered)
@@ -87,6 +89,7 @@ def build_item(pid, name, cpu, mem):
         "subtitle": "PID {} // CPU {:.1f}% // MEM {:.1f}%".format(pid, cpu, mem),
         "glyph": "⚙",
         "badge": badge,
+        "destructive": True,
         "actions": [
             {
                 "type": "exec",
@@ -106,8 +109,6 @@ def handle(request):
     if not isinstance(query, str):
         query = ""
 
-    merged = request.get("merged", False) is True
-
     try:
         limit = int(request.get("limit", DEFAULT_LIMIT))
     except (TypeError, ValueError):
@@ -116,7 +117,7 @@ def handle(request):
 
     emitted = 0
     for pid, name, cpu, mem in read_processes():
-        if not matches(query, name, pid, merged):
+        if not matches(query, name, pid):
             continue
         write(build_item(pid, name, cpu, mem))
         emitted += 1

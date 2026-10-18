@@ -98,6 +98,7 @@ keyshell/
         ├── rank.js                    # Plain JS: match tiers, frecency decay, merge/sort
         ├── calc.js                    # Plain JS: calculator expression parser & formatter
         ├── plugin-proto.js            # Plain JS: plugin trigger, line and manifest parsing
+        ├── clipboard-watch.py         # Clipboard capture helper, one process per change
         ├── PluginRegistry.qml         # Singleton: plugin discovery, dynamic backend list
         ├── PluginBackend.qml          # Component (not a singleton): one instance per plugin
         ├── Terminal.qml               # Singleton: resolves and launches the terminal
@@ -130,6 +131,7 @@ keyshell/
             ├── BluetoothCardDelegate.qml  # Card presentation for Bluetooth devices + signal
             ├── PowerCardDelegate.qml      # Card presentation for power profiles & power actions
             ├── NetworkCardDelegate.qml    # Card presentation for Wi-Fi networks + RSSI
+            ├── ClipboardCardDelegate.qml  # Card presentation for clipboard entries + age
             ├── CalcCardDelegate.qml       # Card presentation for calculator results
             ├── RunCardDelegate.qml        # Card presentation for run-command entries
             │
@@ -295,3 +297,8 @@ The shell asks a plugin one question at a time, holding a newer query until the 
 - Never write shell commands assuming `niri` is the only compositor in existence.
 - Always check for environment variables (`$NIRI_SOCKET`, `$SWAYSOCK`, `$HYPRLAND_INSTANCE_SIGNATURE`) before dispatching compositor-specific CLI tools.
 - Provide graceful degradation: if compositor-specific metadata (like workspace names) cannot be retrieved, fallback to generic protocol data (`ToplevelManager`) or clean placeholders without throwing errors.
+
+### 6. The Clipboard Watcher and Its Limits
+- `ClipboardBackend.qml` runs `wl-paste --watch` for the whole shell lifetime. It is the **only** process that must outlive the launcher, so never add it to `Launcher.dismiss()` or to the `setMode()` cleanup that stops plugin processes. The pause key is the only thing that stops it.
+- Capture is one helper process per change, `clipboard-watch.py`, which sits beside `shell.qml` and is located through `Quickshell.shellDir`. It owns validation, dedupe, the entry cap and the TTL, so those rules live in one testable place rather than in QML. The store is `${XDG_STATE_HOME:-~/.local/state}/keyshell/clipboard.json`, written atomically, and the shell passes the caps to the helper as environment variables.
+- The policy is **explicit controls only**: bounded retention, a pause key that stops capture, a clear key, and a per-entry delete. There is deliberately no secret detection and no password-manager skip list, because the usual ways a password gets copied (a terminal running `pass -c`, or a browser's own manager) are exactly what such a list misses. Do not add heuristics here, and do not write documentation that implies a guarantee this feature cannot make.

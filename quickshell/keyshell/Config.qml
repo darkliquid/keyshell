@@ -89,6 +89,13 @@ Singleton {
         return dirs;
     }
 
+    readonly property string clipboardTrigger: ",cb"
+    readonly property int maxClipboardEntries: 50
+    readonly property int clipboardTtlMinutes: 1440
+    readonly property int maxClipboardEntryBytes: 4096
+    readonly property int clipboardRestartDelayMs: 2000
+    readonly property int clipboardMaxRestarts: 3
+
     Component.onCompleted: {
         if (minEndHeightPx > bandHeightPx)
             console.warn("keyshell: minEndHeightPx exceeds bandHeightPx; clamped to " + effectiveMinEndHeightPx);

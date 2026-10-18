@@ -1,5 +1,7 @@
 const assert = require("assert");
 const { execFileSync } = require("child_process");
+const fs = require("fs");
+const os = require("os");
 const path = require("path");
 const Rank = require("../quickshell/keyshell/rank.js");
 const Calc = require("../quickshell/keyshell/calc.js");
@@ -224,5 +226,72 @@ assert.ok(emojiIds.every(function (id) { return /^u[0-9A-F]{4,6}$/.test(id); }),
 
 const emojiFace = runPlugin(emojiPlugin, { query: "face", limit: 1, merged: false });
 assert.ok(PluginProto.parseLine(emojiFace[0]).item.title.toUpperCase().indexOf("FACE") === 0, "a name match ranks a first-word hit above the rest");
+
+// --- clipboard helper: retention and validation live here ---
+const clipboardHelper = path.join(__dirname, "..", "quickshell", "keyshell", "clipboard-watch.py");
+
+function clipboardStorePath(dir) {
+    return path.join(dir, "clipboard.json");
+}
+
+function capture(dir, payload, limits) {
+    const settings = limits || {};
+    execFileSync(clipboardHelper, [], {
+        input: payload,
+        encoding: "utf8",
+        timeout: 20000,
+        env: Object.assign({}, process.env, {
+            KEYSHELL_CLIPBOARD_STORE: clipboardStorePath(dir),
+            KEYSHELL_CLIPBOARD_MAX_ENTRIES: String(settings.maxEntries || 50),
+            KEYSHELL_CLIPBOARD_TTL_MINUTES: String(settings.ttlMinutes === undefined ? 1440 : settings.ttlMinutes),
+            KEYSHELL_CLIPBOARD_MAX_BYTES: String(settings.maxBytes || 4096)
+        })
+    });
+    try {
+        return JSON.parse(fs.readFileSync(clipboardStorePath(dir), "utf8"));
+    } catch (e) {
+        return null;
+    }
+}
+
+const clipDir = fs.mkdtempSync(path.join(os.tmpdir(), "keyshell-clip-"));
+
+const firstStore = capture(clipDir, "first entry");
+assert.strictEqual(firstStore.length, 1, "a first capture is stored");
+assert.strictEqual(firstStore[0].text, "first entry", "the text is stored verbatim");
+assert.strictEqual(typeof firstStore[0].copiedAt, "number", "a timestamp is stored");
+
+const secondStore = capture(clipDir, "second entry");
+assert.strictEqual(secondStore.length, 2, "a second capture is added");
+assert.strictEqual(secondStore[0].text, "second entry", "the newest entry is first");
+
+const dedupedStore = capture(clipDir, "second entry");
+assert.strictEqual(dedupedStore.length, 2, "identical content is not duplicated");
+
+const promotedStore = capture(clipDir, "first entry");
+assert.strictEqual(promotedStore.length, 2, "re-copying an older entry does not duplicate it");
+assert.strictEqual(promotedStore[0].text, "first entry", "re-copying an older entry promotes it to the front");
+
+const capDir = fs.mkdtempSync(path.join(os.tmpdir(), "keyshell-clip-"));
+capture(capDir, "one", { maxEntries: 2 });
+capture(capDir, "two", { maxEntries: 2 });
+const cappedStore = capture(capDir, "three", { maxEntries: 2 });
+assert.strictEqual(cappedStore.length, 2, "the entry cap is enforced");
+assert.strictEqual(cappedStore[0].text, "three", "the newest entry survives the cap");
+
+const emptyStore = capture(capDir, "   ");
+assert.strictEqual(emptyStore.length, 2, "a blank payload is ignored");
+
+const oversizeStore = capture(capDir, "x".repeat(200), { maxBytes: 32 });
+assert.strictEqual(oversizeStore.length, 2, "an oversize payload is rejected");
+
+const binaryStore = capture(capDir, Buffer.from([0xff, 0xfe, 0x00, 0x01]));
+assert.strictEqual(binaryStore.length, 2, "a payload that is not UTF-8 text is rejected");
+
+const ttlDir = fs.mkdtempSync(path.join(os.tmpdir(), "keyshell-clip-"));
+capture(ttlDir, "old entry", { ttlMinutes: 1440 });
+const ttlStore = capture(ttlDir, "new entry", { ttlMinutes: 0 });
+assert.strictEqual(ttlStore.length, 1, "entries older than the TTL are pruned");
+assert.strictEqual(ttlStore[0].text, "new entry", "the surviving entry is the fresh one");
 
 console.log("all assertions passed");

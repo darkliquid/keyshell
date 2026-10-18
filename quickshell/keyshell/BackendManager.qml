@@ -10,7 +10,7 @@ Singleton {
     readonly property string mergedMode: Config.mergedModeId
     property string activeMode: Config.mergedModeId
 
-    readonly property var builtinBackends: [AppBackend, WindowBackend, FileBackend, AudioBackend, MediaBackend, TrayBackend, BluetoothBackend, PowerBackend, NetworkBackend, CalculatorBackend, RunBackend]
+    readonly property var builtinBackends: [AppBackend, WindowBackend, FileBackend, AudioBackend, MediaBackend, TrayBackend, BluetoothBackend, PowerBackend, NetworkBackend, CalculatorBackend, RunBackend, ClipboardBackend]
     readonly property var backends: builtinBackends.concat(PluginRegistry.backends)
 
     readonly property var activeBackend: getBackend(activeMode)

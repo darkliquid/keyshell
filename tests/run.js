@@ -155,8 +155,8 @@ assert.strictEqual(PluginProto.parseManifests("", 2).length, 0, "no manifests yi
 // --- process plugin: speaks the documented protocol ---
 const processPlugin = path.join(__dirname, "..", "plugins", "processes", "process-plugin.py");
 
-function runProcessPlugin(request) {
-    const output = execFileSync(processPlugin, [], {
+function runPlugin(scriptPath, request) {
+    const output = execFileSync(scriptPath, [], {
         input: JSON.stringify(request) + "\n",
         encoding: "utf8",
         timeout: 20000
@@ -164,7 +164,7 @@ function runProcessPlugin(request) {
     return output.split("\n").filter(function (line) { return line.trim().length > 0; });
 }
 
-const procPidLines = runProcessPlugin({ query: String(process.pid), limit: 5, merged: false });
+const procPidLines = runPlugin(processPlugin, { query: String(process.pid), limit: 5, merged: false });
 assert.strictEqual(procPidLines.length, 2, "an exact pid query returns that one process and the terminator");
 assert.strictEqual(PluginProto.parseLine(procPidLines[1]).done, true, "last line is the done terminator");
 
@@ -176,20 +176,53 @@ assert.strictEqual(procItem.actions[0].type, "exec", "the primary action is exec
 assert.ok(procItem.actions[0].argv.join(" ").indexOf("kill -TERM") !== -1, "the action terminates rather than force-kills");
 assert.strictEqual(procItem.destructive, true, "the item is marked destructive so it needs a confirmation");
 
-const procEmptyMerged = runProcessPlugin({ query: "", limit: 5, merged: true });
+const procEmptyMerged = runPlugin(processPlugin, { query: "", limit: 5, merged: true });
 assert.strictEqual(procEmptyMerged.length, 1, "an empty merged query yields only the terminator");
 assert.strictEqual(PluginProto.parseLine(procEmptyMerged[0]).done, true, "the only line is the terminator");
 
-const procEmptyOwn = runProcessPlugin({ query: "", limit: 5, merged: false });
+const procEmptyOwn = runPlugin(processPlugin, { query: "", limit: 5, merged: false });
 assert.strictEqual(procEmptyOwn.length, 1, "an empty query does nothing in the plugin's own mode either, since terminating is destructive");
 
-const procPidMerged = runProcessPlugin({ query: String(process.pid), limit: 5, merged: true });
+const procPidMerged = runPlugin(processPlugin, { query: String(process.pid), limit: 5, merged: true });
 assert.strictEqual(procPidMerged.length, 2, "a named query is still answered when it comes from merged search");
 
-const procNone = runProcessPlugin({ query: "zzzzdefinitelynotaprocess", limit: 5, merged: false });
+const procNone = runPlugin(processPlugin, { query: "zzzzdefinitelynotaprocess", limit: 5, merged: false });
 assert.strictEqual(procNone.length, 1, "a non-matching query yields only the terminator");
 
-const procBroad = runProcessPlugin({ query: "s", limit: 2, merged: false });
+const procBroad = runPlugin(processPlugin, { query: "s", limit: 2, merged: false });
 assert.ok(procBroad.length - 1 <= 2, "the limit is respected as an upper bound");
+
+// --- emoji plugin: speaks the documented protocol ---
+const emojiPlugin = path.join(__dirname, "..", "plugins", "emoji", "emoji-plugin.py");
+
+const emojiRocket = runPlugin(emojiPlugin, { query: "rocket", limit: 5, merged: false });
+assert.strictEqual(emojiRocket.length, 2, "one emoji plus the terminator");
+
+const rocketItem = PluginProto.parseLine(emojiRocket[0]).item;
+assert.strictEqual(rocketItem.glyph, "🚀", "the glyph is the emoji itself");
+assert.strictEqual(rocketItem.subtitle, "U+1F680", "the subtitle carries the codepoint");
+assert.strictEqual(rocketItem.actions[0].type, "copy", "the action copies rather than runs");
+assert.strictEqual(rocketItem.actions[0].text, "🚀", "the copy payload is the emoji");
+assert.strictEqual(rocketItem.destructive, false, "copying is not destructive");
+
+const emojiEmptyMerged = runPlugin(emojiPlugin, { query: "", limit: 5, merged: true });
+assert.strictEqual(emojiEmptyMerged.length, 1, "an empty merged query stays silent so a plain open stays clean");
+assert.strictEqual(PluginProto.parseLine(emojiEmptyMerged[0]).done, true, "the only line is the terminator");
+
+const emojiEmptyOwn = runPlugin(emojiPlugin, { query: "", limit: 5, merged: false });
+assert.strictEqual(emojiEmptyOwn.length, 6, "an empty query in its own mode offers a starter set within the limit");
+
+const emojiNone = runPlugin(emojiPlugin, { query: "zzzznotanemoji", limit: 5, merged: false });
+assert.strictEqual(emojiNone.length, 1, "a nonsense query finds nothing");
+
+const emojiLimited = runPlugin(emojiPlugin, { query: "face", limit: 3, merged: false });
+assert.strictEqual(emojiLimited.length, 4, "the limit caps the results");
+
+const emojiIds = emojiLimited.slice(0, -1).map(function (line) { return PluginProto.parseLine(line).item.id; });
+assert.strictEqual(new Set(emojiIds).size, emojiIds.length, "no duplicate ids");
+assert.ok(emojiIds.every(function (id) { return /^u[0-9A-F]{4,6}$/.test(id); }), "ids are codepoints, which stay stable across runs");
+
+const emojiFace = runPlugin(emojiPlugin, { query: "face", limit: 1, merged: false });
+assert.ok(PluginProto.parseLine(emojiFace[0]).item.title.toUpperCase().indexOf("FACE") === 0, "a name match ranks a first-word hit above the rest");
 
 console.log("all assertions passed");

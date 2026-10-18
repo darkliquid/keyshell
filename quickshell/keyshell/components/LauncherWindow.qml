@@ -530,6 +530,26 @@ PanelWindow {
                 }
             }
 
+            if (BackendManager.activeMode === "clipboard") {
+                if (event.key === Qt.Key_P) {
+                    ClipboardBackend.togglePause();
+                    event.accepted = true;
+                    return;
+                }
+                if (event.key === Qt.Key_C) {
+                    ClipboardBackend.clearHistory();
+                    event.accepted = true;
+                    return;
+                }
+                if (event.key === Qt.Key_X) {
+                    const curClip = (Launcher.selectedIndex >= 0 && Launcher.selectedIndex < Launcher.results.length) ? Launcher.results[Launcher.selectedIndex] : null;
+                    if (curClip)
+                        ClipboardBackend.deleteEntry(curClip.id);
+                    event.accepted = true;
+                    return;
+                }
+            }
+
             const blocked = Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier;
             if ((event.modifiers & blocked) === 0
                     && event.text.length === 1

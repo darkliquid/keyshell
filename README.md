@@ -193,6 +193,31 @@ query waits and is sent when the response completes, and only the newest one is
 kept. A plugin can therefore treat the stream as strict request, response,
 request, response, and does not need to correlate anything.
 
+## Clipboard history
+
+`wl-paste --watch` runs for as long as keyshell does, so every text copy is
+recorded, whether or not the launcher is on screen. Type `,cb` (or reach it with
+`Tab`) to see the list, newest first, with how long ago each entry was copied.
+
+| Key | Action |
+| --- | --- |
+| Enter | copy the entry back to the clipboard |
+| `X` | delete the entry in front of you |
+| `C` | clear the whole history |
+| `P` | pause or resume capture |
+
+Entries live in `${XDG_STATE_HOME:-~/.local/state}/keyshell/clipboard.json` and
+expire after `Config.clipboardTtlMinutes` (24 hours), keeping at most
+`Config.maxClipboardEntries` (50). Consecutive duplicates are collapsed, and
+copying an older entry back moves it to the top rather than duplicating it.
+
+**What this does not do.** Nothing here can tell a password from a shopping
+list, and there is no attempt to. There is deliberately no password-manager
+detection, because the usual way a password gets copied, `pass -c` in a terminal
+or a browser's own manager, is exactly what such a check would miss. The
+protection is bounded retention plus the `P` and `C` keys, and it is worth using
+`P` before working with secrets.
+
 ## Tuning
 
 All tunables are constants in `quickshell/keyshell/Config.qml`: the rotation

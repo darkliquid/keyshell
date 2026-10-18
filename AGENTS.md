@@ -287,6 +287,10 @@ A plugin never runs code inside the shell process. The shell only ever executes 
 
 `plugins/processes` in this repository is the reference implementation: a Python plugin that lists processes and terminates one. Copy its shape, and note the choices it had to make deliberately. Terminating is destructive, so its kill item sets `destructive` and the plugin returns nothing for an empty query in either mode, which leaves no way to reach the launcher with an arbitrary process selected; it sends `SIGTERM` and never `SIGKILL`. A searchable plugin is asked both its own mode's query and the merged default query, and the `merged` flag says which, which matters for a plugin that should list entries when opened but stay silent in the default query; this one behaves the same in both, so it ignores the flag. And its item ids are pids, which are not stable across runs, which is why `trackable` is `false` there: frecency needs an id that survives a restart.
 
+`plugins/emoji` is the second reference implementation, and the one to copy when a plugin is harmless. It copies rather than runs, so it is the only example of the `copy` action. It is both `searchable` and `trackable`, and it is the case the `merged` flag exists for: an empty merged query returns nothing while opening its own mode returns a starter set. Its ids are codepoints and stay stable across runs, so `trackable` is meaningful there and the shell orders the picker by your usage.
+
+The shell asks a plugin one question at a time, holding a newer query until the outstanding response finishes and keeping only the newest. A plugin never has to correlate responses with requests, and `PluginBackend` relies on that: it has a single request in flight and no request ids.
+
 ### 5. Preserving Wayland Compositor Flexibility
 - Never write shell commands assuming `niri` is the only compositor in existence.
 - Always check for environment variables (`$NIRI_SOCKET`, `$SWAYSOCK`, `$HYPRLAND_INSTANCE_SIGNATURE`) before dispatching compositor-specific CLI tools.

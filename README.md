@@ -164,6 +164,35 @@ The card draws a hold meter and you must hold Enter for `Config.powerHoldDuratio
 
 Run `node tests/run.js` to check the plugin still speaks the protocol.
 
+### Bundled example: emoji
+
+`plugins/emoji` is the second reference plugin, and the one to copy if your
+plugin is harmless:
+
+```bash
+plugins/emoji/install.sh
+```
+
+Restart keyshell and type `,em`. The index is built from the standard library's
+Unicode names, so it ships no data file: search by any word of the name, so
+`rocket` gives 🚀 and `grin` gives the grinning faces. ZWJ sequences such as
+families, professions and flags are not included. Enter copies the emoji, which
+is the only place the `copy` action is demonstrated.
+
+It is `"searchable": true` and `"trackable": true`, which exercises both flags
+for real. `merged` keeps it out of the way: an empty merged query returns
+nothing, while opening `,em` gives you a starter set that the shell then orders
+by usage, so your favourites come first. `trackable` works properly here because
+ids are codepoints and stay stable across runs, unlike a pid.
+
+### One question at a time
+
+The shell never asks a plugin a second question before the first has been
+answered: if a query arrives while a response is still in flight, the newer
+query waits and is sent when the response completes, and only the newest one is
+kept. A plugin can therefore treat the stream as strict request, response,
+request, response, and does not need to correlate anything.
+
 ## Tuning
 
 All tunables are constants in `quickshell/keyshell/Config.qml`: the rotation

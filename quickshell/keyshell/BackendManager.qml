@@ -2,6 +2,7 @@ pragma Singleton
 import QtQuick
 import QtQml.Models
 import Quickshell
+import "plugin-proto.js" as PluginProto
 
 Singleton {
     id: backendManager
@@ -9,7 +10,8 @@ Singleton {
     readonly property string mergedMode: Config.mergedModeId
     property string activeMode: Config.mergedModeId
 
-    readonly property var backends: [AppBackend, WindowBackend, FileBackend, AudioBackend, MediaBackend, TrayBackend, BluetoothBackend, PowerBackend, NetworkBackend, CalculatorBackend, RunBackend]
+    readonly property var builtinBackends: [AppBackend, WindowBackend, FileBackend, AudioBackend, MediaBackend, TrayBackend, BluetoothBackend, PowerBackend, NetworkBackend, CalculatorBackend, RunBackend]
+    readonly property var backends: builtinBackends.concat(PluginRegistry.backends)
 
     readonly property var activeBackend: getBackend(activeMode)
     readonly property string activeBadge: isMerged() ? "SEARCH" : (activeBackend ? activeBackend.badge : "SEARCH")
@@ -36,6 +38,9 @@ Singleton {
             BluetoothBackend.stopDiscovery();
         if (activeMode === "network" && modeId !== "network")
             NetworkBackend.stopScan();
+        const previous = getBackend(activeMode);
+        if (previous && previous.stop)
+            previous.stop();
         if (modeId === mergedMode) {
             activeMode = modeId;
             return;
@@ -95,19 +100,34 @@ Singleton {
         setMode(nextCycleMode(delta));
     }
 
-    function checkPrefixTrigger(text) {
-        if (!text || text.length === 0)
-            return false;
-        const first = text.charAt(0);
+    function triggerList() {
+        const triggers = [];
         for (let i = 0; i < backends.length; i++) {
             const b = backends[i];
-            if (b.prefix.length > 0 && b.prefix === first) {
-                setMode(b.id);
-                Launcher.setQuery(text.slice(1).replace(/^\s+/, ""));
-                return true;
-            }
+            if (b.prefix && b.prefix.length > 0)
+                triggers.push(b.prefix);
         }
-        return false;
+        return triggers;
+    }
+
+    function backendForPrefix(prefix) {
+        for (let i = 0; i < backends.length; i++) {
+            if (backends[i].prefix === prefix)
+                return backends[i];
+        }
+        return null;
+    }
+
+    function tryTrigger(prospectiveQuery) {
+        const match = PluginProto.matchTrigger(prospectiveQuery, triggerList());
+        if (match === null)
+            return false;
+        const backend = backendForPrefix(match.trigger);
+        if (!backend || backend.id === activeMode)
+            return false;
+        setMode(backend.id);
+        Launcher.setQuery(match.remainder);
+        return true;
     }
 
     function search(query, limit) {

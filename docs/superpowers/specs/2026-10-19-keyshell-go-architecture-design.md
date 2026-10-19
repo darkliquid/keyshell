@@ -73,11 +73,17 @@ against the layer-shell fork of gogpu, and each constrains the design:
    coalescing (one call per animation frame).
 6. **Matching is ours**: port the tier model and frecency (from `rank.js`, with
    its fixtures), behind a `Matcher` seam so a stronger scorer (fzf's algorithm)
-   can replace the fuzzy tier later without touching ranking.
+   can replace the fuzzy tier later without touching ranking. Ranking applies to
+   root levels; scoped levels keep the plugin's order (see Navigation).
 7. **Input is gogpu's, behind an `Input` seam** (key, text, preedit, focus,
    pointer). IME is deferred to a future backend; gogpu issue #331 is the known
    blocker.
-8. **Interfaces first, then the process spine** (see Delivery order): the
+8. **Items may contain items.** The launcher navigates a tree of scoped queries
+   rather than a flat result list, so menus, device lists and nested options are
+   data (a sub-level) instead of one widget per backend; ranking applies at the
+   root, and scoped levels keep the plugin's order. Rejected: per-backend
+   console widgets (the QML status quo) and a fixed two-level model.
+9. **Interfaces first, then the process spine** (see Delivery order): the
    protocol commitment comes after the interface has been exercised by real
    backends, so the seam is designed against use rather than speculation.
 
@@ -85,7 +91,7 @@ against the layer-shell fork of gogpu, and each constrains the design:
 
 ```
 cmd/keyshell                  the binary; also runs in plugin mode: `keyshell plugin <id>`
-internal/launcher             state machine: query, mode, selection, results, dispatch, console state
+internal/launcher             state machine: navigation stack, query, mode, selection, dispatch
 internal/ui                   the visual layer: band, reel, cards, control widgets (gg drawing)
 internal/render               per-output layer surfaces, texture upload, present, hide/show
 internal/input                Input seam: key, text, preedit, focus, pointer (+ gogpu adapter)
@@ -152,7 +158,7 @@ plugin→ {"ready":{}}                      // services are up; the mode stops s
 Queries (one in flight per instance, newest wins):
 
 ```
-host  → {"query":{"id":17,"text":"vol","limit":60,"merged":false}}
+host  → {"query":{"id":17,"text":"vol","limit":60,"merged":false}}   // scope optional, see Navigation
 plugin→ {"item":{...}}
 plugin→ {"item":{...}}
 plugin→ {"done":{"id":17}}                 // or {"error":{"id":17,"message":"..."}}
@@ -218,8 +224,10 @@ type Item struct {
     Glyph       string     // emoji or icon name
     Badge       string
     Destructive bool
-    Actions     []Action   // ordered; first is primary
-    Controls    []Control
+    Actions     []Action   // ordered; first is primary (may be empty)
+    Controls    []Control  // editable values, shown on the card and in the focus view
+    HasChildren bool       // Enter descends into a scoped level
+    Expandable  bool       // Enter opens the focus view for this item's controls
     Preview     any        // reserved; deferred
 }
 
@@ -235,11 +243,62 @@ type Control struct {
 
 - `Kind` is semantic, never stylistic: `Range` renders as the segmented block
   meter, `Toggle` as a chunky switch, `Choice` as a row of sigil chips, `Text`
-  as an inline field. The eight hand-written console views in the QML version
-  collapse into these four widgets, so a new backend adds no UI code.
+  as an inline field. An item may carry several controls, and may also contain
+  items (see Navigation and sub-queries), so today's eight hand-written console
+  views collapse into four widgets plus two generic renderings — a child reel
+  and a focus view. A new backend adds no UI code.
 - Control changes are never destructive-gated; only actions are.
 - `Info.StableIDs` decides whether an instance's items feed frecency (the
   documented lesson: pids are not stable, codepoints are).
+
+## Navigation and sub-queries
+
+An item may contain items: a tray applet contains its menu, a Bluetooth adapter
+contains its devices, a power card contains its profiles, an equaliser contains
+its bands. The launcher therefore navigates a **tree**: any item, **at any
+depth**, may contain items, and every level is produced by the same query
+mechanism — there is no second API for menus, and no depth at which behaviour
+changes.
+
+Model:
+
+- The launcher keeps a **navigation stack** per summon, one entry per level:
+  `{scope, items, selection, text, status}`. The root level has an empty scope.
+- `Item.HasChildren` says a level can be entered from this item; `Item.Expandable`
+  says the item has controls worth showing large (today's console views).
+
+Protocol: a scoped query is the ordinary query with an explicit scope, so
+"list the children" and "filter the children" are one code path in the plugin:
+
+```
+host  → {"query":{"id":19,"text":"","limit":60,"merged":false,
+                  "scope":{"item":"applet:nm","path":["applet:nm"]}}}
+plugin→ {"item":{...}} … {"done":{"id":19}}
+```
+
+- `path` is the scope chain from the root, so a plugin resolves a deep node from
+  the request alone rather than relying on host-tracked handles.
+- A scope the plugin no longer recognises (a menu that has since closed) answers
+  `{"error":{"id":19,"message":"stale scope"}}`; the host pops that level and
+  shows the message on the parent card.
+- Ordering differs by level, deliberately: **root levels are ranked by the host**
+  (tiers + frecency), **scoped levels preserve the plugin's order** and are only
+  filtered when the user types. An applet's menu order is meaning, not a ranking.
+- Depth is capped by `maxNavDepth` (default 8); a scoped level that returns
+  nothing shows its status rather than becoming a dead end.
+
+Keys — this extends the existing map rather than adding bindings:
+
+| Key | Effect |
+| --- | --- |
+| `Enter` | The item's primary action if it has one; otherwise the focus view if `Expandable`; otherwise descend if `HasChildren` |
+| `Right` / `Left` | Descend / pop explicitly, for an item that has both an action and children |
+| `Backspace` | Pop a level when the query is empty (as it already exits submenus today) |
+| `Escape` | Pop a level, or dismiss at the root |
+| typing | Filters the current level; at the root it is the merged search |
+
+The destructive gate still applies to the primary action wherever it is invoked,
+at any depth.
 
 ## Render and input pipeline
 
@@ -256,8 +315,9 @@ type Control struct {
   the existing sub-100ms durations become config values.
 - Input: `Input` seam events drive the launcher exactly as today — printable
   characters into the query or prefix switch, Tab cycling, arrows across the
-  reel, Enter gated when destructive, Escape dismiss, Space quick-action.
-  Text arrives through the text event, not key codes.
+  reel, Enter gated when destructive and routing through the navigation rules
+  above, Escape dismiss, Space quick-action. Text arrives through the text
+  event, not key codes.
 - External control: `$XDG_RUNTIME_DIR/keyshell.sock` with line-delimited verbs.
   The CLI is the same binary, so compositor keybinds are `keyshell toggle`.
   Step 1 ships `toggle` and `openMode`; the remaining verbs from today's 27
@@ -271,9 +331,10 @@ type Control struct {
   hint and stable-id flag come from the `hello` handshake.
 - **Instances are declared in config**:
   `$XDG_CONFIG_HOME/keyshell/config.toml`, with `[[instance]]` tables (`id`,
-  `command`, `args`, `env`, `mode`, `trigger` override, `enabled`) plus host
-  tunables. Existing `plugin.json` manifests import as single-instance entries.
-  One new dependency (TOML, for comments); stdlib JSON is the alternative.
+  `command`, `args`, `env`, `mode`, `trigger` override, `enabled`, `noreap`)
+  plus host tunables. Existing `plugin.json` manifests import as single-instance
+  entries. **TOML is the format** (one small dependency, and comments matter in a
+  file users edit by hand).
 - **Trust**: a plugin is a program the user installed and runs with their
   privileges. Host-executed capabilities keep the item path auditable. No
   sandbox is offered and the documentation must not imply one.
@@ -287,6 +348,10 @@ type Control struct {
   ping.
 - **Control-loop tests**: settle coalescing, last-write-wins reconciliation,
   destructive gating on both action paths.
+- **Navigation tests**: descend/pop across several levels, a stale scope popping
+  the level with a status, the depth cap, ordering rules (ranked at the root,
+  plugin order when scoped), and a filter applied inside a level without
+  reordering it.
 - **Golden-image tests** for the UI vocabulary: render each widget state to PNG
   and compare, so the visual identity is regression-tested.
 - **Composited-surface verifier**: the S4 screenshot checker (`spikes/transparency`)
@@ -317,7 +382,10 @@ once step 1 has exercised the interfaces against real behaviour.
   (Small spike before this is locked in.)
 - Multi-output surface lifecycle and per-output scale.
 - Whether `hot` backends stay in-process permanently rather than spawning.
-- TOML versus JSON for config.
+- The exact descend/pop key map: `Enter` routing as specified, with `Right`/`Left`
+  as explicit descend/pop. Worth confirming against muscle memory once the
+  overlay renders, since the existing map uses `Left`/`Right` to move along the
+  reel (per-level, so it still works, but it deserves a second look).
 - Whether gogpu gains a premultiplied-aware upload or `ggcanvas` already handles
   it (then the unpremultiply step disappears).
 
@@ -347,7 +415,7 @@ once step 1 has exercised the interfaces against real behaviour.
 | `PluginRegistry.qml`, `PluginBackend.qml`, `plugin-proto.js` | `internal/plugin` + `internal/plugin/sdk` |
 | `BackendManager.qml`, `SearchAggregator.qml`, `Launcher.qml` | `internal/launcher` |
 | `Reveal.qml`, `Theme.qml`, `Config.qml` | `internal/ui` + `internal/config` |
-| `components/*` (band, card, reel, field, delegates, consoles) | `internal/ui` (four schema-driven widgets replace eight consoles) |
+| `components/*` (band, card, reel, field, delegates, consoles) | `internal/ui` (four schema-driven widgets, plus the child reel and focus view, replace eight consoles) |
 | `LauncherWindow.qml` | `internal/render` + `internal/input` |
 | `shell.qml` `IpcHandler` | `internal/ipc` |
 | twelve `*Backend.qml` files | first-party plugins |

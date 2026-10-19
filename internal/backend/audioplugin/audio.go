@@ -79,20 +79,64 @@ func (b *Backend) Query(_ context.Context, q sdk.Query) (sdk.Stream, error) {
 	return sdk.NewStream(items...), nil
 }
 
-// Control applies a value change to a sink.
+// Control applies a value change to a sink. An empty item resolves to the
+// default sink, which is how the global IPC verbs target audio.
 func (b *Backend) Control(_ context.Context, c sdk.Change) error {
+	target := c.Item
+	if target == "" {
+		target = b.defaultSink()
+		if target == "" {
+			return fmt.Errorf("audio: no sink to control")
+		}
+	}
 	switch c.Control {
 	case "volume":
 		pct := strconv.FormatFloat(c.Value*100, 'f', 0, 64)
-		return b.pactl("set-sink-volume", c.Item, pct+"%").Run()
+		return b.pactl("set-sink-volume", target, pct+"%").Run()
+	case "volume-delta":
+		cur := b.sinkVolume(target)
+		next := cur + c.Value
+		if next < 0 {
+			next = 0
+		}
+		if next > 1 {
+			next = 1
+		}
+		pct := strconv.FormatFloat(next*100, 'f', 0, 64)
+		return b.pactl("set-sink-volume", target, pct+"%").Run()
 	case "mute":
 		state := "0"
 		if c.Bool {
 			state = "1"
 		}
-		return b.pactl("set-sink-mute", c.Item, state).Run()
+		return b.pactl("set-sink-mute", target, state).Run()
 	}
 	return fmt.Errorf("audio: no control %q", c.Control)
+}
+
+func (b *Backend) sinkVolume(name string) float64 {
+	out, err := b.pactl("-f", "json", "list", "sinks").Output()
+	if err != nil {
+		return 0
+	}
+	var sinks []sink
+	if json.Unmarshal(out, &sinks) != nil {
+		return 0
+	}
+	for _, s := range sinks {
+		if s.Name == name {
+			return s.VolumePercent()
+		}
+	}
+	return 0
+}
+
+func (b *Backend) defaultSink() string {
+	out, err := b.pactl("get-default-sink").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
 
 // sink is the subset of pactl's JSON sink object we use.

@@ -75,16 +75,23 @@ func (b *Backend) Query(_ context.Context, q sdk.Query) (sdk.Stream, error) {
 
 // Control applies a playback or position change.
 func (b *Backend) Control(ctx context.Context, c sdk.Change) error {
+	// An empty item targets the default player: omit -p.
+	args := []string{}
+	if c.Item != "" {
+		args = append(args, "-p", c.Item)
+	}
 	switch c.Control {
 	case "playback":
 		arg := c.Text
 		if arg == "" {
 			arg = "play-pause"
 		}
-		return b.playerctl("-p", c.Item, arg).Run()
+		args = append(args, arg)
+		return b.playerctl(args...).Run()
 	case "position":
 		sec := strconv.FormatFloat(c.Value, 'f', 0, 64)
-		return b.playerctl("-p", c.Item, "position", sec).Run()
+		args = append(args, "position", sec)
+		return b.playerctl(args...).Run()
 	}
 	return fmt.Errorf("media: no control %q", c.Control)
 }

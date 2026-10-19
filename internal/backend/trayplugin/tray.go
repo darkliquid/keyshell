@@ -38,8 +38,12 @@ func (b *Backend) Info() sdk.Info {
 	}
 }
 
-// Query lists applets as items.
+// Query lists applets as items. A scoped query (a child level) returns that
+// applet's menu items.
 func (b *Backend) Query(_ context.Context, q sdk.Query) (sdk.Stream, error) {
+	if len(q.Scope) > 0 {
+		return sdk.NewStream(b.menuItems(q.Scope[0], 2)...), nil
+	}
 	services := b.watcher.Items()
 	items := make([]sdk.Item, 0, len(services))
 	for _, svc := range services {
@@ -52,7 +56,7 @@ func (b *Backend) Query(_ context.Context, q sdk.Query) (sdk.Stream, error) {
 		}
 		items = append(items, sdk.Item{
 			ID: svc, Title: title, Subtitle: "Tray applet",
-			Glyph: "tray",
+			Glyph: "tray", HasChildren: b.menuBus(svc) != "",
 		})
 	}
 	return sdk.NewStream(items...), nil

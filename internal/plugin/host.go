@@ -152,7 +152,7 @@ func (h *Host) Query(ctx context.Context, q backend.Query) (backend.Stream, erro
 	id := h.nextID
 	h.nextID++
 	if err := h.writeLocked(proto.Message{Query: &proto.Query{
-		ID: id, Text: q.Text, Limit: q.Limit, Merged: q.Merged,
+		ID: id, Text: q.Text, Limit: q.Limit, Merged: q.Merged, Scope: q.Scope,
 	}}); err != nil {
 		return nil, err
 	}

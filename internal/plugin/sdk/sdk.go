@@ -62,11 +62,13 @@ type ActionShape struct {
 	Value string
 }
 
-// QueryShape asks for items.
+// QueryShape asks for items. Scope carries the navigation path for a scoped
+// sub-level (e.g. a tray applet's menu).
 type QueryShape struct {
 	Text   string
 	Limit  int
 	Merged bool
+	Scope  []string
 }
 
 // ChangeShape is a settled value change.
@@ -214,7 +216,7 @@ func writeMsg(w *bufio.Writer, m proto.Message) error {
 }
 
 func serveQuery(w *bufio.Writer, backend Backend, q proto.Query) error {
-	stream, err := backend.Query(context.Background(), Query{Text: q.Text, Limit: q.Limit, Merged: q.Merged})
+	stream, err := backend.Query(context.Background(), Query{Text: q.Text, Limit: q.Limit, Merged: q.Merged, Scope: q.Scope})
 	if err != nil {
 		return writeErr(w, q.ID, err.Error())
 	}

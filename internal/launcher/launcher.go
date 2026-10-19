@@ -177,7 +177,7 @@ func (l *Launcher) refresh() {
 			l.results = nil
 			return
 		}
-		stream, err := b.Query(ctx, backend.Query{Text: l.query, Limit: l.opts.RankOpts.Limit, Merged: false})
+		stream, err := b.Query(ctx, backend.Query{Text: l.query, Limit: l.opts.RankOpts.Limit, Merged: false, Scope: level.Scope})
 		if err != nil {
 			l.results = nil
 			return

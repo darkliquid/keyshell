@@ -61,11 +61,13 @@ type Item struct {
 	Expandable  bool
 }
 
-// Query asks a backend for items.
+// Query asks a backend for items. Scope carries the navigation path for a
+// scoped sub-level (an item's children).
 type Query struct {
 	Text   string
 	Limit  int
 	Merged bool
+	Scope  []string
 }
 
 // Change is a value change for one control, already settled by the host.

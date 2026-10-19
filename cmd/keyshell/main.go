@@ -61,9 +61,14 @@ func main() {
 	defer th.Close()
 
 	provider := buildProvider(cfg)
+	searchable := []string{"apps", "files", "windows"}
+	for _, inst := range cfg.Instances {
+		searchable = append(searchable, inst.ID)
+	}
 	l := launcher.New(provider, launcher.Options{
-		SettleMs: durationMs(cfg.Overlay.SettleMs),
-		RankOpts: rank.Options{Limit: cfg.Overlay.MaxResults},
+		SettleMs:   durationMs(cfg.Overlay.SettleMs),
+		RankOpts:   rank.Options{Limit: cfg.Overlay.MaxResults},
+		Searchable: searchable,
 	})
 	_ = capability.New(cfg)
 

@@ -79,6 +79,23 @@ func newTestLauncher() (*Launcher, *fakeProvider) {
 	return l, prov
 }
 
+// TestMergedSearchUsesConfiguredSearchable proves the merged fan-out honours
+// Options.Searchable rather than a hardcoded list.
+func TestMergedSearchUsesConfiguredSearchable(t *testing.T) {
+	apps := &listBackend{
+		id:    "apps",
+		items: []backend.Item{{ID: "a", Title: "Alpha"}},
+	}
+	prov := &fakeProvider{backends: map[string]backend.Backend{"apps": apps}}
+	l := New(prov, Options{SettleMs: 20 * time.Millisecond, RankOpts: rank.Options{Limit: 10}, Searchable: []string{"apps"}})
+	l.Open()
+	l.SetMode("all")
+	l.SetQuery("")
+	if len(l.Results()) != 1 {
+		t.Errorf("results = %d, want 1 (only apps in Searchable)", len(l.Results()))
+	}
+}
+
 func TestMergedSearchRanksAcrossBackends(t *testing.T) {
 	l, _ := newTestLauncher()
 	l.Open()

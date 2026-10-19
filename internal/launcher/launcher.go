@@ -51,6 +51,9 @@ type Launcher struct {
 type Options struct {
 	SettleMs time.Duration
 	RankOpts rank.Options
+	// Searchable is the set of backend ids that participate in the merged
+	// search. calc/run/clipboard are intentionally absent.
+	Searchable []string
 }
 
 // New builds a launcher over a backend provider.
@@ -188,9 +191,9 @@ func (l *Launcher) refresh() {
 }
 
 func (l *Launcher) searchableIDs() []string {
-	// The provider isn't enumerable; walk a known set. This is satisfied by the
-	// host wiring passing the id list. For step 1 we hard-code the in-process
-	// backends.
+	if len(l.opts.Searchable) > 0 {
+		return l.opts.Searchable
+	}
 	return []string{"apps", "files", "windows"}
 }
 

@@ -61,6 +61,7 @@ func main() {
 	defer th.Close()
 
 	provider := buildProvider(cfg)
+	provider.(*hybridProvider).HotStart(cfg)
 	searchable := []string{"apps", "files", "windows"}
 	for _, inst := range cfg.Instances {
 		searchable = append(searchable, inst.ID)
@@ -150,6 +151,23 @@ func (p *hybridProvider) Get(id string) (backend.Backend, error) {
 		return h, nil
 	}
 	return p.inproc.Get(id)
+}
+
+// HotStart best-effort starts configured hot plugin instances before the first
+// summon. It never blocks and ignores failures; a failed instance is simply
+// re-attempted on first use.
+func (p *hybridProvider) HotStart(cfg config.Config) {
+	for _, inst := range cfg.Instances {
+		if inst.Mode != "hot" {
+			continue
+		}
+		if _, ok := p.plugins[inst.ID]; !ok {
+			continue
+		}
+		go func(id string) {
+			_, _ = p.Get(id)
+		}(inst.ID)
+	}
 }
 
 // runPlugin starts a plugin in SDK mode.

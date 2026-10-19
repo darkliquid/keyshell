@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/darkliquid/keyshell/internal/backend"
@@ -37,6 +38,7 @@ type Host struct {
 	hello       proto.Hello
 	nextID      int
 	active      bool
+	lastSeen    atomic.Int64 // unix ms of the last successfully read line
 	restarts    int
 	lastRestart time.Time
 	closeCh     chan struct{}
@@ -120,6 +122,7 @@ func (h *Host) startLocked() error {
 	}
 
 	h.active = true
+	h.lastSeen.Store(time.Now().UnixMilli())
 	h.closeCh = make(chan struct{})
 	h.doneCh = make(chan struct{})
 	go h.supervise()
@@ -159,6 +162,7 @@ func (h *Host) Query(ctx context.Context, q backend.Query) (backend.Stream, erro
 
 	var items []backend.Item
 	for h.sc.Scan() {
+		h.lastSeen.Store(time.Now().UnixMilli())
 		msg, err := proto.Decode(h.sc.Bytes())
 		if err != nil {
 			continue
@@ -238,11 +242,11 @@ func (h *Host) writeLocked(m proto.Message) error {
 	return nil
 }
 
-// supervise runs the ping liveness loop and restarts a crashed instance with
-// backoff, bounded.
+// supervise runs liveness: if the plugin produces no traffic (no lines read)
+// for pingMisses*pingInterval, it is considered dead. A dead plugin is killed
+// and marked inactive so queries fail cleanly; the next Get restarts it.
 func (h *Host) supervise() {
 	defer close(h.doneCh)
-	missed := 0
 	ticker := time.NewTicker(pingInterval)
 	defer ticker.Stop()
 	for {
@@ -255,13 +259,14 @@ func (h *Host) supervise() {
 				h.mu.Unlock()
 				return
 			}
-			// Send a ping; liveness is best-effort: restart on N missed pongs
-			// is handled at the Manager level in this step.
-			_ = h.writeLocked(proto.Message{Ping: &proto.Ping{}})
-			missed++
+			idle := time.Since(time.UnixMilli(h.lastSeen.Load()))
 			h.mu.Unlock()
-			if missed >= pingMisses {
-				log.Printf("plugin %s: ping timeout", h.cfg.Instance)
+			if idle > pingInterval*pingMisses {
+				log.Printf("plugin %s: no traffic for %s, killing", h.cfg.Instance, idle.Round(time.Second))
+				h.mu.Lock()
+				_ = h.kill()
+				h.active = false
+				h.mu.Unlock()
 				return
 			}
 		}

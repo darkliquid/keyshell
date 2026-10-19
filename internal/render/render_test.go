@@ -19,7 +19,7 @@ func TestDrawFrameProducesImage(t *testing.T) {
 	}
 	defer th.Close()
 
-	view := &fakeView{}
+	view := &fakeView{open: true}
 	dc := gg.NewContext(1600, 900)
 	DrawFrame(dc, view, th)
 	img := dc.Image().(*image.RGBA)
@@ -34,11 +34,14 @@ func TestDrawFrameProducesImage(t *testing.T) {
 	}
 }
 
-type fakeView struct{}
+type fakeView struct {
+	open bool
+}
 
 func (v *fakeView) Results() []rank.Match { return nil }
 func (v *fakeView) Selected() int         { return 0 }
 func (v *fakeView) Query() string         { return "" }
+func (v *fakeView) IsOpen() bool          { return v.open }
 
 func closeTo(img *image.RGBA, x, y int, r, g, b uint8) bool {
 	px := img.RGBAAt(x, y)
@@ -79,5 +82,22 @@ func TestUnpremultiply(t *testing.T) {
 	trans := out.RGBAAt(0, 2)
 	if trans.A != 0 {
 		t.Errorf("transparent = %+v, want alpha 0", trans)
+	}
+}
+
+// TestDrawFrameBlanksWhenClosed proves a closed launcher renders fully
+// transparent rather than the palette.
+func TestDrawFrameBlanksWhenClosed(t *testing.T) {
+	th, err := theme.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer th.Close()
+	view := &fakeView{open: false}
+	dc := gg.NewContext(1600, 900)
+	DrawFrame(dc, view, th)
+	img := dc.Image().(*image.RGBA)
+	if got := img.RGBAAt(0, 0); got.A != 0 {
+		t.Errorf("closed frame corner alpha = %d, want 0", got.A)
 	}
 }

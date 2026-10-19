@@ -18,10 +18,17 @@ type View interface {
 	Results() []rank.Match
 	Selected() int
 	Query() string
+	IsOpen() bool
 }
 
-// DrawFrame paints the current launcher state into a gg context.
+// DrawFrame paints the current launcher state into a gg context. When the
+// launcher is closed the frame is fully transparent, so the mapped overlay
+// surface shows the desktop through it.
 func DrawFrame(dc *gg.Context, l View, th *theme.Theme) {
+	if !l.IsOpen() {
+		dc.ClearWithColor(gg.RGBA{})
+		return
+	}
 	dc.ClearWithColor(th.Slab)
 
 	titleFace := th.Face(44)

@@ -189,6 +189,18 @@ func (h *Host) Control(ctx context.Context, c backend.Change) error {
 	}})
 }
 
+// Invoke forwards a domain action to the plugin.
+func (h *Host) Invoke(ctx context.Context, i backend.Invoke) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if !h.active {
+		return errors.New("plugin: not running")
+	}
+	return h.writeLocked(proto.Message{Invoke: &proto.Invoke{
+		Item: string(i.Item), Action: i.Action, Value: i.Value,
+	}})
+}
+
 // Close stops the plugin: SIGTERM, then SIGKILL after the grace period.
 func (h *Host) Close() error {
 	h.mu.Lock()

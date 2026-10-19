@@ -239,15 +239,35 @@ func (l *Launcher) Enter() {
 	}
 }
 
-// performAction handles the host actions for step 1. Domain/plugin actions are
-// left to later steps.
+// performAction handles host actions and routes domain ("plugin") actions to
+// the backend that produced the item.
 func (l *Launcher) performAction(a backend.Action, item backend.Item) {
 	switch a.Type {
 	case "set-query":
 		l.SetQuery(a.Value)
+	case "plugin":
+		l.invokeDomain(a, item)
 	case "copy", "open-url", "exec", "exec-terminal", "focus-window":
 		l.changed() // the host capability broker picks this up
 	}
+}
+
+func (l *Launcher) invokeDomain(a backend.Action, item backend.Item) {
+	level := l.currentLevel()
+	source := l.mode
+	if level != nil && level.Source != "" {
+		source = level.Source
+	}
+	b, err := l.provider.Get(source)
+	if err != nil {
+		return
+	}
+	if inv, ok := b.(backend.Invoker); ok {
+		_ = inv.Invoke(context.Background(), backend.Invoke{
+			Item: item.ID, Action: a.Value, Value: a.Value,
+		})
+	}
+	l.changed()
 }
 
 // descend pushes a scoped level for an item's children.

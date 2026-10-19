@@ -26,6 +26,7 @@ type (
 	Info    = InfoShape
 	Stream  = StreamShape
 	Backend = BackendShape
+	Invoke  = InvokeShape
 )
 
 // ItemShape is one result.
@@ -101,6 +102,22 @@ type StreamShape interface {
 type BackendShape interface {
 	Query(ctx context.Context, q Query) (Stream, error)
 	Control(ctx context.Context, c Change) error
+}
+
+// Invoker is implemented by plugins that accept domain actions.
+type Invoker interface {
+	Invoke(ctx context.Context, i Invoke) error
+}
+
+// InvokeShape is a domain action forwarded by the host.
+type InvokeShape struct {
+	Item   string
+	Action string
+	Value  string
+}
+
+func fromInvoke(p proto.Invoke) Invoke {
+	return Invoke{Item: p.Item, Action: p.Action, Value: p.Value}
 }
 
 // NewStream builds a slice-backed stream.
@@ -194,6 +211,11 @@ func handle(w *bufio.Writer, msg proto.Message, backend Backend) error {
 		return writeMsg(w, proto.Message{Pong: &proto.Pong{Ready: true}})
 	case msg.Control != nil:
 		return backend.Control(context.Background(), fromChange(*msg.Control))
+	case msg.Invoke != nil:
+		if inv, ok := backend.(Invoker); ok {
+			return inv.Invoke(context.Background(), fromInvoke(*msg.Invoke))
+		}
+		return nil
 	case msg.Query != nil:
 		return serveQuery(w, backend, *msg.Query)
 	case msg.Cancel != nil:

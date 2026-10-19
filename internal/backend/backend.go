@@ -96,6 +96,19 @@ type Stream interface {
 	Close() error
 }
 
+// Invoke is a domain action forwarded to the backend that produced an item.
+type Invoke struct {
+	Item   ResultID
+	Action string
+	Value  string
+}
+
+// Invoker is implemented by backends that accept domain actions (plugin
+// actions not executed by the host).
+type Invoker interface {
+	Invoke(ctx context.Context, i Invoke) error
+}
+
 // Backend is a source of results. It also accepts control changes.
 type Backend interface {
 	Info() Info

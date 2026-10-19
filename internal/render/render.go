@@ -1,12 +1,12 @@
 // Package render draws the overlay with gg into a buffer, unpremultiplies it,
 // and presents it on layer surfaces via gogpu. It owns the visual vocabulary:
-// the slab background, the band, reel cards and control widgets. The state
-// comes from the launcher; the drawing is stateless per frame.
+// the tilted band, sheared cards with hard offset shadows, thick accent borders,
+// and the display typography. The state comes from the launcher; the drawing is
+// stateless per frame.
 package render
 
 import (
 	"image"
-	"image/color"
 
 	"github.com/darkliquid/keyshell/internal/rank"
 	"github.com/darkliquid/keyshell/internal/theme"
@@ -21,6 +21,16 @@ type View interface {
 	IsOpen() bool
 }
 
+const (
+	cardW     = 300.0
+	cardH     = 210.0
+	gap       = 26.0
+	bandY     = 96.0
+	bandH     = 720.0
+	shear     = 0.16 // card lean
+	bandShear = 0.10 // band edges
+)
+
 // DrawFrame paints the current launcher state into a gg context. When the
 // launcher is closed the frame is fully transparent, so the mapped overlay
 // surface shows the desktop through it.
@@ -31,68 +41,148 @@ func DrawFrame(dc *gg.Context, l View, th *theme.Theme) {
 	}
 	dc.ClearWithColor(th.Slab)
 
-	titleFace := th.Face(44)
-	dc.SetFont(titleFace)
-	dc.SetColor(th.Ink)
-	dc.DrawString("KEYSHELL", 40, 60)
+	drawBand(dc, th)
 
-	// The reel of results.
+	// Reel of cards.
 	results := l.Results()
-	x := 40.0
-	y := 110.0
+	selected := l.Selected()
+	offset := 70.0
 	for i, m := range results {
 		if i >= 12 {
 			break
 		}
-		drawCard(dc, th, x, y, m, i == l.Selected(), l.Query())
-		x += 300
+		x := offset + float64(i)*(cardW+gap)
+		if x > 1500 {
+			break
+		}
+		drawCard(dc, th, x, bandY+60, m, i == selected)
 	}
 
-	// Status line.
-	subFace := th.Face(18)
-	dc.SetFont(subFace)
-	dc.SetColor(th.Muted)
-	dc.DrawString("Enter: open  Tab: mode  Escape: dismiss", 40, 780)
+	drawStatusLine(dc, th, l.Query())
 }
 
-func drawCard(dc *gg.Context, th *theme.Theme, x, y float64, m rank.Match, selected bool, query string) {
-	const cardW, cardH = 280.0, 200.0
+// drawBand draws the tilted band: a trapezoid container with a hard shadow and
+// a cyan accent spine, giving the overlay its arcade frame.
+func drawBand(dc *gg.Context, th *theme.Theme) {
+	w := 1700.0
+	shearPx := bandH * bandShear
+	left := (1920.0 - w) / 2
+	top := bandY
+	bottom := top + bandH
 
-	// Card surface with the solid offset shadow.
-	if selected {
-		dc.SetColor(th.Accent)
-		dc.DrawRectangle(x+10, y+10, cardW, cardH)
-		_ = dc.Fill()
-	}
-	dc.SetColor(th.SurfaceAlt)
-	dc.DrawRectangle(x, y, cardW, cardH)
+	// Hard offset shadow first (solid, zero blur).
+	dc.SetColor(gg.RGBA{R: 0, G: 0, B: 0, A: 0.45})
+	dc.NewSubPath()
+	dc.MoveTo(left+14, top+14)
+	dc.LineTo(left+w+shearPx+14, top+14)
+	dc.LineTo(left+w+shearPx+14, bottom+14)
+	dc.LineTo(left+14, bottom+14)
+	dc.ClosePath()
 	_ = dc.Fill()
 
-	// Title.
-	titleFace := th.Face(28)
+	// The band surface, sheared on the right edge.
+	dc.SetColor(th.SurfaceAlt)
+	dc.NewSubPath()
+	dc.MoveTo(left, top)
+	dc.LineTo(left+w+shearPx, top)
+	dc.LineTo(left+w+shearPx, bottom)
+	dc.LineTo(left, bottom)
+	dc.ClosePath()
+	_ = dc.Fill()
+
+	// Cyan accent spine on the left edge.
+	dc.SetColor(th.AccentAlt)
+	dc.DrawRectangle(left, top, 6, bandH)
+	_ = dc.Fill()
+
+	// Top "band" bar.
+	dc.SetColor(th.Accent)
+	dc.DrawRectangle(left-20, top-12, 40, 8)
+	_ = dc.Fill()
+}
+
+// drawCard draws one card with a solid offset shadow, a sheared face, a thick
+// border, and the display typography. The selected card gets the accent border
+// and a highlighted title.
+func drawCard(dc *gg.Context, th *theme.Theme, x, y float64, m rank.Match, selected bool) {
+	// Sheared card geometry via a quad.
+	skew := shear * cardH
+
+	// Hard offset shadow.
+	dc.SetColor(gg.RGBA{R: 0, G: 0, B: 0, A: 0.5})
+	quad(dc, x+12, y+12, skew, cardW, cardH, th.SurfaceAlt)
+
+	// Card face.
+	quadFill := th.SurfaceAlt
+	if selected {
+		quadFill = gg.RGBA{R: 0x1A, G: 0x1A, B: 0x22, A: 1}
+	}
+	quad(dc, x, y, skew, cardW, cardH, quadFill)
+
+	// Border: 3px accent for selected, muted otherwise.
+	quadStroke := th.Muted
+	if selected {
+		quadStroke = th.Accent
+	}
+	dc.SetColor(quadStroke)
+	dc.SetLineWidth(3)
+	strokeQuad(dc, x, y, skew, cardW, cardH)
+
+	// Title in the display face.
+	titleFace := th.Face(30)
 	dc.SetFont(titleFace)
-	dc.SetColor(th.Ink)
-	dc.DrawString(clip(m.Item.Title, 18), x+16, y+50)
-
-	// Subtitle.
-	subFace := th.Face(16)
-	dc.SetFont(subFace)
-	dc.SetColor(th.Muted)
-	dc.DrawString(clip(m.Item.Subtitle, 26), x+16, y+78)
-
-	// Selected accent border stays solid; non-selected is thin.
 	if selected {
 		dc.SetColor(th.AccentAlt)
-		dc.SetLineWidth(3)
-		dc.DrawRectangle(x, y, cardW, cardH)
-		_ = dc.Stroke()
 	} else {
-		dc.SetColor(th.Muted)
-		dc.SetLineWidth(1)
-		dc.DrawRectangle(x, y, cardW, cardH)
-		_ = dc.Stroke()
+		dc.SetColor(th.Ink)
 	}
-	_ = query
+	dc.DrawString(clip(m.Item.Title, 16), x+18, y+48)
+
+	// Subtitle.
+	subFace := th.Face(15)
+	dc.SetFont(subFace)
+	dc.SetColor(th.Muted)
+	dc.DrawString(clip(m.Item.Subtitle, 30), x+18, y+74)
+
+	// Selected chevron.
+	if selected {
+		dc.SetFont(th.Face(24))
+		dc.SetColor(th.Accent)
+		dc.DrawString("▶", x+cardW-34, y+48)
+	}
+}
+
+// quad fills a parallelogram: top edge shifted right by skew.
+func quad(dc *gg.Context, x, y, skew, w, h float64, col gg.RGBA) {
+	dc.SetColor(col)
+	dc.NewSubPath()
+	dc.MoveTo(x, y)
+	dc.LineTo(x+w+skew, y)
+	dc.LineTo(x+w+skew, y+h)
+	dc.LineTo(x, y+h)
+	dc.ClosePath()
+	_ = dc.Fill()
+}
+
+func strokeQuad(dc *gg.Context, x, y, skew, w, h float64) {
+	dc.NewSubPath()
+	dc.MoveTo(x, y)
+	dc.LineTo(x+w+skew, y)
+	dc.LineTo(x+w+skew, y+h)
+	dc.LineTo(x, y+h)
+	dc.ClosePath()
+	_ = dc.Stroke()
+}
+
+func drawStatusLine(dc *gg.Context, th *theme.Theme, query string) {
+	face := th.Face(18)
+	dc.SetFont(face)
+	dc.SetColor(th.Muted)
+	text := "Enter: open   Tab: mode   Escape: dismiss"
+	if query != "" {
+		text = "⌕ " + query
+	}
+	dc.DrawString(text, 70, 948)
 }
 
 func clip(s string, n int) string {
@@ -123,7 +213,3 @@ func unpremultiply(img *image.RGBA) *image.RGBA {
 	}
 	return out
 }
-
-// gamma uses the standard image/color conversion so the sample tests can find
-// exact ink values.
-var _ = color.NRGBA{}

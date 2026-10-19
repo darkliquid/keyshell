@@ -5,6 +5,7 @@ import (
 	"image/color"
 	"testing"
 
+	"github.com/darkliquid/keyshell/internal/backend"
 	"github.com/darkliquid/keyshell/internal/rank"
 	"github.com/darkliquid/keyshell/internal/theme"
 	"github.com/gogpu/gg"
@@ -19,7 +20,10 @@ func TestDrawFrameProducesImage(t *testing.T) {
 	}
 	defer th.Close()
 
-	view := &fakeView{open: true}
+	view := &fakeView{open: true, results: []rank.Match{
+		{Item: backend.Item{Title: "Ghostty", Subtitle: "Terminal"}},
+		{Item: backend.Item{Title: "Firefox", Subtitle: "Web Browser"}},
+	}}
 	dc := gg.NewContext(1600, 900)
 	DrawFrame(dc, view, th)
 	img := dc.Image().(*image.RGBA)
@@ -35,13 +39,19 @@ func TestDrawFrameProducesImage(t *testing.T) {
 }
 
 type fakeView struct {
-	open bool
+	open    bool
+	results []rank.Match
 }
 
-func (v *fakeView) Results() []rank.Match { return nil }
-func (v *fakeView) Selected() int         { return 0 }
-func (v *fakeView) Query() string         { return "" }
-func (v *fakeView) IsOpen() bool          { return v.open }
+func (v *fakeView) Results() []rank.Match {
+	if v.results != nil {
+		return v.results
+	}
+	return nil
+}
+func (v *fakeView) Selected() int { return 0 }
+func (v *fakeView) Query() string { return "" }
+func (v *fakeView) IsOpen() bool  { return v.open }
 
 func closeTo(img *image.RGBA, x, y int, r, g, b uint8) bool {
 	px := img.RGBAAt(x, y)

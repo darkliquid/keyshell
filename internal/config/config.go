@@ -104,10 +104,13 @@ func Default() Config {
 			MaxAgeDays: 90,
 			FlushMs:    2000,
 		},
-		// The audio plugin runs as a subprocess by default. With an empty
-		// command, the host resolves it to `<self> plugin audio`.
+		// First-party plugins run as subprocesses by default. With an empty
+		// command, the host resolves each to `<self> plugin <id>`.
 		Instances: []Instance{
 			{ID: "audio", Mode: "hot"},
+			{ID: "media", Mode: "hot"},
+			{ID: "network", Mode: "hot"},
+			{ID: "power", Mode: "hot"},
 		},
 	}
 }

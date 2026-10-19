@@ -14,6 +14,9 @@ import (
 	"github.com/darkliquid/keyshell/internal/backend/audioplugin"
 	"github.com/darkliquid/keyshell/internal/backend/calc"
 	"github.com/darkliquid/keyshell/internal/backend/files"
+	"github.com/darkliquid/keyshell/internal/backend/mediaplugin"
+	"github.com/darkliquid/keyshell/internal/backend/netplugin"
+	"github.com/darkliquid/keyshell/internal/backend/powerplugin"
 	"github.com/darkliquid/keyshell/internal/backend/run"
 	"github.com/darkliquid/keyshell/internal/backend/windows"
 	"github.com/darkliquid/keyshell/internal/capability"
@@ -139,18 +142,33 @@ func (p *hybridProvider) Get(id string) (backend.Backend, error) {
 }
 
 // runPlugin starts a plugin in SDK mode.
-func runPlugin(name string) int {
-	switch name {
-	case "audio":
-		b := audioplugin.New()
-		return servePlugin(b.Info(), b)
-	}
-	fmt.Fprintln(os.Stderr, "unknown plugin:", name)
-	return 1
+// pluginBackend is what a plugin subcommand must provide: identity plus the
+// SDK behaviour.
+type pluginBackend interface {
+	Info() sdk.Info
+	sdk.Backend
 }
 
-func servePlugin(info sdk.Info, b sdk.Backend) int {
-	if err := sdk.Serve(info, b); err != nil {
+func runPlugin(name string) int {
+	var b pluginBackend
+	switch name {
+	case "audio":
+		b = audioplugin.New()
+	case "media":
+		b = mediaplugin.New()
+	case "network":
+		b = netplugin.New()
+	case "power":
+		b = powerplugin.New()
+	default:
+		fmt.Fprintln(os.Stderr, "unknown plugin:", name)
+		return 1
+	}
+	return servePlugin(b)
+}
+
+func servePlugin(b pluginBackend) int {
+	if err := sdk.Serve(b.Info(), b); err != nil {
 		fmt.Fprintln(os.Stderr, "plugin:", err)
 		return 1
 	}

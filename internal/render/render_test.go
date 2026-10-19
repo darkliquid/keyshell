@@ -49,9 +49,10 @@ func (v *fakeView) Results() []rank.Match {
 	}
 	return nil
 }
-func (v *fakeView) Selected() int { return 0 }
-func (v *fakeView) Query() string { return "" }
-func (v *fakeView) IsOpen() bool  { return v.open }
+func (v *fakeView) Selected() int     { return 0 }
+func (v *fakeView) Query() string     { return "" }
+func (v *fakeView) IsOpen() bool      { return v.open }
+func (v *fakeView) ModeBadge() string { return "SEARCH" }
 
 func closeTo(img *image.RGBA, x, y int, r, g, b uint8) bool {
 	px := img.RGBAAt(x, y)

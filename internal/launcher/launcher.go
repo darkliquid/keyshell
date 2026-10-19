@@ -104,6 +104,18 @@ func (l *Launcher) IsOpen() bool { return l.open }
 // Mode returns the current backend mode id.
 func (l *Launcher) Mode() string { return l.mode }
 
+// ModeBadge returns the badge for the active mode (or SEARCH when merged).
+func (l *Launcher) ModeBadge() string {
+	if l.mode == "" || l.mode == "all" {
+		return "SEARCH"
+	}
+	b, err := l.provider.Get(l.mode)
+	if err != nil {
+		return "SEARCH"
+	}
+	return b.Info().Badge
+}
+
 // SetMode switches the active backend and refreshes results.
 func (l *Launcher) SetMode(id string) {
 	l.mode = id

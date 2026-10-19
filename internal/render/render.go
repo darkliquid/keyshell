@@ -19,6 +19,7 @@ type View interface {
 	Selected() int
 	Query() string
 	IsOpen() bool
+	ModeBadge() string
 }
 
 const (
@@ -42,6 +43,8 @@ func DrawFrame(dc *gg.Context, l View, th *theme.Theme) {
 	dc.ClearWithColor(th.Slab)
 
 	drawBand(dc, th)
+
+	drawHeader(dc, th, l.ModeBadge(), l.Query())
 
 	// Reel of cards.
 	results := l.Results()
@@ -128,6 +131,14 @@ func drawCard(dc *gg.Context, th *theme.Theme, x, y float64, m rank.Match, selec
 	dc.SetLineWidth(3)
 	strokeQuad(dc, x, y, skew, cardW, cardH)
 
+	// Glyph (emoji or icon name) if present.
+	if m.Item.Glyph != "" {
+		glyphFace := th.Face(40)
+		dc.SetFont(glyphFace)
+		dc.SetColor(th.AccentAlt)
+		dc.DrawString(m.Item.Glyph, x+16, y+110)
+	}
+
 	// Title in the display face.
 	titleFace := th.Face(30)
 	dc.SetFont(titleFace)
@@ -172,6 +183,33 @@ func strokeQuad(dc *gg.Context, x, y, skew, w, h float64) {
 	dc.LineTo(x, y+h)
 	dc.ClosePath()
 	_ = dc.Stroke()
+}
+
+// drawHeader draws the mode badge and the query in the top bar.
+func drawHeader(dc *gg.Context, th *theme.Theme, badge, query string) {
+	if badge == "" {
+		badge = "SEARCH"
+	}
+	// Badge plate.
+	dc.SetColor(th.SurfaceAlt)
+	dc.DrawRectangle(70, 36, 190, 40)
+	_ = dc.Fill()
+	dc.SetColor(th.Accent)
+	dc.SetLineWidth(3)
+	dc.DrawRectangle(70, 36, 190, 40)
+	_ = dc.Stroke()
+
+	badgeFace := th.Face(26)
+	dc.SetFont(badgeFace)
+	dc.SetColor(th.Accent)
+	dc.DrawString(badge, 88, 66)
+
+	// Query text.
+	queryFace := th.Face(26)
+	dc.SetFont(queryFace)
+	dc.SetColor(th.Ink)
+	prefix := "⌕ "
+	dc.DrawString(prefix+query, 290, 66)
 }
 
 func drawStatusLine(dc *gg.Context, th *theme.Theme, query string) {

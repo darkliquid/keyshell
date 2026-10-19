@@ -2,7 +2,7 @@
 .tmp/
 out/
 *.test
-keyshell
+/keyshell
 
 # `go build ./spikes/...` drops binaries next to their source
 /layershell-input

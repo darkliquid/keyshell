@@ -96,3 +96,49 @@ func TestControlMapsToNmcli(t *testing.T) {
 		t.Errorf("wifi args = %v", args)
 	}
 }
+
+func TestPendingPromptAppearsAndControlClears(t *testing.T) {
+	b := stubNmcli()
+	b.NoteSecretRequest()
+
+	stream, err := b.Query(context.Background(), sdk.Query{})
+	if err != nil {
+		t.Fatalf("Query = err %v", err)
+	}
+	items := drainItems(stream)
+	found := false
+	for _, it := range items {
+		if it.ID == "passphrase" {
+			found = true
+			if len(it.Controls) != 1 || it.Controls[0].Kind != "text" {
+				t.Errorf("passphrase controls = %+v", it.Controls)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("no pending passphrase item when a secret is requested")
+	}
+
+	// Submitting the passphrase stores it and clears the pending prompt.
+	if err := b.Control(context.Background(), sdk.Change{Control: "passphrase", Text: "secret123"}); err != nil {
+		t.Fatal(err)
+	}
+	if b.PSK() != "secret123" {
+		t.Errorf("PSK = %q, want secret123", b.PSK())
+	}
+	if b.wantsPSK() {
+		t.Error("pending flag should clear after the passphrase is stored")
+	}
+}
+
+func drainItems(stream sdk.Stream) []sdk.Item {
+	defer stream.Close()
+	var items []sdk.Item
+	for {
+		it, more, err := stream.Next()
+		if err != nil || !more {
+			return items
+		}
+		items = append(items, it)
+	}
+}

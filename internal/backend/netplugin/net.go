@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"sync"
 
 	"github.com/darkliquid/keyshell/internal/plugin/sdk"
 )
@@ -14,6 +15,33 @@ import (
 // Backend is the network plugin's domain logic.
 type Backend struct {
 	nmcli func(args ...string) *exec.Cmd
+
+	pskMu   sync.Mutex
+	psk     string
+	pending bool
+}
+
+// PSK returns the current stored passphrase ("" when none yet).
+func (b *Backend) PSK() string {
+	b.pskMu.Lock()
+	defer b.pskMu.Unlock()
+	return b.psk
+}
+
+// NoteSecretRequest flags that a wireless secret is being asked for, so the
+// query surfaces a passphrase prompt.
+func (b *Backend) NoteSecretRequest() {
+	b.pskMu.Lock()
+	b.pending = true
+	b.pskMu.Unlock()
+}
+
+// setPSK stores the passphrase and clears the pending prompt.
+func (b *Backend) setPSK(psk string) {
+	b.pskMu.Lock()
+	b.psk = psk
+	b.pending = false
+	b.pskMu.Unlock()
 }
 
 // New builds the network backend.
@@ -65,7 +93,24 @@ func (b *Backend) Query(_ context.Context, q sdk.Query) (sdk.Stream, error) {
 			},
 		})
 	}
+
+	// A pending secret request surfaces a passphrase prompt.
+	if b.wantsPSK() {
+		items = append(items, sdk.Item{
+			ID: "passphrase", Title: "Enter Wi-Fi passphrase",
+			Subtitle: "Required by NetworkManager", Glyph: "key",
+			Controls: []sdk.Control{
+				{ID: "passphrase", Kind: "text", Label: "Passphrase"},
+			},
+		})
+	}
 	return sdk.NewStream(items...), nil
+}
+
+func (b *Backend) wantsPSK() bool {
+	b.pskMu.Lock()
+	defer b.pskMu.Unlock()
+	return b.pending
 }
 
 // Control applies a connect toggle or a Wi-Fi choice.
@@ -77,6 +122,10 @@ func (b *Backend) Control(_ context.Context, c sdk.Change) error {
 		}
 		return b.nmcli("connection", "down", c.Item).Run()
 	case "wifi":
+		return b.nmcli("device", "wifi", "connect", c.Text).Run()
+	case "passphrase":
+		b.setPSK(c.Text)
+		// Connect to the network the user selected, if any.
 		return b.nmcli("device", "wifi", "connect", c.Text).Run()
 	}
 	return fmt.Errorf("network: no control %q", c.Control)

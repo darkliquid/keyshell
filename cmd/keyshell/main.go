@@ -197,7 +197,12 @@ func runPlugin(name string) int {
 	case "media":
 		b = mediaplugin.New()
 	case "network":
-		b = netplugin.New()
+		nb := netplugin.New()
+		if conn, err := dbus.ConnectSessionBus(); err == nil {
+			defer conn.Close()
+			_ = netplugin.NewAgent(nb).Register(conn)
+		}
+		b = nb
 	case "power":
 		b = powerplugin.New()
 	case "clipboard":

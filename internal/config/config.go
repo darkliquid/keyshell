@@ -40,12 +40,27 @@ type Drinks struct {
 	Terminal []string `toml:"terminal"`
 }
 
+// FrecencyBucket is one age/weight pair in the frecency score.
+type FrecencyBucket struct {
+	MaxAgeMs int64 `toml:"max_age_ms"`
+	Weight   int   `toml:"weight"`
+}
+
+// Frecency holds the ranking-history parameters.
+type Frecency struct {
+	Buckets    []FrecencyBucket `toml:"buckets"`
+	CountCap   int              `toml:"count_cap"`
+	MaxAgeDays int              `toml:"max_age_days"`
+	FlushMs    int              `toml:"flush_debounce_ms"`
+}
+
 // Config is the parsed host configuration.
 type Config struct {
-	Reveal  Reveal
-	Anim    Anim
-	Overlay Overlay
-	Drinks  Drinks
+	Reveal   Reveal
+	Anim     Anim
+	Overlay  Overlay
+	Drinks   Drinks
+	Frecency Frecency
 }
 
 // Default returns the built-in configuration. It is the zero base for any
@@ -68,6 +83,17 @@ func Default() Config {
 		},
 		Drinks: Drinks{
 			Terminal: []string{"ghostty", "alacritty"},
+		},
+		Frecency: Frecency{
+			Buckets: []FrecencyBucket{
+				{MaxAgeMs: 3600000, Weight: 4},
+				{MaxAgeMs: 86400000, Weight: 3},
+				{MaxAgeMs: 604800000, Weight: 2},
+				{MaxAgeMs: 2592000000, Weight: 1},
+			},
+			CountCap:   10,
+			MaxAgeDays: 90,
+			FlushMs:    2000,
 		},
 	}
 }

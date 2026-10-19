@@ -22,13 +22,29 @@ If more than one Quickshell instance is running, address this one by pid:
 
 ## Install
 
+keyshell runs as a session shell: one process for the whole session, invisible
+until a keybind summons the overlay. Install the configuration under its own
+name, then start it with your session.
+
 ```bash
-mkdir -p ~/.config/quickshell
-ln -s "$PWD/quickshell/keyshell" ~/.config/quickshell/keyshell
-qs -c keyshell
+mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/quickshell"
+ln -sfn "$PWD/quickshell/keyshell" "${XDG_CONFIG_HOME:-$HOME/.config}/quickshell/keyshell"
+
+install -Dm644 contrib/keyshell.service ~/.config/systemd/user/keyshell.service
+systemctl --user daemon-reload
+systemctl --user enable --now keyshell.service
 ```
 
-The IPC calls become `qs -c keyshell ipc call keyshell toggle`.
+If you would rather not have systemd supervise it, autostart it from the
+compositor instead: for niri, add `spawn-at-startup "qs" "-c" "keyshell"
+"--no-duplicate"` to `~/.config/niri/config.kdl`. Use one method or the other,
+not both.
+
+The IPC calls become `qs -c keyshell ipc call keyshell toggle`, and
+`qs -c keyshell list` shows the running instance.
+
+`docs/INSTALL.md` has the full guide: requirements, verifying the shell is up,
+the mode names to bind, updating, and troubleshooting.
 
 ## Keybind (niri)
 
@@ -40,7 +56,8 @@ binds {
 }
 ```
 
-`spawn` passes arguments directly and does not run a shell.
+`spawn` passes arguments directly and does not run a shell. `docs/INSTALL.md`
+has binds for every mode, and for the hardware volume and media keys.
 
 ## Keys
 

@@ -83,6 +83,10 @@ While optimized for niri, keyshell **must maintain compatibility with other Wayl
 keyshell/
 ├── README.md                          # User installation and quickstart guide
 ├── AGENTS.md                          # This document
+├── docs/
+│   └── INSTALL.md                     # Session-shell installation guide
+├── contrib/
+│   └── keyshell.service               # systemd user unit for the session shell
 ├── tests/
 │   └── run.js                         # Node harness for the rank.js scoring math
 └── quickshell/
@@ -186,7 +190,24 @@ The `CALC` and `RUN` backends declare `searchable: false` and `trackable: false`
 - **BlueZ** (for `Quickshell.Bluetooth`).
 - **UPower** (for `Quickshell.Services.UPower`).
 - **dsearch** (`/usr/bin/dsearch` installed and indexed for file search).
+- **wl-clipboard** (`wl-paste`, `wl-copy`) for clipboard capture and result copying.
+- **python3** to run `clipboard-watch.py`, the clipboard capture helper.
+- **xdg-open** to open file hits and plugin `open-url` actions.
+- A terminal in `Config.terminalCandidates` (`ghostty`, `alacritty`) or `$TERMINAL` for run-command.
 - A running Wayland session (`niri`, `sway`, etc.).
+
+### Installing as a Session Shell
+Installation is the one deployment mode that matters to users: the configuration
+is symlinked in as `~/.config/quickshell/keyshell`, and the shell is started once
+per session, either by `contrib/keyshell.service` (a systemd user unit bound to
+`graphical-session.target`) or by the compositor's autostart. Never mix the two,
+and always pass `--no-duplicate`, because two instances of the configuration
+both answer the same IPC target and both draw an overlay.
+
+`docs/INSTALL.md` is the user-facing write-up: prerequisites, both startup
+methods, the mode ids and IPC function names for keybinds, verification, update,
+removal and troubleshooting. Keep it, the README's Install section and
+`contrib/keyshell.service` in agreement when any of them changes.
 
 ### Launching in Development
 Run the configuration directly from the repository root:

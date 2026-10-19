@@ -1,0 +1,74 @@
+[env]
+# keyshell is a pure-Go single-binary project: no cgo, ever. This keeps the
+# build reproducible and cross-compilable, and it is the same premise gogpu's
+# own ROADMAP commits to.
+CGO_ENABLED = "0"
+TMPDIR = "{{config_root}}/.tmp"
+
+[tools]
+go = "1.27.2"
+golangci-lint = "latest"
+
+[tasks.build]
+description = "Build every package"
+run = "go build ./..."
+
+[tasks.test]
+description = "Run the test suite"
+run = "go test ./..."
+
+[tasks.lint]
+description = "Lint with golangci-lint"
+run = "golangci-lint run --timeout=5m"
+
+[tasks.fmt]
+description = "Format all Go sources"
+run = "gofmt -l -w ."
+
+[tasks.check]
+description = "Format check, vet and test in one pass"
+depends = ["test"]
+run = "test -z \"$(gofmt -l .)\" && go vet ./..."
+
+# =============================================================================
+# SPIKES
+#
+# Throwaway proofs of concept that answer one question each. They are not part
+# of the product and are expected to be deleted once their findings land in the
+# design.
+# =============================================================================
+
+[tasks."spike:s2"]
+description = "S2: does a layer surface receive keyboard/pointer input? (needs a Wayland session)"
+run = "go run ./spikes/layershell-input"
+
+[tasks."spike:s3"]
+description = "S3: does gg render the display face well enough? (writes out/s3-*.png)"
+run = "go run ./spikes/text"
+
+[tasks."spike:s4"]
+description = "S4: does a layer surface composite per-pixel alpha? (needs a Wayland session)"
+run = "go run ./spikes/transparency"
+
+[tasks."spike:s4:verify"]
+description = "S4: capture the desktop and the overlay, then check every alpha probe"
+run = "./spikes/transparency/verify.sh transparent"
+
+[tasks."spike:s4:verify-straight"]
+description = "S4: same probes, uploading straight-alpha data (the workaround)"
+run = "./spikes/transparency/verify.sh transparent -unpremultiply"
+
+[tasks."spike:s4:control"]
+description = "S4 control: same probes on an opaque surface, which must NOT show the desktop"
+run = "./spikes/transparency/verify.sh opaque"
+
+[tasks."plugin:demo"]
+description = "Run the audio plugin standalone, speaking the protocol to a scripted session"
+run = """
+printf '%s\n' '{"init":{"instance":"audio","config":{}}}' '{"query":{"id":1,"text":"","limit":20,"merged":false}}' |
+  KEYSHELL_PLUGIN=1 KEYSHELL_PROTOCOL=1 KEYSHELL_INSTANCE=audio   go run ./cmd/keyshell plugin audio
+"""
+
+[tasks."spike:inject"]
+description = "Type text and click on a Wayland session, for testing the S2 spike without a hand"
+run = "go run ./spikes/tools/inject \"$@\""

@@ -1,247 +1,74 @@
-# keyshell
+# keyshell, Go rewrite (branch `go-rewrite`)
 
-A keyboard-driven application launcher for niri, built with Quickshell. One
-summoned overlay, no status bar, no daemon.
+This branch is a clean-room, **no-history** branch of keyshell: it starts from an
+empty tree so the Go implementation can be built without dragging the QML
+implementation's history along. `main` still holds the working Quickshell/QML
+version, and stays the reference for behaviour and for the visual design.
 
-## Run (development)
+It lives in a separate git worktree (`~/Projects/keyshell-go`) so both
+implementations can be built and compared side by side.
 
-Requires Quickshell 0.3.2+ and a running Wayland session (niri).
+## Why Go
 
-```bash
-qs -p quickshell/keyshell
-```
+From the research in `~/.local/share/crush/research/keyshell-go-reimplementation`:
 
-Toggle it from another terminal:
+- `gogpu/gg` already has the affine transform API the design is built on
+  (`Shear`, `ShearAbout`, `Rotate`, `Transform`, `TextPath`) with a GPU backend.
+- The stack is pure Go and cgo-free: one static binary, no Qt, no GTK.
+- The one blocker - layer-shell surfaces - is solved: a ~600-line patch on
+  `darkliquid/gogpu@feat/wayland-layer-shell` (PR drafted), carried here as a
+  `replace` until it lands upstream.
 
-```bash
-qs ipc call keyshell toggle
-```
+## Toolchain
 
-If more than one Quickshell instance is running, address this one by pid:
-`qs ipc --pid <pid> call keyshell toggle`.
-
-## Install
-
-keyshell runs as a session shell: one process for the whole session, invisible
-until a keybind summons the overlay. Install the configuration under its own
-name, then start it with your session.
+Everything goes through [mise](https://mise.jdx.dev):
 
 ```bash
-mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/quickshell"
-ln -sfn "$PWD/quickshell/keyshell" "${XDG_CONFIG_HOME:-$HOME/.config}/quickshell/keyshell"
+mise trust          # once, for this directory
+mise install        # Go 1.27.2 + golangci-lint, per mise.toml
 
-install -Dm644 contrib/keyshell.service ~/.config/systemd/user/keyshell.service
-systemctl --user daemon-reload
-systemctl --user enable --now keyshell.service
+mise run build      # go build ./...
+mise run test       # go test ./...
+mise run lint       # golangci-lint
+mise run check      # gofmt check + go vet + tests
 ```
 
-If you would rather not have systemd supervise it, autostart it from the
-compositor instead: for niri, add `spawn-at-startup "qs" "-c" "keyshell"
-"--no-duplicate"` to `~/.config/niri/config.kdl`. Use one method or the other,
-not both.
+`CGO_ENABLED=0` is set for every task in this repository.
 
-The IPC calls become `qs -c keyshell ipc call keyshell toggle`, and
-`qs -c keyshell list` shows the running instance.
+## Spikes
 
-`docs/INSTALL.md` has the full guide: requirements, verifying the shell is up,
-the mode names to bind, updating, and troubleshooting.
+Throwaway proofs of concept, one question each. They live in `spikes/` and will
+be deleted once their findings are folded into the design.
 
-## Keybind (niri)
-
-Add to `~/.config/niri/config.kdl`:
-
-```kdl
-binds {
-    Mod+Space { spawn "qs" "-c" "keyshell" "ipc" "call" "keyshell" "toggle"; }
-}
-```
-
-`spawn` passes arguments directly and does not run a shell. `docs/INSTALL.md`
-has binds for every mode, and for the hardware volume and media keys.
-
-## Keys
-
-| Key | Action |
+| Task | Question |
 | --- | --- |
-| printable characters | filter the merged result list |
-| Backspace | edit the query |
-| Left / Right | move the selection |
-| Tab / Shift+Tab | move the selection |
-| Enter | launch the selected app |
-| Escape | dismiss |
+| `mise run spike:s2` | Does a wlr-layer-shell surface receive keyboard and pointer input, and can on-demand focus be used to implement a launcher overlay? |
+| `mise run spike:s3` | Does `gg` render the display typography (all-caps italic Red Hat Display) well enough to replace Qt's text rendering? |
+| `mise run spike:s4` | Can a layer surface composite per-pixel alpha, so the overlay can show the desktop through scrims and translucent cards? (`spike:s4:verify`, `spike:s4:verify-straight`, `spike:s4:control` assert it against screenshots) |
+| `mise run spike:inject` | Test aid: synthesise real keystrokes and clicks through `/dev/uinput`, so the S2 spike can be driven and asserted without a human at the keyboard. |
 
-## Search & ranking
+## Dependency on a gogpu fork
 
-Typing with no prefix searches everything at once: applications, open windows
-and files. Results are ordered by how well they match, and ties are broken by
-how often and how recently you picked them, so your regulars rise to the top.
+`go.mod` replaces `github.com/gogpu/gogpu` with the layer-shell branch of the
+personal fork:
 
-Explicit prefixes still jump straight to a single mode (for example `@` for
-windows, `/` for files).
-
-History lives at `${XDG_STATE_HOME:-~/.local/state}/keyshell/frecency.json`.
-Delete that file to reset ranking; entries older than `frecencyMaxAgeDays` are
-dropped automatically on load.
-
-## Calculator and run command
-
-`=` opens the calculator: type `=` then an expression such as `8/2`, and Enter
-copies the answer to the clipboard. It understands `+ - * / % ^`, parentheses,
-unary minus, `pi`/`e`, and `sqrt abs round floor ceil pow min max`. Anything it
-cannot parse shows no result rather than an error, so divide-by-zero and typos
-are simply inert.
-
-`:` opens run command: type `:` then a command, and Enter runs it in a terminal
-so you can see the output. The terminal is `$TERMINAL` if set, else `ghostty`,
-else `alacritty`; if none is found, Enter copies the command instead. The
-candidate list is `Config.terminalCandidates`.
-
-Neither mode joins the merged default query, so `=` and `:` are the only ways
-in unless you cycle to them with `Tab`.
-
-## Plugins
-
-A plugin is any executable plus a manifest, so you can write one in any
-language without touching QML. Put it at
-`${XDG_CONFIG_HOME:-~/.config}/keyshell/plugins/<name>/plugin.json`:
-
-```json
-{
-  "name": "Docker",
-  "badge": "DOCKER",
-  "trigger": ";docker",
-  "command": ["/usr/bin/docker-plugin"],
-  "glyph": "🐳",
-  "searchable": false,
-  "trackable": false
-}
+```
+replace github.com/gogpu/gogpu => github.com/darkliquid/gogpu <pseudo-version>
 ```
 
-The trigger must be at least two characters, so it can never collide with a
-single-character mode such as `=` or `@`. Type the trigger to open the plugin's
-mode, or reach it with `Tab`. A manifest is read at startup, so a newly added
-plugin appears after you restart the shell.
+When the upstream PR merges, drop the `replace` and bump the version. Until
+then, `go get github.com/darkliquid/gogpu@feat/wayland-layer-shell` refreshes
+it.
 
-The plugin is started when its mode opens and stopped when you leave it or
-dismiss the launcher. Your plugin reads one JSON request per line on stdin:
+## Layout
 
-```json
-{"query": "ps", "limit": 60, "merged": false}
+```
+mise.toml                     toolchain + tasks
+spikes/layershell-input       S2: layer surface + input
+spikes/text                   S3: display typography rendering
+spikes/transparency           S4: per-pixel alpha (spike + screenshot checker)
+spikes/tools/inject           test aid: synthetic input via uinput
 ```
 
-and writes one JSON object per line on stdout, ending the response with
-`{"done": true}`:
-
-```json
-{"id": "web-1", "title": "web-1", "subtitle": "running", "glyph": "🐳", "badge": "UP",
- "actions": [{"type": "exec", "argv": ["docker", "logs", "web-1"]}]}
-{"done": true}
-```
-
-Actions are declarative and only these five run: `copy` (`text`), `open-url`
-(`url`), `exec` (`argv`), `exec-terminal` (`argv`) and `set-query` (`query`).
-Anything malformed is ignored, so a broken plugin shows no results rather than
-breaking the launcher.
-
-Add `"destructive": true` to an item whose action is dangerous. The shell then
-refuses to run it on a plain Enter and requires the same confirmation the power
-actions use, a hold of Enter for `Config.powerHoldDurationMs` or a double-tap,
-with a meter drawn on the card while you hold.
-
-Set `"searchable": true` to let a plugin answer the merged default query, and
-`"trackable": true` to let its activations feed the ranking history.
-
-`merged` says where the request came from: `true` for the merged default query,
-`false` for the plugin's own mode. A searchable plugin is asked both, and the
-same call serves each, so the flag is the only way to tell them apart. The usual
-shape is to return nothing for an empty merged query, so a plain launcher open
-is never flooded, while listing your busiest entries for an empty query in your
-own mode.
-
-### Bundled example: processes
-
-`plugins/processes` is a complete working plugin, written in Python, that lists
-running processes and terminates the one you pick:
-
-```bash
-plugins/processes/install.sh
-```
-
-Then restart keyshell and type `,ps`. Results are sorted by CPU, and you reach a
-specific process either by typing its name prefix (`gho` for `ghostty`) or its
-pid exactly (`2256`). The query is deliberately strict, and an empty query
-returns nothing at all, so there is no way to reach the launcher with an
-arbitrary process selected. Both of those rules keep process names out of your
-default results and make accidental termination impossible.
-
-Terminating a process is marked destructive, so a plain Enter will not do it.
-The card draws a hold meter and you must hold Enter for `Config.powerHoldDurationMs`
-(a second, or a double-tap) before the kill runs. It sends `SIGTERM`, never
-`SIGKILL`, so a process is never force-killed from the launcher.
-
-Run `node tests/run.js` to check the plugin still speaks the protocol.
-
-### Bundled example: emoji
-
-`plugins/emoji` is the second reference plugin, and the one to copy if your
-plugin is harmless:
-
-```bash
-plugins/emoji/install.sh
-```
-
-Restart keyshell and type `,em`. The index is built from the standard library's
-Unicode names, so it ships no data file: search by any word of the name, so
-`rocket` gives 🚀 and `grin` gives the grinning faces. ZWJ sequences such as
-families, professions and flags are not included. Enter copies the emoji, which
-is the only place the `copy` action is demonstrated.
-
-It is `"searchable": true` and `"trackable": true`, which exercises both flags
-for real. `merged` keeps it out of the way: an empty merged query returns
-nothing, while opening `,em` gives you a starter set that the shell then orders
-by usage, so your favourites come first. `trackable` works properly here because
-ids are codepoints and stay stable across runs, unlike a pid.
-
-### One question at a time
-
-The shell never asks a plugin a second question before the first has been
-answered: if a query arrives while a response is still in flight, the newer
-query waits and is sent when the response completes, and only the newest one is
-kept. A plugin can therefore treat the stream as strict request, response,
-request, response, and does not need to correlate anything.
-
-## Clipboard history
-
-`wl-paste --watch` runs for as long as keyshell does, so every text copy is
-recorded, whether or not the launcher is on screen. Type `,cb` (or reach it with
-`Tab`) to see the list, newest first, with how long ago each entry was copied.
-
-| Key | Action |
-| --- | --- |
-| Enter | copy the entry back to the clipboard |
-| `X` | delete the entry in front of you |
-| `C` | clear the whole history |
-| `P` | pause or resume capture |
-
-Entries live in `${XDG_STATE_HOME:-~/.local/state}/keyshell/clipboard.json` and
-expire after `Config.clipboardTtlMinutes` (24 hours), keeping at most
-`Config.maxClipboardEntries` (50). Consecutive duplicates are collapsed, and
-copying an older entry back moves it to the top rather than duplicating it.
-
-**What this does not do.** Nothing here can tell a password from a shopping
-list, and there is no attempt to. There is deliberately no password-manager
-detection, because the usual way a password gets copied, `pass -c` in a terminal
-or a browser's own manager, is exactly what such a check would miss. The
-protection is bounded retention plus the `P` and `C` keys, and it is worth using
-`P` before working with secrets.
-
-## Tuning
-
-All tunables are constants in `quickshell/keyshell/Config.qml`: the rotation
-range, shear range, band size, minimum visible end height, and result cap.
-Colours and typography are in `quickshell/keyshell/Theme.qml`; set
-`fontFamily` to a display face you have installed (the default is Red Hat
-Display; Teko or Bebas Neue suit the look if present).
-
-Every reveal re-randomises the band tilt and the card lean within those ranges,
-while keeping at least `minEndHeightPx` of the band visible at each end.
+The product layout (`cmd/keyshell`, `internal/...`) is deliberately not created
+yet: the spikes decide its shape.

@@ -13,6 +13,7 @@ import (
 	"github.com/darkliquid/keyshell/internal/backend/apps"
 	"github.com/darkliquid/keyshell/internal/backend/audioplugin"
 	"github.com/darkliquid/keyshell/internal/backend/calc"
+	"github.com/darkliquid/keyshell/internal/backend/clipplugin"
 	"github.com/darkliquid/keyshell/internal/backend/files"
 	"github.com/darkliquid/keyshell/internal/backend/mediaplugin"
 	"github.com/darkliquid/keyshell/internal/backend/netplugin"
@@ -36,6 +37,11 @@ func main() {
 	// Plugin mode: `keyshell plugin <name>` when spawned by the host.
 	if len(os.Args) > 2 && os.Args[1] == "plugin" {
 		os.Exit(runPlugin(os.Args[2]))
+	}
+	// Clipboard capture mode: `keyshell plugin-clip-capture` reads new
+	// selections from the wl-paste --watch pipe.
+	if len(os.Args) > 1 && os.Args[1] == "plugin-clip-capture" {
+		os.Exit(runClipCapture())
 	}
 	// Verb CLI: `keyshell toggle` / `keyshell openMode audio`.
 	if len(os.Args) > 1 && isVerb(os.Args[1]) {
@@ -149,6 +155,15 @@ type pluginBackend interface {
 	sdk.Backend
 }
 
+func runClipCapture() int {
+	b := clipplugin.New(clipplugin.StoreConfig{Path: clipplugin.DefaultStorePath()})
+	if err := b.Capture(os.Stdin); err != nil {
+		fmt.Fprintln(os.Stderr, "capture:", err)
+		return 1
+	}
+	return 0
+}
+
 func runPlugin(name string) int {
 	var b pluginBackend
 	switch name {
@@ -160,6 +175,8 @@ func runPlugin(name string) int {
 		b = netplugin.New()
 	case "power":
 		b = powerplugin.New()
+	case "clipboard":
+		b = clipplugin.New(clipplugin.StoreConfig{Path: clipplugin.DefaultStorePath()})
 	default:
 		fmt.Fprintln(os.Stderr, "unknown plugin:", name)
 		return 1

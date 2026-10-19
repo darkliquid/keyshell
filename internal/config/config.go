@@ -111,6 +111,7 @@ func Default() Config {
 			{ID: "media", Mode: "hot"},
 			{ID: "network", Mode: "hot"},
 			{ID: "power", Mode: "hot"},
+			{ID: "clipboard", Mode: "hot", NoReap: true},
 		},
 	}
 }

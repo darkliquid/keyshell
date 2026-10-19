@@ -283,6 +283,16 @@ func (l *Launcher) Escape() {
 	}
 }
 
+// ControlSource delivers a settled value change to a named backend, used by
+// the IPC verbs to drive a plugin without opening the overlay.
+func (l *Launcher) ControlSource(source string, c backend.Change) error {
+	b, err := l.provider.Get(source)
+	if err != nil {
+		return err
+	}
+	return b.Control(context.Background(), c)
+}
+
 // Control delivers a settled value change to the current item's backend.
 func (l *Launcher) Control(itemID string, controlID string, value float64) {
 	level := l.currentLevel()

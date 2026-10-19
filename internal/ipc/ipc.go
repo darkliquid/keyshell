@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/darkliquid/keyshell/internal/backend"
 	"github.com/darkliquid/keyshell/internal/launcher"
 )
 
@@ -59,6 +60,18 @@ func (h *Handler) dispatch(verb string) {
 		h.l.Open()
 	case "close":
 		h.l.Close()
+	case "volumeUp":
+		h.l.ControlSource("audio", backend.Change{Control: "volume-delta", Value: 0.05})
+	case "volumeDown":
+		h.l.ControlSource("audio", backend.Change{Control: "volume-delta", Value: -0.05})
+	case "toggleMute":
+		h.l.ControlSource("audio", backend.Change{Control: "mute", Bool: true})
+	case "playPause":
+		h.mediaPlayback("play-pause")
+	case "nextTrack":
+		h.mediaPlayback("next")
+	case "previousTrack":
+		h.mediaPlayback("previous")
 	default:
 		if strings.HasPrefix(verb, "openMode ") {
 			mode := strings.TrimPrefix(verb, "openMode ")
@@ -66,4 +79,8 @@ func (h *Handler) dispatch(verb string) {
 			h.l.Open()
 		}
 	}
+}
+
+func (h *Handler) mediaPlayback(action string) {
+	h.l.ControlSource("media", backend.Change{Control: "playback", Text: action})
 }

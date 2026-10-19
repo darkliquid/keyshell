@@ -44,6 +44,7 @@ be deleted once their findings are folded into the design.
 | --- | --- |
 | `mise run spike:s2` | Does a wlr-layer-shell surface receive keyboard and pointer input, and can on-demand focus be used to implement a launcher overlay? |
 | `mise run spike:s3` | Does `gg` render the display typography (all-caps italic Red Hat Display) well enough to replace Qt's text rendering? |
+| `mise run spike:s4` | Can a layer surface composite per-pixel alpha, so the overlay can show the desktop through scrims and translucent cards? (`spike:s4:verify`, `spike:s4:verify-straight`, `spike:s4:control` assert it against screenshots) |
 | `mise run spike:inject` | Test aid: synthesise real keystrokes and clicks through `/dev/uinput`, so the S2 spike can be driven and asserted without a human at the keyboard. |
 
 ## Dependency on a gogpu fork
@@ -65,6 +66,7 @@ it.
 mise.toml                     toolchain + tasks
 spikes/layershell-input       S2: layer surface + input
 spikes/text                   S3: display typography rendering
+spikes/transparency           S4: per-pixel alpha (spike + screenshot checker)
 spikes/tools/inject           test aid: synthetic input via uinput
 ```
 

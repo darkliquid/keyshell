@@ -15,6 +15,7 @@ require (
 	github.com/go-freedesktop/desktopentry v0.2.0 // indirect
 	github.com/go-webgpu/goffi v0.6.3 // indirect
 	github.com/go-webgpu/webgpu v0.5.5 // indirect
+	github.com/godbus/dbus/v5 v5.2.4 // indirect
 	github.com/gogpu/gputypes v0.8.0 // indirect
 	github.com/gogpu/naga v0.19.0 // indirect
 	github.com/gogpu/wgpu v0.34.2 // indirect

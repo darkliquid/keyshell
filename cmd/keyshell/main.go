@@ -19,6 +19,7 @@ import (
 	"github.com/darkliquid/keyshell/internal/backend/netplugin"
 	"github.com/darkliquid/keyshell/internal/backend/powerplugin"
 	"github.com/darkliquid/keyshell/internal/backend/run"
+	"github.com/darkliquid/keyshell/internal/backend/trayplugin"
 	"github.com/darkliquid/keyshell/internal/backend/windows"
 	"github.com/darkliquid/keyshell/internal/capability"
 	"github.com/darkliquid/keyshell/internal/config"
@@ -30,6 +31,7 @@ import (
 	"github.com/darkliquid/keyshell/internal/rank"
 	"github.com/darkliquid/keyshell/internal/render"
 	"github.com/darkliquid/keyshell/internal/theme"
+	"github.com/godbus/dbus/v5"
 	"github.com/gogpu/gogpu"
 )
 
@@ -200,6 +202,16 @@ func runPlugin(name string) int {
 		b = powerplugin.New()
 	case "clipboard":
 		b = clipplugin.New(clipplugin.StoreConfig{Path: clipplugin.DefaultStorePath()})
+	case "tray":
+		conn, err := dbus.ConnectSessionBus()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "tray: session bus:", err)
+			return 1
+		}
+		defer conn.Close()
+		w := trayplugin.NewWatcher(conn)
+		_ = w.Serve()
+		b = trayplugin.New(conn, w)
 	default:
 		fmt.Fprintln(os.Stderr, "unknown plugin:", name)
 		return 1

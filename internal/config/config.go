@@ -112,6 +112,7 @@ func Default() Config {
 			{ID: "network", Mode: "hot"},
 			{ID: "power", Mode: "hot"},
 			{ID: "clipboard", Mode: "hot", NoReap: true},
+			{ID: "tray", Mode: "hot"},
 		},
 	}
 }

@@ -34,7 +34,7 @@ func (b *Backend) menuItems(service string, depth int32) []sdk.Item {
 		return nil
 	}
 	root := parseLayout(layout.Value())
-	return flattenEntries(root, 0)
+	return flattenEntries(root, 0, service)
 }
 
 // menuBus reads the applet's Menu property (the bus name of its menu).
@@ -100,7 +100,7 @@ func propBool(props map[string]dbus.Variant, key string, def bool) bool {
 // flattenEntries turns a parsed layout into items. A separator or a disabled
 // entry still appears (subtitle indicates state); children are appended after
 // their parent as flats so the host's flat scoped list sees them all.
-func flattenEntries(entries []menuEntry, depth int) []sdk.Item {
+func flattenEntries(entries []menuEntry, depth int, service string) []sdk.Item {
 	var items []sdk.Item
 	for _, e := range entries {
 		if e.kind == "separator" {
@@ -111,21 +111,24 @@ func flattenEntries(entries []menuEntry, depth int) []sdk.Item {
 			title = "(unnamed)"
 		}
 		item := sdk.Item{
-			ID:    sdkItemID(e.id, depth),
+			ID:    menuItemID(service, e.id),
 			Title: title,
 			Glyph: "menu",
+			Actions: []sdk.Action{{
+				Type: "plugin", Value: "invoke-menu",
+			}},
 		}
 		if !e.enabled {
 			item.Subtitle = "disabled"
 		}
 		items = append(items, item)
-		items = append(items, flattenEntries(e.children, depth+1)...)
+		items = append(items, flattenEntries(e.children, depth+1, service)...)
 	}
 	return items
 }
 
-func sdkItemID(id int32, depth int) string {
-	return "menu-" + itoa(int(id)) + "-" + itoa(depth)
+func menuItemID(service string, id int32) string {
+	return "menu:" + service + ":" + itoa(int(id))
 }
 
 func itoa(n int) string {

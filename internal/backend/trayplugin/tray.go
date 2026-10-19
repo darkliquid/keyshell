@@ -64,6 +64,57 @@ func (b *Backend) Query(_ context.Context, q sdk.Query) (sdk.Stream, error) {
 
 func (b *Backend) Control(context.Context, sdk.Change) error { return nil }
 
+// Invoke executes a menu-item click on the applet's DBusMenu.
+func (b *Backend) Invoke(_ context.Context, i sdk.Invoke) error {
+	if i.Action != "invoke-menu" {
+		return nil
+	}
+	service, id, ok := parseMenuItemID(i.Item)
+	if !ok || b.conn == nil {
+		return nil
+	}
+	menuBus := b.menuBus(service)
+	if menuBus == "" {
+		return nil
+	}
+	obj := b.conn.Object(menuBus, dbus.ObjectPath("/MenuBar"))
+	// Event(id, "clicked", variant(0), timestamp=0)
+	call := obj.Call(dbusMenuIface+".Event", 0, id, "clicked", dbus.MakeVariant(0), int32(0))
+	return call.Err
+}
+
+// parseMenuItemID recovers service and menu id from "menu:<service>:<id>".
+func parseMenuItemID(item string) (string, int32, bool) {
+	rest := item
+	if len(rest) < 5 || rest[:5] != "menu:" {
+		return "", 0, false
+	}
+	rest = rest[5:]
+	colon := indexByte(rest, ':')
+	if colon < 0 {
+		return "", 0, false
+	}
+	service := rest[:colon]
+	idPart := rest[colon+1:]
+	var id int32
+	for _, c := range idPart {
+		if c < '0' || c > '9' {
+			return "", 0, false
+		}
+		id = id*10 + (c - '0')
+	}
+	return service, id, true
+}
+
+func indexByte(s string, b byte) int {
+	for i := 0; i < len(s); i++ {
+		if s[i] == b {
+			return i
+		}
+	}
+	return -1
+}
+
 // title reads the applet's Title property, best-effort.
 func (b *Backend) title(service string) string {
 	if b.conn == nil {

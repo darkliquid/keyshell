@@ -69,3 +69,16 @@ func TestContainsFold(t *testing.T) {
 		t.Error("containsFold matched a non-substring")
 	}
 }
+
+func TestParseMenuItemID(t *testing.T) {
+	svc, id, ok := parseMenuItemID("menu:org.kde.StatusNotifierItem-1-1:42")
+	if !ok || svc != "org.kde.StatusNotifierItem-1-1" || id != 42 {
+		t.Errorf("parse = (%q,%d,%v)", svc, id, ok)
+	}
+	if _, _, ok := parseMenuItemID("bogus"); ok {
+		t.Error("parse(bogus) should fail")
+	}
+	if _, _, ok := parseMenuItemID("menu:svc:notanumber"); ok {
+		t.Error("parse(bad id) should fail")
+	}
+}

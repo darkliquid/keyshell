@@ -45,7 +45,7 @@ func TestFlattenEntries(t *testing.T) {
 		}},
 		{id: 4, label: "", kind: "separator", enabled: true},
 	}
-	items := flattenEntries(entries, 0)
+	items := flattenEntries(entries, 0, "svc")
 	if len(items) != 3 {
 		t.Fatalf("items = %d, want 3 (root + 2 children, separator skipped)", len(items))
 	}

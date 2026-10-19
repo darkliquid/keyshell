@@ -1,13 +1,18 @@
 // Package render draws the overlay with gg into a buffer, unpremultiplies it,
-// and presents it on layer surfaces via gogpu. It owns the visual vocabulary:
-// the tilted band, sheared cards with hard offset shadows, thick accent borders,
-// and the display typography. The state comes from the launcher; the drawing is
-// stateless per frame.
+// and presents it on layer surfaces via gogpu. The composition is ported from
+// the QML implementation: a tilted trapezoid band in slab colour on a
+// transparent surface, a search field at the top of the rotated band content,
+// and sheared cards whose selected state is a solid accent fill.
 package render
 
 import (
 	"image"
+	"math"
+	"math/rand"
+	"strings"
+	"sync"
 
+	"github.com/darkliquid/keyshell/internal/config"
 	"github.com/darkliquid/keyshell/internal/rank"
 	"github.com/darkliquid/keyshell/internal/theme"
 	"github.com/gogpu/gg"
@@ -22,212 +27,246 @@ type View interface {
 	ModeBadge() string
 }
 
-const (
-	cardW     = 300.0
-	cardH     = 210.0
-	gap       = 26.0
-	bandY     = 96.0
-	bandH     = 720.0
-	shear     = 0.16 // card lean
-	bandShear = 0.10 // band edges
-)
+// Renderer holds the per-summon reveal geometry, resampled on each open.
+type Renderer struct {
+	mu      sync.Mutex
+	reveal  Reveal
+	wasOpen bool
+	rng     *rand.Rand
+}
 
-// DrawFrame paints the current launcher state into a gg context. When the
-// launcher is closed the frame is fully transparent, so the mapped overlay
-// surface shows the desktop through it.
-func DrawFrame(dc *gg.Context, l View, th *theme.Theme) {
+// New builds a renderer.
+func New() *Renderer {
+	return &Renderer{rng: rand.New(rand.NewSource(1))}
+}
+
+// DrawFrame paints the current launcher state at the given surface size.
+func (r *Renderer) DrawFrame(dc *gg.Context, l View, th *theme.Theme, cfg config.Reveal) {
+	w := float64(dc.Width())
+	h := float64(dc.Height())
+
 	if !l.IsOpen() {
 		dc.ClearWithColor(gg.RGBA{})
+		r.wasOpen = false
 		return
 	}
-	dc.ClearWithColor(th.Slab)
 
-	drawBand(dc, th)
-
-	drawHeader(dc, th, l.ModeBadge(), l.Query())
-
-	// Reel of cards.
-	results := l.Results()
-	selected := l.Selected()
-	offset := 70.0
-	for i, m := range results {
-		if i >= 12 {
-			break
-		}
-		x := offset + float64(i)*(cardW+gap)
-		if x > 1500 {
-			break
-		}
-		drawCard(dc, th, x, bandY+60, m, i == selected)
+	r.mu.Lock()
+	if !r.wasOpen {
+		r.reveal = Resample(w, h, cfg, r.rng)
+		r.wasOpen = true
 	}
+	rev := r.reveal
+	r.mu.Unlock()
 
-	drawStatusLine(dc, th, l.Query())
+	// Outside the band is transparent: only the band itself is slab.
+	dc.ClearWithColor(gg.RGBA{})
+	drawBand(dc, th, rev, w, h)
+
+	// Content lives in the band's rotated frame.
+	cw := math.Sqrt(w*w + (rev.YRight-rev.YLeft)*(rev.YRight-rev.YLeft))
+	ch := math.Min(rev.HLeft, rev.HRight) * math.Cos(rev.Angle)
+
+	dc.Push()
+	dc.Translate(w/2, rev.Yc)
+	dc.Rotate(rev.Angle)
+	dc.Translate(-cw/2, -ch/2)
+
+	drawSearchField(dc, th, l, cfg, cw)
+	drawCards(dc, th, l, rev, cfg, cw, ch)
+
+	dc.Pop()
 }
 
-// drawBand draws the tilted band: a trapezoid container with a hard shadow and
-// a cyan accent spine, giving the overlay its arcade frame.
-func drawBand(dc *gg.Context, th *theme.Theme) {
-	w := 1700.0
-	shearPx := bandH * bandShear
-	left := (1920.0 - w) / 2
-	top := bandY
-	bottom := top + bandH
+// drawBand fills the tilted trapezoid in slab colour.
+func drawBand(dc *gg.Context, th *theme.Theme, rev Reveal, w, h float64) {
+	halfL := rev.HLeft / 2
+	halfR := rev.HRight / 2
 
-	// Hard offset shadow first (solid, zero blur).
-	dc.SetColor(gg.RGBA{R: 0, G: 0, B: 0, A: 0.45})
+	dc.SetColor(th.Slab)
 	dc.NewSubPath()
-	dc.MoveTo(left+14, top+14)
-	dc.LineTo(left+w+shearPx+14, top+14)
-	dc.LineTo(left+w+shearPx+14, bottom+14)
-	dc.LineTo(left+14, bottom+14)
-	dc.ClosePath()
-	_ = dc.Fill()
-
-	// The band surface, sheared on the right edge.
-	dc.SetColor(th.SurfaceAlt)
-	dc.NewSubPath()
-	dc.MoveTo(left, top)
-	dc.LineTo(left+w+shearPx, top)
-	dc.LineTo(left+w+shearPx, bottom)
-	dc.LineTo(left, bottom)
-	dc.ClosePath()
-	_ = dc.Fill()
-
-	// Cyan accent spine on the left edge.
-	dc.SetColor(th.AccentAlt)
-	dc.DrawRectangle(left, top, 6, bandH)
-	_ = dc.Fill()
-
-	// Top "band" bar.
-	dc.SetColor(th.Accent)
-	dc.DrawRectangle(left-20, top-12, 40, 8)
-	_ = dc.Fill()
-}
-
-// drawCard draws one card with a solid offset shadow, a sheared face, a thick
-// border, and the display typography. The selected card gets the accent border
-// and a highlighted title.
-func drawCard(dc *gg.Context, th *theme.Theme, x, y float64, m rank.Match, selected bool) {
-	// Sheared card geometry via a quad.
-	skew := shear * cardH
-
-	// Hard offset shadow.
-	dc.SetColor(gg.RGBA{R: 0, G: 0, B: 0, A: 0.5})
-	quad(dc, x+12, y+12, skew, cardW, cardH, th.SurfaceAlt)
-
-	// Card face.
-	quadFill := th.SurfaceAlt
-	if selected {
-		quadFill = gg.RGBA{R: 0x1A, G: 0x1A, B: 0x22, A: 1}
-	}
-	quad(dc, x, y, skew, cardW, cardH, quadFill)
-
-	// Border: 3px accent for selected, muted otherwise.
-	quadStroke := th.Muted
-	if selected {
-		quadStroke = th.Accent
-	}
-	dc.SetColor(quadStroke)
-	dc.SetLineWidth(3)
-	strokeQuad(dc, x, y, skew, cardW, cardH)
-
-	// Glyph (emoji or icon name) if present.
-	if m.Item.Glyph != "" {
-		glyphFace := th.Face(40)
-		dc.SetFont(glyphFace)
-		dc.SetColor(th.AccentAlt)
-		dc.DrawString(m.Item.Glyph, x+16, y+110)
-	}
-
-	// Title in the display face.
-	titleFace := th.Face(30)
-	dc.SetFont(titleFace)
-	if selected {
-		dc.SetColor(th.AccentAlt)
-	} else {
-		dc.SetColor(th.Ink)
-	}
-	dc.DrawString(clip(m.Item.Title, 16), x+18, y+48)
-
-	// Subtitle.
-	subFace := th.Face(15)
-	dc.SetFont(subFace)
-	dc.SetColor(th.Muted)
-	dc.DrawString(clip(m.Item.Subtitle, 30), x+18, y+74)
-
-	// Selected chevron.
-	if selected {
-		dc.SetFont(th.Face(24))
-		dc.SetColor(th.Accent)
-		dc.DrawString("▶", x+cardW-34, y+48)
-	}
-}
-
-// quad fills a parallelogram: top edge shifted right by skew.
-func quad(dc *gg.Context, x, y, skew, w, h float64, col gg.RGBA) {
-	dc.SetColor(col)
-	dc.NewSubPath()
-	dc.MoveTo(x, y)
-	dc.LineTo(x+w+skew, y)
-	dc.LineTo(x+w+skew, y+h)
-	dc.LineTo(x, y+h)
+	dc.MoveTo(0, rev.YLeft-halfL)
+	dc.LineTo(w, rev.YRight-halfR)
+	dc.LineTo(w, rev.YRight+halfR)
+	dc.LineTo(0, rev.YLeft+halfL)
 	dc.ClosePath()
 	_ = dc.Fill()
 }
 
-func strokeQuad(dc *gg.Context, x, y, skew, w, h float64) {
-	dc.NewSubPath()
-	dc.MoveTo(x, y)
-	dc.LineTo(x+w+skew, y)
-	dc.LineTo(x+w+skew, y+h)
-	dc.LineTo(x, y+h)
-	dc.ClosePath()
-	_ = dc.Stroke()
-}
+// drawSearchField draws the mode badge, the uppercased query with its cursor
+// bar, and the result count, centred at the top of the band.
+func drawSearchField(dc *gg.Context, th *theme.Theme, l View, cfg config.Reveal, cw float64) {
+	fieldW := math.Min(cw*0.8, 1200)
+	fieldX := (cw - fieldW) / 2
+	fieldTop := cfg.ContentPaddingPx
+	midY := fieldTop + cfg.SearchHeightPx/2
 
-// drawHeader draws the mode badge and the query in the top bar.
-func drawHeader(dc *gg.Context, th *theme.Theme, badge, query string) {
+	badge := l.ModeBadge()
 	if badge == "" {
 		badge = "SEARCH"
 	}
-	// Badge plate.
-	dc.SetColor(th.SurfaceAlt)
-	dc.DrawRectangle(70, 36, 190, 40)
+	badgeFace := th.Face(12)
+	badgeW := badgeFace.Advance(badge) + 16
+
+	// Badge plate: accent fill, slab text.
+	badgeH := 28.0
+	dc.SetColor(th.Accent)
+	dc.DrawRectangle(fieldX, midY-badgeH/2, badgeW, badgeH)
 	_ = dc.Fill()
-	dc.SetColor(th.Accent)
-	dc.SetLineWidth(3)
-	dc.DrawRectangle(70, 36, 190, 40)
-	_ = dc.Stroke()
 
-	badgeFace := th.Face(26)
 	dc.SetFont(badgeFace)
-	dc.SetColor(th.Accent)
-	dc.DrawString(badge, 88, 66)
+	dc.SetColor(th.Slab)
+	dc.DrawString(badge, fieldX+8, midY+4)
 
-	// Query text.
-	queryFace := th.Face(26)
+	// Query text, uppercased, in ink.
+	queryFace := th.Face(22)
 	dc.SetFont(queryFace)
 	dc.SetColor(th.Ink)
-	prefix := "⌕ "
-	dc.DrawString(prefix+query, 290, 66)
-}
+	query := strings.ToUpper(l.Query())
+	queryX := fieldX + badgeW + 12
+	dc.DrawString(query, queryX, midY+8)
 
-func drawStatusLine(dc *gg.Context, th *theme.Theme, query string) {
-	face := th.Face(18)
-	dc.SetFont(face)
+	// Cursor bar after the query.
+	cursorX := queryX + queryFace.Advance(query) + 2
+	dc.SetColor(th.Accent)
+	dc.DrawRectangle(cursorX, midY-12, 3, 24)
+	_ = dc.Fill()
+
+	// Match count on the right of the field.
+	countFace := th.Face(14)
+	dc.SetFont(countFace)
 	dc.SetColor(th.Muted)
-	text := "Enter: open   Tab: mode   Escape: dismiss"
-	if query != "" {
-		text = "⌕ " + query
-	}
-	dc.DrawString(text, 70, 948)
+	count := itoa(len(l.Results()))
+	dc.DrawString(count, fieldX+fieldW-countFace.Advance(count), midY+4)
 }
 
-func clip(s string, n int) string {
-	if len(s) <= n {
-		return s
+// drawCards lays the reel across the band content.
+func drawCards(dc *gg.Context, th *theme.Theme, l View, rev Reveal, cfg config.Reveal, cw, ch float64) {
+	cardTop := cfg.ContentPaddingPx + cfg.SearchHeightPx + 8
+	cardH := ch - cardTop - cfg.ContentPaddingPx
+	if cardH <= 0 {
+		return
 	}
-	return s[:n] + "…"
+	cardW := math.Min(cfg.CardWidthMaxPx, cw/3)
+	results := l.Results()
+	selected := l.Selected()
+
+	// Centre the reel around the selected card.
+	visible := int(cw/(cardW+8)) + 2
+	first := selected - visible/2
+	if first < 0 {
+		first = 0
+	}
+	if first+visible > len(results) {
+		first = len(results) - visible
+		if first < 0 {
+			first = 0
+		}
+	}
+
+	x := 0.0
+	for i := first; i < len(results) && i < first+visible; i++ {
+		drawCard(dc, th, rev, cfg, x, cardTop, cardW, cardH, results[i], i == selected)
+		x += cardW + 8
+	}
+}
+
+// drawCard reproduces the QML Card: a sheared slab (or accent when selected)
+// with a 3px border, and a cyan offset shadow behind unselected cards.
+func drawCard(dc *gg.Context, th *theme.Theme, rev Reveal, cfg config.Reveal, x, y, w, h float64, m rank.Match, selected bool) {
+	if !selected {
+		shadow := th.AccentAlt
+		shadow.A = 0.7
+		cardQuad(dc, rev, x+4, y+4, w, h, shadow, th.AccentAlt, 0)
+	}
+
+	fill := th.Slab
+	border := th.Muted
+	if selected {
+		fill = th.Accent
+		border = th.Accent
+	}
+	cardQuad(dc, rev, x, y, w, h, fill, border, 3)
+
+	const contentPadding = 10.0
+	if m.Item.Glyph != "" {
+		iconSize := math.Max(36, math.Min(52, math.Round(h*0.40)))
+		glyphFace := th.Face(iconSize)
+		dc.SetFont(glyphFace)
+		if selected {
+			dc.SetColor(th.Slab)
+		} else {
+			dc.SetColor(th.Ink)
+		}
+		glyph := m.Item.Glyph
+		gw := glyphFace.Advance(glyph)
+		dc.DrawString(glyph, x+contentPadding+(w-2*contentPadding-gw)/2, y+contentPadding+iconSize)
+	}
+
+	titleSize := math.Max(12, math.Min(16, math.Round(h*0.14)))
+	titleFace := th.Face(titleSize)
+	dc.SetFont(titleFace)
+	if selected {
+		dc.SetColor(th.Slab)
+	} else {
+		dc.SetColor(th.Ink)
+	}
+	title := strings.ToUpper(m.Item.Title)
+	titleY := y + h - contentPadding - float64(titleSize)*0.4
+	tw := titleFace.Advance(title)
+	dc.DrawString(title, x+contentPadding+(w-2*contentPadding-tw)/2, titleY)
+}
+
+// cardQuad fills and strokes a parallelogram matching the QML shear matrix:
+// y' = y + shear*x, x' = x - shear*h/2.
+func cardQuad(dc *gg.Context, rev Reveal, x, y, w, h float64, fill, border gg.RGBA, borderWidth float64) {
+	shear := rev.Shear
+	hx := shear * h / 2
+	tl := [2]float64{x - hx, y}
+	tr := [2]float64{x - hx + w, y + shear*w}
+	br := [2]float64{x - hx + w, y + shear*w + h}
+	bl := [2]float64{x - hx, y + h}
+
+	if fill.A > 0 {
+		dc.SetColor(fill)
+		dc.NewSubPath()
+		dc.MoveTo(tl[0], tl[1])
+		dc.LineTo(tr[0], tr[1])
+		dc.LineTo(br[0], br[1])
+		dc.LineTo(bl[0], bl[1])
+		dc.ClosePath()
+		_ = dc.Fill()
+	}
+	if borderWidth > 0 {
+		dc.SetColor(border)
+		dc.SetLineWidth(borderWidth)
+		dc.NewSubPath()
+		dc.MoveTo(tl[0], tl[1])
+		dc.LineTo(tr[0], tr[1])
+		dc.LineTo(br[0], br[1])
+		dc.LineTo(bl[0], bl[1])
+		dc.ClosePath()
+		_ = dc.Stroke()
+	}
+}
+
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	neg := n < 0
+	if neg {
+		n = -n
+	}
+	var b []byte
+	for n > 0 {
+		b = append([]byte{byte('0' + n%10)}, b...)
+		n /= 10
+	}
+	if neg {
+		return "-" + string(b)
+	}
+	return string(b)
 }
 
 // unpremultiply converts a premultiplied RGBA image (Go's image.RGBA

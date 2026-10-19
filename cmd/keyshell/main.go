@@ -98,7 +98,7 @@ func main() {
 		go ipc.New(l).Serve(ln)
 	}
 
-	if err := render.Present(app, l, th, render.PresentConfig{Width: 1600, Height: 900, Namespace: "keyshell"}); err != nil {
+	if err := render.Present(app, l, th, render.PresentConfig{Width: 1600, Height: 900, Namespace: "keyshell", Reveal: cfg.Reveal}); err != nil {
 		fmt.Fprintln(os.Stderr, "overlay:", err)
 		os.Exit(1)
 	}

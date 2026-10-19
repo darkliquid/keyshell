@@ -10,15 +10,23 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-// Reveal holds the resampling bounds for the band's reveal effect. The values
-// are the usable ranges the overlay randomises within on each summon.
+// Reveal holds the band geometry and the ranges the overlay randomises within
+// on each summon, ported from the QML Config.qml.
 type Reveal struct {
-	MinTilt      float64
-	MaxTilt      float64
-	MinShear     float64
-	MaxShear     float64
-	MinEndHeight float64
-	MaxEndHeight float64
+	MinTiltDeg         float64 `toml:"min_tilt_deg"`
+	CenterSpreadFactor float64 `toml:"center_spread_factor"`
+	TaperMaxFactor     float64 `toml:"taper_max_factor"`
+	ShearCoupling      float64 `toml:"shear_coupling"`
+	ShearJitterDeg     float64 `toml:"shear_jitter_deg"`
+	ShearMinDeg        float64 `toml:"shear_min_deg"`
+	ShearMaxDeg        float64 `toml:"shear_max_deg"`
+	BandHeightPx       float64 `toml:"band_height_px"`
+	BandCenterFactor   float64 `toml:"band_center_factor"`
+	MinEndHeightPx     float64 `toml:"min_end_height_px"`
+	CardWidthPx        float64 `toml:"card_width_px"`
+	CardWidthMaxPx     float64 `toml:"card_width_max_px"`
+	SearchHeightPx     float64 `toml:"search_height_px"`
+	ContentPaddingPx   float64 `toml:"content_padding_px"`
 }
 
 // Anim holds the animation durations in milliseconds. keyshell's feel is short
@@ -77,9 +85,20 @@ type Config struct {
 func Default() Config {
 	return Config{
 		Reveal: Reveal{
-			MinTilt: -14, MaxTilt: 14,
-			MinShear: -0.22, MaxShear: 0.22,
-			MinEndHeight: 40, MaxEndHeight: 90,
+			MinTiltDeg:         5.0,
+			CenterSpreadFactor: 0.10,
+			TaperMaxFactor:     0.15,
+			ShearCoupling:      1.0,
+			ShearJitterDeg:     2,
+			ShearMinDeg:        6,
+			ShearMaxDeg:        14,
+			BandHeightPx:       290,
+			BandCenterFactor:   0.5,
+			MinEndHeightPx:     200,
+			CardWidthPx:        320,
+			CardWidthMaxPx:     360,
+			SearchHeightPx:     48,
+			ContentPaddingPx:   12,
 		},
 		Anim: Anim{
 			ExpandMs: 90,

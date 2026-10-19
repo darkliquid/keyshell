@@ -4,6 +4,7 @@ package render
 import (
 	"image"
 
+	"github.com/darkliquid/keyshell/internal/config"
 	"github.com/darkliquid/keyshell/internal/launcher"
 	"github.com/darkliquid/keyshell/internal/theme"
 	"github.com/gogpu/gg"
@@ -16,6 +17,7 @@ import (
 type PresentConfig struct {
 	Width, Height int
 	Namespace     string
+	Reveal        config.Reveal
 }
 
 // Present runs the layer-surface overlay, drawing each frame from the
@@ -26,6 +28,7 @@ func Present(app *gogpu.App, l *launcher.Launcher, th *theme.Theme, cfg PresentC
 		th:   th,
 		cfg:  cfg,
 		draw: gg.NewContext(cfg.Width, cfg.Height),
+		rdr:  New(),
 	}
 	app = p.configure(app)
 	return app.Run()
@@ -36,6 +39,7 @@ type presenter struct {
 	th     *theme.Theme
 	cfg    PresentConfig
 	draw   *gg.Context
+	rdr    *Renderer
 	tex    gpucontext.Texture
 	drawer gpucontext.TextureDrawer
 }
@@ -47,7 +51,7 @@ func (p *presenter) configure(app *gogpu.App) *gogpu.App {
 		dc.ClearColor(gmath.Color{R: 0, G: 0, B: 0, A: 0})
 
 		// Draw the frame into the scratch context.
-		DrawFrame(p.draw, p.l, p.th)
+		p.rdr.DrawFrame(p.draw, p.l, p.th, p.cfg.Reveal)
 		img, ok := p.draw.Image().(*image.RGBA)
 		if !ok {
 			return
@@ -62,6 +66,8 @@ func (p *presenter) configure(app *gogpu.App) *gogpu.App {
 				return
 			}
 			p.tex = tex
+		} else if u, ok := p.tex.(gpucontext.TextureUpdater); ok {
+			_ = u.UpdateData(straight.Pix)
 		}
 		_ = p.drawer.DrawTexture(p.tex, 0, 0)
 	})

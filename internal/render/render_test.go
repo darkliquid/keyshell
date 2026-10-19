@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/darkliquid/keyshell/internal/backend"
+	"github.com/darkliquid/keyshell/internal/config"
 	"github.com/darkliquid/keyshell/internal/rank"
 	"github.com/darkliquid/keyshell/internal/theme"
 	"github.com/gogpu/gg"
@@ -25,12 +26,16 @@ func TestDrawFrameProducesImage(t *testing.T) {
 		{Item: backend.Item{Title: "Firefox", Subtitle: "Web Browser"}},
 	}}
 	dc := gg.NewContext(1600, 900)
-	DrawFrame(dc, view, th)
+	New().DrawFrame(dc, view, th, config.Default().Reveal)
 	img := dc.Image().(*image.RGBA)
 
-	// Slab at a corner away from content.
-	if !closeTo(img, 0, 0, 0x0B, 0x0B, 0x0F) {
-		t.Errorf("corner not slab background")
+	// Outside the band the surface is transparent, as in the QML overlay.
+	if got := img.RGBAAt(0, 0); got.A != 0 {
+		t.Errorf("corner alpha = %d, want 0 (transparent outside the band)", got.A)
+	}
+	// Inside the band the slab or a card is painted.
+	if got := img.RGBAAt(800, 450); got.A == 0 {
+		t.Error("centre is transparent, want the band painted")
 	}
 	// Ink title present somewhere near the top-left.
 	if !containsColor(img, 0xF2, 0xF2, 0xF7) {
@@ -106,7 +111,7 @@ func TestDrawFrameBlanksWhenClosed(t *testing.T) {
 	defer th.Close()
 	view := &fakeView{open: false}
 	dc := gg.NewContext(1600, 900)
-	DrawFrame(dc, view, th)
+	New().DrawFrame(dc, view, th, config.Default().Reveal)
 	img := dc.Image().(*image.RGBA)
 	if got := img.RGBAAt(0, 0); got.A != 0 {
 		t.Errorf("closed frame corner alpha = %d, want 0", got.A)

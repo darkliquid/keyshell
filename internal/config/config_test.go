@@ -14,8 +14,11 @@ func TestDefaultsAreReturnedWhenFileMissing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load(missing) = err %v, want nil", err)
 	}
-	if cfg.Reveal.MinTilt >= cfg.Reveal.MaxTilt {
-		t.Errorf("Reveal tilt range invalid: min=%v max=%v", cfg.Reveal.MinTilt, cfg.Reveal.MaxTilt)
+	if cfg.Reveal.ShearMinDeg >= cfg.Reveal.ShearMaxDeg {
+		t.Errorf("Reveal shear range invalid: min=%v max=%v", cfg.Reveal.ShearMinDeg, cfg.Reveal.ShearMaxDeg)
+	}
+	if cfg.Reveal.BandHeightPx <= 0 {
+		t.Errorf("Reveal.BandHeightPx must be positive, got %v", cfg.Reveal.BandHeightPx)
 	}
 	if cfg.Anim.ExpandMs <= 0 || cfg.Anim.ScrollMs <= 0 {
 		t.Errorf("Anim durations must be positive, got %+v", cfg.Anim)
@@ -45,8 +48,8 @@ scroll_ms = 40
 	if cfg.Anim.ExpandMs != 140 || cfg.Anim.ScrollMs != 40 {
 		t.Errorf("Anim = %+v, want expand=140 scroll=40", cfg.Anim)
 	}
-	if cfg.Reveal.MinTilt == 0 {
-		t.Errorf("defaults lost behind TOML: Reveal.MinTilt = 0")
+	if cfg.Reveal.BandHeightPx == 0 {
+		t.Errorf("defaults lost behind TOML: Reveal.BandHeightPx = 0")
 	}
 }
 

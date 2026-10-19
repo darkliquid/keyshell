@@ -68,10 +68,12 @@ func TestConfigShape(t *testing.T) {
 	cfg := Config{}
 	// Presence checks: these fields must exist with the right types.
 	var _ map[string]any = map[string]any{
-		"Reveal":  cfg.Reveal,
-		"Anim":    cfg.Anim,
-		"Overlay": cfg.Overlay,
-		"Drinks":  cfg.Drinks,
+		"Reveal":    cfg.Reveal,
+		"Anim":      cfg.Anim,
+		"Overlay":   cfg.Overlay,
+		"Drinks":    cfg.Drinks,
+		"Frecency":  cfg.Frecency,
+		"Instances": cfg.Instances,
 	}
 	if reflect.ValueOf(cfg).Kind() != reflect.Struct {
 		t.Fatal("Config must be a struct")

@@ -62,6 +62,13 @@ run = "./spikes/transparency/verify.sh transparent -unpremultiply"
 description = "S4 control: same probes on an opaque surface, which must NOT show the desktop"
 run = "./spikes/transparency/verify.sh opaque"
 
+[tasks."plugin:demo"]
+description = "Run the audio plugin standalone, speaking the protocol to a scripted session"
+run = """
+printf '%s\n' '{"init":{"instance":"audio","config":{}}}' '{"query":{"id":1,"text":"","limit":20,"merged":false}}' |
+  KEYSHELL_PLUGIN=1 KEYSHELL_PROTOCOL=1 KEYSHELL_INSTANCE=audio   go run ./cmd/keyshell plugin audio
+"""
+
 [tasks."spike:inject"]
 description = "Type text and click on a Wayland session, for testing the S2 spike without a hand"
 run = "go run ./spikes/tools/inject \"$@\""

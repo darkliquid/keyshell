@@ -49,6 +49,11 @@ const (
 	exitGrace    = 2 * time.Second
 )
 
+// NewHost builds a Host for the launch config.
+func NewHost(launch Launch) *Host {
+	return &Host{cfg: launch}
+}
+
 // Start spawns the plugin and performs the handshake.
 func (h *Host) Start() error {
 	h.mu.Lock()

@@ -11,6 +11,7 @@ import (
 
 	"github.com/darkliquid/keyshell/internal/backend"
 	"github.com/darkliquid/keyshell/internal/backend/apps"
+	"github.com/darkliquid/keyshell/internal/backend/audioplugin"
 	"github.com/darkliquid/keyshell/internal/backend/calc"
 	"github.com/darkliquid/keyshell/internal/backend/files"
 	"github.com/darkliquid/keyshell/internal/backend/run"
@@ -20,6 +21,8 @@ import (
 	"github.com/darkliquid/keyshell/internal/input"
 	"github.com/darkliquid/keyshell/internal/ipc"
 	"github.com/darkliquid/keyshell/internal/launcher"
+	"github.com/darkliquid/keyshell/internal/plugin"
+	"github.com/darkliquid/keyshell/internal/plugin/sdk"
 	"github.com/darkliquid/keyshell/internal/rank"
 	"github.com/darkliquid/keyshell/internal/render"
 	"github.com/darkliquid/keyshell/internal/theme"
@@ -27,6 +30,10 @@ import (
 )
 
 func main() {
+	// Plugin mode: `keyshell plugin <name>` when spawned by the host.
+	if len(os.Args) > 2 && os.Args[1] == "plugin" {
+		os.Exit(runPlugin(os.Args[2]))
+	}
 	// Verb CLI: `keyshell toggle` / `keyshell openMode audio`.
 	if len(os.Args) > 1 && isVerb(os.Args[1]) {
 		os.Exit(runVerb(os.Args[1:]))
@@ -80,8 +87,11 @@ func main() {
 	}
 }
 
+// buildProvider serves configured plugin instances as subprocesses and falls
+// back to in-process backends for the rest. Plugin instances start lazily on
+// first use, which is enough for step 2.
 func buildProvider(cfg config.Config) backend.BackendProvider {
-	return backend.NewInProc(func(id string, c config.Config) (backend.Backend, error) {
+	inproc := backend.NewInProc(func(id string, c config.Config) (backend.Backend, error) {
 		switch id {
 		case "apps":
 			return apps.New(c)
@@ -96,6 +106,55 @@ func buildProvider(cfg config.Config) backend.BackendProvider {
 		}
 		return nil, fmt.Errorf("unknown backend %q", id)
 	})
+
+	plugins := map[string]plugin.Launch{}
+	self, err := os.Executable()
+	if err != nil {
+		self = "keyshell"
+	}
+	for _, inst := range cfg.Instances {
+		cmd := inst.Command
+		if len(cmd) == 0 {
+			cmd = []string{self, "plugin", inst.ID}
+		}
+		plugins[inst.ID] = plugin.Launch{Instance: inst.ID, Command: cmd}
+	}
+	return &hybridProvider{inproc: inproc, plugins: plugins}
+}
+
+type hybridProvider struct {
+	inproc  backend.BackendProvider
+	plugins map[string]plugin.Launch
+}
+
+func (p *hybridProvider) Get(id string) (backend.Backend, error) {
+	if launch, ok := p.plugins[id]; ok {
+		h := plugin.NewHost(launch)
+		if err := h.Start(); err != nil {
+			return nil, err
+		}
+		return h, nil
+	}
+	return p.inproc.Get(id)
+}
+
+// runPlugin starts a plugin in SDK mode.
+func runPlugin(name string) int {
+	switch name {
+	case "audio":
+		b := audioplugin.New()
+		return servePlugin(b.Info(), b)
+	}
+	fmt.Fprintln(os.Stderr, "unknown plugin:", name)
+	return 1
+}
+
+func servePlugin(info sdk.Info, b sdk.Backend) int {
+	if err := sdk.Serve(info, b); err != nil {
+		fmt.Fprintln(os.Stderr, "plugin:", err)
+		return 1
+	}
+	return 0
 }
 
 func configPath() string {

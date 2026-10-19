@@ -54,13 +54,22 @@ type Frecency struct {
 	FlushMs    int              `toml:"flush_debounce_ms"`
 }
 
+// Instance is one configured plugin instance.
+type Instance struct {
+	ID      string   `toml:"id"`
+	Command []string `toml:"command"`
+	Mode    string   `toml:"mode"` // auto|hot|lazy
+	NoReap  bool     `toml:"noreap"`
+}
+
 // Config is the parsed host configuration.
 type Config struct {
-	Reveal   Reveal
-	Anim     Anim
-	Overlay  Overlay
-	Drinks   Drinks
-	Frecency Frecency
+	Reveal    Reveal
+	Anim      Anim
+	Overlay   Overlay
+	Drinks    Drinks
+	Frecency  Frecency
+	Instances []Instance `toml:"instance"`
 }
 
 // Default returns the built-in configuration. It is the zero base for any
@@ -94,6 +103,11 @@ func Default() Config {
 			CountCap:   10,
 			MaxAgeDays: 90,
 			FlushMs:    2000,
+		},
+		// The audio plugin runs as a subprocess by default. With an empty
+		// command, the host resolves it to `<self> plugin audio`.
+		Instances: []Instance{
+			{ID: "audio", Mode: "hot"},
 		},
 	}
 }

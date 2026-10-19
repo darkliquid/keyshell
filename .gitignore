@@ -1,0 +1,10 @@
+# Build outputs
+.tmp/
+out/
+*.test
+keyshell
+
+# `go build ./spikes/...` drops binaries next to their source
+/layershell-input
+/text
+/inject

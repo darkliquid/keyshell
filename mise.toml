@@ -1,0 +1,51 @@
+[env]
+# keyshell is a pure-Go single-binary project: no cgo, ever. This keeps the
+# build reproducible and cross-compilable, and it is the same premise gogpu's
+# own ROADMAP commits to.
+CGO_ENABLED = "0"
+TMPDIR = "{{config_root}}/.tmp"
+
+[tools]
+go = "1.27.2"
+golangci-lint = "latest"
+
+[tasks.build]
+description = "Build every package"
+run = "go build ./..."
+
+[tasks.test]
+description = "Run the test suite"
+run = "go test ./..."
+
+[tasks.lint]
+description = "Lint with golangci-lint"
+run = "golangci-lint run --timeout=5m"
+
+[tasks.fmt]
+description = "Format all Go sources"
+run = "gofmt -l -w ."
+
+[tasks.check]
+description = "Format check, vet and test in one pass"
+depends = ["test"]
+run = "test -z \"$(gofmt -l .)\" && go vet ./..."
+
+# =============================================================================
+# SPIKES
+#
+# Throwaway proofs of concept that answer one question each. They are not part
+# of the product and are expected to be deleted once their findings land in the
+# design.
+# =============================================================================
+
+[tasks."spike:s2"]
+description = "S2: does a layer surface receive keyboard/pointer input? (needs a Wayland session)"
+run = "go run ./spikes/layershell-input"
+
+[tasks."spike:s3"]
+description = "S3: does gg render the display face well enough? (writes out/s3-*.png)"
+run = "go run ./spikes/text"
+
+[tasks."spike:inject"]
+description = "Type text and click on a Wayland session, for testing the S2 spike without a hand"
+run = "go run ./spikes/tools/inject \"$@\""

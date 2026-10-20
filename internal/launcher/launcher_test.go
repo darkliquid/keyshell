@@ -96,6 +96,23 @@ func TestMergedSearchUsesConfiguredSearchable(t *testing.T) {
 	}
 }
 
+// TestDefaultModeIsMerged guards the summon path: a launcher opened without an
+// explicit SetMode must search every searchable backend. Starting with an empty
+// mode id searched a backend called "" and returned nothing.
+func TestDefaultModeIsMerged(t *testing.T) {
+	l, _ := newTestLauncher()
+	if got := l.Mode(); got != MergedMode {
+		t.Fatalf("Mode() = %q, want %q", got, MergedMode)
+	}
+	l.Open()
+	if len(l.Results()) == 0 {
+		t.Fatal("no results after Open without SetMode")
+	}
+	if got := l.ModeBadge(); got != "SEARCH" {
+		t.Errorf("ModeBadge() = %q, want SEARCH", got)
+	}
+}
+
 func TestMergedSearchRanksAcrossBackends(t *testing.T) {
 	l, _ := newTestLauncher()
 	l.Open()

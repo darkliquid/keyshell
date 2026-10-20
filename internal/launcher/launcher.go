@@ -12,6 +12,10 @@ import (
 	"github.com/darkliquid/keyshell/internal/rank"
 )
 
+// MergedMode is the mode id for the merged search across every searchable
+// backend. It is the launcher's default mode.
+const MergedMode = "all"
+
 // Mode is a named result source (a backend id) or the merged search.
 type Mode struct {
 	ID string
@@ -61,7 +65,7 @@ func New(provider backend.BackendProvider, opts Options) *Launcher {
 	if opts.SettleMs == 0 {
 		opts.SettleMs = 80 * time.Millisecond
 	}
-	return &Launcher{provider: provider, opts: opts}
+	return &Launcher{provider: provider, opts: opts, mode: MergedMode}
 }
 
 // OnChange registers a callback invoked after any state change. Several
@@ -109,7 +113,7 @@ func (l *Launcher) Mode() string { return l.mode }
 
 // ModeBadge returns the badge for the active mode (or SEARCH when merged).
 func (l *Launcher) ModeBadge() string {
-	if l.mode == "" || l.mode == "all" {
+	if l.mode == "" || l.mode == MergedMode {
 		return "SEARCH"
 	}
 	b, err := l.provider.Get(l.mode)
@@ -166,7 +170,7 @@ func (l *Launcher) refresh() {
 	if level == nil {
 		return
 	}
-	if l.mode == "all" {
+	if l.mode == MergedMode || l.mode == "" {
 		// merged search: all searchable backends
 		ids := l.searchableIDs()
 		groups := []rank.Group{}

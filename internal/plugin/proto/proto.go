@@ -61,16 +61,24 @@ type Query struct {
 
 // Item is one result.
 type Item struct {
-	ID          string        `json:"id"`
-	Title       string        `json:"title"`
-	Subtitle    string        `json:"subtitle,omitempty"`
-	Glyph       string        `json:"glyph,omitempty"`
-	Badge       string        `json:"badge,omitempty"`
-	Destructive bool          `json:"destructive,omitempty"`
-	Actions     []Action      `json:"actions,omitempty"`
-	Controls    []ControlSpec `json:"controls,omitempty"`
-	HasChildren bool          `json:"has_children,omitempty"`
-	Expandable  bool          `json:"expandable,omitempty"`
+	ID          string         `json:"id"`
+	Title       string         `json:"title"`
+	Subtitle    string         `json:"subtitle,omitempty"`
+	Glyph       string         `json:"glyph,omitempty"`
+	Badge       string         `json:"badge,omitempty"`
+	Destructive bool           `json:"destructive,omitempty"`
+	Actions     []Action       `json:"actions,omitempty"`
+	Controls    []ControlSpec  `json:"controls,omitempty"`
+	HasChildren bool           `json:"has_children,omitempty"`
+	Expandable  bool           `json:"expandable,omitempty"`
+	Icon        string         `json:"icon,omitempty"`
+	Image       string         `json:"image,omitempty"`
+	Preview     string         `json:"preview,omitempty"`
+	Status      string         `json:"status,omitempty"`
+	StatusTone  string         `json:"status_tone,omitempty"`
+	Detail      string         `json:"detail,omitempty"`
+	Hint        string         `json:"hint,omitempty"`
+	Card        []CardPartSpec `json:"card,omitempty"`
 }
 
 // Action is one declarative action.
@@ -91,6 +99,16 @@ type ControlSpec struct {
 	Bool    bool     `json:"bool,omitempty"`
 	Text    string   `json:"text,omitempty"`
 	Options []string `json:"options,omitempty"`
+	Display string   `json:"display,omitempty"`
+	Primary bool     `json:"primary,omitempty"`
+}
+
+// CardPartSpec is one explicit card part in an override list.
+type CardPartSpec struct {
+	Kind    string `json:"kind"`
+	Control string `json:"control,omitempty"`
+	Text    string `json:"text,omitempty"`
+	Tone    string `json:"tone,omitempty"`
 }
 
 // Done ends a query response (plugin → host).

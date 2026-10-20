@@ -41,6 +41,22 @@ type ItemShape struct {
 	Controls    []Control
 	HasChildren bool
 	Expandable  bool
+	Icon        string
+	Image       string
+	Preview     string
+	Status      string
+	StatusTone  string
+	Detail      string
+	Hint        string
+	Card        []CardPart
+}
+
+// CardPart is one explicit card part in an override list.
+type CardPart struct {
+	Kind    string
+	Control string
+	Text    string
+	Tone    string
 }
 
 // ControlSpecShape is an editable value.
@@ -55,6 +71,8 @@ type ControlSpecShape struct {
 	Bool    bool
 	Text    string
 	Options []string
+	Display string
+	Primary bool
 }
 
 // ActionShape is a declarative action.
@@ -280,14 +298,28 @@ func toItem(it Item) proto.Item {
 		controls = append(controls, proto.ControlSpec{
 			ID: c.ID, Kind: c.Kind, Label: c.Label, Value: c.Value,
 			Min: c.Min, Max: c.Max, Step: c.Step, Bool: c.Bool,
-			Text: c.Text, Options: c.Options,
+			Text: c.Text, Options: c.Options, Display: c.Display, Primary: c.Primary,
 		})
 	}
 	return proto.Item{
 		ID: it.ID, Title: it.Title, Subtitle: it.Subtitle, Glyph: it.Glyph,
 		Badge: it.Badge, Destructive: it.Destructive, Actions: actions,
 		Controls: controls, HasChildren: it.HasChildren, Expandable: it.Expandable,
+		Icon: it.Icon, Image: it.Image, Preview: it.Preview,
+		Status: it.Status, StatusTone: it.StatusTone,
+		Detail: it.Detail, Hint: it.Hint, Card: toCardParts(it.Card),
 	}
+}
+
+func toCardParts(parts []CardPart) []proto.CardPartSpec {
+	if len(parts) == 0 {
+		return nil
+	}
+	out := make([]proto.CardPartSpec, 0, len(parts))
+	for _, p := range parts {
+		out = append(out, proto.CardPartSpec{Kind: p.Kind, Control: p.Control, Text: p.Text, Tone: p.Tone})
+	}
+	return out
 }
 
 func fromChange(c proto.Control) Change {

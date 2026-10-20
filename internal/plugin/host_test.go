@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/darkliquid/keyshell/internal/backend"
+	"github.com/darkliquid/keyshell/internal/plugin/proto"
 )
 
 // fakePluginPath resolves the python fake plugin relative to this test file.
@@ -105,4 +106,30 @@ func TestHostSlowHandshake(t *testing.T) {
 		t.Fatal("Start timed out")
 	}
 	_ = h.Close()
+}
+
+// TestFromItemCarriesCardFields checks the host copies every card field off the
+// wire, including the control hints and the override list.
+func TestFromItemCarriesCardFields(t *testing.T) {
+	got := fromItem(proto.Item{
+		ID: "i", Title: "Speakers", Status: "DEFAULT", StatusTone: "positive",
+		Icon: "audio", Image: "img", Preview: "preview", Detail: "body", Hint: "ENTER",
+		Controls: []proto.ControlSpec{{ID: "volume", Kind: "progress", Display: "card", Primary: true}},
+		Card:     []proto.CardPartSpec{{Kind: "meter", Control: "volume", Text: "VOL", Tone: "info"}},
+	})
+	if got.Status != "DEFAULT" || got.StatusTone != backend.TonePositive {
+		t.Errorf("status = %q/%q", got.Status, got.StatusTone)
+	}
+	if got.Icon != "audio" || got.Image != "img" || got.Preview != "preview" {
+		t.Errorf("visual fields = %q/%q/%q", got.Icon, got.Image, got.Preview)
+	}
+	if got.Detail != "body" || got.Hint != "ENTER" {
+		t.Errorf("text fields = %q/%q", got.Detail, got.Hint)
+	}
+	if len(got.Controls) != 1 || got.Controls[0].Display != backend.DisplayCard || !got.Controls[0].Primary {
+		t.Errorf("controls = %+v", got.Controls)
+	}
+	if len(got.Card) != 1 || got.Card[0].Kind != backend.PartMeter || got.Card[0].Control != "volume" {
+		t.Errorf("card = %+v", got.Card)
+	}
 }

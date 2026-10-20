@@ -61,3 +61,40 @@ func TestEncodeRejectsEmptyMessage(t *testing.T) {
 		t.Fatal("Encode(empty) = nil error")
 	}
 }
+
+// TestItemCardFieldsUsePinnedWireNames locks the JSON names of the card fields
+// so a rename cannot silently break a plugin written against them.
+func TestItemCardFieldsUsePinnedWireNames(t *testing.T) {
+	msg := Message{Item: &Item{
+		ID: "i", Title: "Speakers", Status: "DEFAULT", StatusTone: "positive",
+		Icon: "audio", Image: "file:///art.png", Preview: "handle:1",
+		Detail: "body", Hint: "ENTER COPY",
+		Controls: []ControlSpec{{ID: "volume", Kind: "range", Display: "card", Primary: true}},
+		Card:     []CardPartSpec{{Kind: "meter", Control: "volume", Text: "VOL", Tone: "info"}},
+	}}
+	b, err := Encode(msg)
+	if err != nil {
+		t.Fatalf("Encode = err %v", err)
+	}
+	var raw struct {
+		Item map[string]json.RawMessage `json:"item"`
+	}
+	if err := json.Unmarshal(b, &raw); err != nil {
+		t.Fatalf("Unmarshal = err %v", err)
+	}
+	for _, key := range []string{"status", "status_tone", "icon", "image", "preview", "detail", "hint", "card"} {
+		if _, ok := raw.Item[key]; !ok {
+			t.Errorf("item JSON missing key %q", key)
+		}
+	}
+	got, err := Decode(b)
+	if err != nil {
+		t.Fatalf("Decode = err %v", err)
+	}
+	if got.Item == nil || got.Item.Controls[0].Display != "card" || !got.Item.Controls[0].Primary {
+		t.Errorf("control hints lost: %+v", got.Item)
+	}
+	if got.Item.Card[0].Kind != "meter" || got.Item.Card[0].Control != "volume" {
+		t.Errorf("card override lost: %+v", got.Item.Card)
+	}
+}

@@ -19,11 +19,60 @@ type ResultID string
 type ControlKind string
 
 const (
-	ControlRange  ControlKind = "range"
-	ControlToggle ControlKind = "toggle"
-	ControlChoice ControlKind = "choice"
-	ControlText   ControlKind = "text"
+	ControlRange    ControlKind = "range"
+	ControlToggle   ControlKind = "toggle"
+	ControlChoice   ControlKind = "choice"
+	ControlText     ControlKind = "text"
+	ControlProgress ControlKind = "progress"
 )
+
+// Tone is the semantic colour of a chip. The theme maps each tone to colours.
+type Tone string
+
+const (
+	ToneAccent    Tone = "accent"
+	ToneNeutral   Tone = "neutral"
+	ToneInfo      Tone = "info"
+	TonePositive  Tone = "positive"
+	ToneWarn      Tone = "warn"
+	ToneAlert     Tone = "alert"
+	ToneAttention Tone = "attention"
+)
+
+// Display steers card composition for one control.
+type Display string
+
+const (
+	DisplayAuto     Display = ""
+	DisplayCard     Display = "card"
+	DisplayExpanded Display = "expanded"
+)
+
+// PartKind names one display widget a card can use.
+type PartKind string
+
+const (
+	PartBadge    PartKind = "badge"
+	PartStatus   PartKind = "status"
+	PartVisual   PartKind = "visual"
+	PartTitle    PartKind = "title"
+	PartSubtitle PartKind = "subtitle"
+	PartDetail   PartKind = "detail"
+	PartMeter    PartKind = "meter"
+	PartTimeline PartKind = "timeline"
+	PartNote     PartKind = "note"
+	PartHold     PartKind = "hold"
+	PartFooter   PartKind = "footer"
+)
+
+// CardPart is one explicit card part. A CardPart list on an item overrides the
+// derived body; the header and footer still come from the derive rules.
+type CardPart struct {
+	Kind    PartKind
+	Control string
+	Text    string
+	Tone    Tone
+}
 
 // action is a declarative action. Host-executed types are open-url, copy, exec,
 // exec-terminal and set-query; a plugin-domain action carries type "plugin" and
@@ -45,6 +94,8 @@ type Control struct {
 	Bool    bool
 	Text    string
 	Options []string
+	Display Display
+	Primary bool
 }
 
 // Item is one selectable result.
@@ -59,6 +110,14 @@ type Item struct {
 	Controls    []Control
 	HasChildren bool
 	Expandable  bool
+	Icon        string
+	Image       string
+	Preview     string
+	Status      string
+	StatusTone  Tone
+	Detail      string
+	Hint        string
+	Card        []CardPart
 }
 
 // Query asks a backend for items. Scope carries the navigation path for a

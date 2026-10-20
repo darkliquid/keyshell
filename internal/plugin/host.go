@@ -287,6 +287,7 @@ func fromItem(p proto.Item) backend.Item {
 			ID: c.ID, Kind: backend.ControlKind(c.Kind), Label: c.Label,
 			Value: c.Value, Min: c.Min, Max: c.Max, Step: c.Step,
 			Bool: c.Bool, Text: c.Text, Options: c.Options,
+			Display: backend.Display(c.Display), Primary: c.Primary,
 		})
 	}
 	return backend.Item{
@@ -294,7 +295,24 @@ func fromItem(p proto.Item) backend.Item {
 		Glyph: p.Glyph, Badge: p.Badge, Destructive: p.Destructive,
 		Actions: actions, Controls: controls,
 		HasChildren: p.HasChildren, Expandable: p.Expandable,
+		Icon: p.Icon, Image: p.Image, Preview: p.Preview,
+		Status: p.Status, StatusTone: backend.Tone(p.StatusTone),
+		Detail: p.Detail, Hint: p.Hint, Card: cardParts(p.Card),
 	}
+}
+
+func cardParts(specs []proto.CardPartSpec) []backend.CardPart {
+	if len(specs) == 0 {
+		return nil
+	}
+	out := make([]backend.CardPart, 0, len(specs))
+	for _, s := range specs {
+		out = append(out, backend.CardPart{
+			Kind: backend.PartKind(s.Kind), Control: s.Control,
+			Text: s.Text, Tone: backend.Tone(s.Tone),
+		})
+	}
+	return out
 }
 
 type sliceStream struct {

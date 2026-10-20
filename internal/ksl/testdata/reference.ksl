@@ -1,0 +1,34 @@
+Window {
+    // The slab band: a Group with the reveal tilt.
+    Group#band {
+        x: 0, y: $reveal.y, width: 100%, height: $reveal.h
+        rotate: $reveal.angle
+        shear: $reveal.shear
+        Path { d: $reveal.d, fill: $slab }   // the tapered trapezoid
+        // clipped to the band quad via the path mask
+        Stack { align: center
+            Column { gap: 8, align: center
+                Row { gap: 12, align: center
+                    Pill { text: $mode, tone: accent }
+                    Text { text: $query, size: 22, uppercase: true, color: $ink }
+                    Cursor { color: $accent, animation: blink 800ms linear infinite }
+                    Text { text: $results.len, size: 14, color: $muted }
+                }
+                List { items: $results, selected: $selected, width: 60%, height: 40%
+                    // card template drawn per item; selected pill inverts
+                    template {
+                        Group#card {
+                            shear: $reveal.cardShear
+                            Box { fill: $slab, border: $muted, radius: 4px
+                                state selected { fill: $accent, border: $accent }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+state open { Group#band { opacity: 1, rotate: 0deg } }
+transition open { rotate: 250ms ease-out, opacity: 180ms }
+@keyframes blink { 0% { opacity: 1 } 50% { opacity: 0 } 100% { opacity: 1 } }

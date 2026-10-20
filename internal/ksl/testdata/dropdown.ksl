@@ -1,0 +1,24 @@
+Window {
+    Column { gap: 8, align: center
+        Box { width: 70%, height: 44px, fill: $surface-alt, radius: 4px
+            Text { text: $query, size: 16, color: $ink }
+        }
+        List {
+            items: $results, selected: $selected
+            orientation: vertical
+            viewport: { height: 300px }
+            cap: 20
+            scroll: reveal
+            overflow: clamp
+            template {
+                Box { width: 70%, height: 44px, fill: $slab, border: $muted, radius: 4px
+                    state selected { fill: $accent, border: $accent }
+                    Text { text: $item.title, size: 14, color: $ink }
+                }
+            }
+            empty {
+                Text { text: "NO RESULTS", size: 12, color: $muted }
+            }
+        }
+    }
+}

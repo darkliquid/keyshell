@@ -92,29 +92,29 @@ Primitive {
 
 ```ksl
 // A wholly different overlay: a centred search ring.
-Window {
-    theme {
-        ink: #EAEAEA
-        ring: #FF2E63
-    }
+theme {
+    ink: #EAEAEA
+    ring: #FF2E63
+}
 
+Window {
     Column { gap: 24, align: center
       Text { text: $query, size: 48, color: $ink }
       Meter#progress { variant: ring, size: 120, stroke: $ring, ratio: $typing }
       Text { text: "ENTER TO OPEN", size: 12, color: $muted }
     }
-
-    state open {
-        #progress { opacity: 1, scale: 1 }
-    }
-    transition open { opacity: 200ms ease-out }
-
-    @keyframes breathe {
-        0% { stroke: $ring, opacity: 0.4 }
-        100% { stroke: $accent-alt, opacity: 1 }
-    }
-    Meter#progress { animation: breathe 2s ease-in-out infinite alternate }
 }
+
+state open {
+    #progress { opacity: 1, scale: 1 }
+}
+transition open { opacity: 200ms ease-out }
+
+@keyframes breathe {
+    0% { stroke: $ring, opacity: 0.4 }
+    100% { stroke: $accent-alt, opacity: 1 }
+}
+Meter#progress { animation: breathe 2s ease-in-out infinite alternate }
 ```
 
 This is deliberately unlike the shipped UI, to show the language is not
@@ -478,25 +478,27 @@ scrollbar or slider.
 A traditional dropdown launcher is a vertical, clipped, scrolling list:
 
 ```ksl
-Column { gap: 8, align: center
-    Box { width: 70%, height: 44px, fill: $surface-alt, radius: 4px
-        Text { text: $query, size: 16, color: $ink }
-    }
-    List {
-        items: $results, selected: $selected
-        orientation: vertical
-        viewport: { height: 300px }
-        cap: 20
-        scroll: reveal
-        overflow: clamp
-        template {
-            Box { width: 70%, height: 44px, fill: $slab, border: $muted, radius: 4px
-                state selected { fill: $accent, border: $accent }
-                Text { text: $item.title, size: 14, color: $ink }
-            }
+Window {
+    Column { gap: 8, align: center
+        Box { width: 70%, height: 44px, fill: $surface-alt, radius: 4px
+            Text { text: $query, size: 16, color: $ink }
         }
-        empty {
-            Text { text: "NO RESULTS", size: 12, color: $muted }
+        List {
+            items: $results, selected: $selected
+            orientation: vertical
+            viewport: { height: 300px }
+            cap: 20
+            scroll: reveal
+            overflow: clamp
+            template {
+                Box { width: 70%, height: 44px, fill: $slab, border: $muted, radius: 4px
+                    state selected { fill: $accent, border: $accent }
+                    Text { text: $item.title, size: 14, color: $ink }
+                }
+            }
+            empty {
+                Text { text: "NO RESULTS", size: 12, color: $muted }
+            }
         }
     }
 }
@@ -569,9 +571,10 @@ Window {
             }
         }
     }
-    state open { Group#band { opacity: 1, rotate: 0deg } }
-    transition open { rotate: 250ms ease-out, opacity: 180ms }
 }
+state open { Group#band { opacity: 1, rotate: 0deg } }
+transition open { rotate: 250ms ease-out, opacity: 180ms }
+@keyframes blink { 0% { opacity: 1 } 50% { opacity: 0 } 100% { opacity: 1 } }
 ```
 
 The `$reveal` variables replace `Reveal`'s per-summon geometry without

@@ -10,8 +10,9 @@ import (
 
 // Adapter wires an event source to the launcher.
 type Adapter struct {
-	l      *launcher.Launcher
-	events gpucontext.EventSource
+	l       *launcher.Launcher
+	events  gpucontext.EventSource
+	onPress func(x, y float64)
 }
 
 // New builds an adapter over the launcher and event source.
@@ -44,12 +45,16 @@ func (a *Adapter) onTextInput(text string) {
 	a.l.SetQuery(a.l.Query() + text)
 }
 
+// OnPress registers a callback for pointer presses in surface coordinates.
+func (a *Adapter) OnPress(fn func(x, y float64)) {
+	a.onPress = fn
+}
+
 func (a *Adapter) onMousePress(button gpucontext.MouseButton, x, y float64) {
-	// A pointer press outside the surface is handled by focus loss at the
-	// compositor level. Here we only need to commit any pending control value.
-	_ = button
-	_ = x
-	_ = y
+	if button != gpucontext.MouseButtonLeft || a.onPress == nil {
+		return
+	}
+	a.onPress(x, y)
 }
 
 func trimLast(s string) string {

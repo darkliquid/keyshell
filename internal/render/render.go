@@ -34,11 +34,13 @@ const cursorBlinkPeriodMs = 800
 
 // Renderer holds the per-summon reveal geometry, resampled on each open.
 type Renderer struct {
-	mu      sync.Mutex
-	reveal  Reveal
-	wasOpen bool
-	opened  time.Time
-	rng     *rand.Rand
+	mu       sync.Mutex
+	reveal   Reveal
+	wasOpen  bool
+	opened   time.Time
+	surfaceW float64
+	surfaceH float64
+	rng      *rand.Rand
 }
 
 // New builds a renderer.
@@ -63,13 +65,20 @@ func (r *Renderer) DrawFrame(dc *gg.Context, l View, th *theme.Theme, cfg config
 		r.wasOpen = true
 		r.opened = time.Now()
 	}
+	r.surfaceW, r.surfaceH = w, h
 	rev := r.reveal
 	elapsed := time.Since(r.opened)
 	r.mu.Unlock()
 
 	// Outside the band is transparent: only the band itself is slab.
 	dc.ClearWithColor(gg.RGBA{})
-	drawBand(dc, th, rev, w, h)
+	drawBand(dc, th, rev, w)
+
+	// Nothing may paint outside the slab. Cards are sheared more steeply than
+	// the band tilts and the reel is wider than the band, so without this the
+	// corners of both leak onto the desktop instead of flowing inside it.
+	bandPath(dc, rev, w)
+	dc.Clip()
 
 	// Content lives in the band's rotated frame.
 	cw := math.Sqrt(w*w + (rev.YRight-rev.YLeft)*(rev.YRight-rev.YLeft))
@@ -86,18 +95,41 @@ func (r *Renderer) DrawFrame(dc *gg.Context, l View, th *theme.Theme, cfg config
 	dc.Pop()
 }
 
-// drawBand fills the tilted trapezoid in slab colour.
-func drawBand(dc *gg.Context, th *theme.Theme, rev Reveal, w, h float64) {
+// BandContains reports whether a surface point lies inside the band, which is
+// what separates a click on the overlay from one on the dismiss scrim.
+func (r *Renderer) BandContains(x, y float64) bool {
+	r.mu.Lock()
+	rev, w, h := r.reveal, r.surfaceW, r.surfaceH
+	r.mu.Unlock()
+	if w <= 0 || h <= 0 || x < 0 || y < 0 || x > w || y > h {
+		return false
+	}
+	quad := [4][2]float64{
+		{0, rev.YLeft - rev.HLeft/2},
+		{w, rev.YRight - rev.HRight/2},
+		{w, rev.YRight + rev.HRight/2},
+		{0, rev.YLeft + rev.HLeft/2},
+	}
+	return insideConvex(quad, x, y)
+}
+
+// bandPath lays the tilted trapezoid down as the current path.
+func bandPath(dc *gg.Context, rev Reveal, w float64) {
 	halfL := rev.HLeft / 2
 	halfR := rev.HRight / 2
 
-	dc.SetColor(th.Slab)
 	dc.NewSubPath()
 	dc.MoveTo(0, rev.YLeft-halfL)
 	dc.LineTo(w, rev.YRight-halfR)
 	dc.LineTo(w, rev.YRight+halfR)
 	dc.LineTo(0, rev.YLeft+halfL)
 	dc.ClosePath()
+}
+
+// drawBand fills the tilted trapezoid in slab colour.
+func drawBand(dc *gg.Context, th *theme.Theme, rev Reveal, w float64) {
+	dc.SetColor(th.Slab)
+	bandPath(dc, rev, w)
 	_ = dc.Fill()
 }
 

@@ -19,6 +19,9 @@ type PresentConfig struct {
 	Width, Height int
 	Namespace     string
 	Reveal        config.Reveal
+	// Renderer draws the frames and answers band hit tests. When nil a fresh
+	// one is created, which is only useful in tests.
+	Renderer *Renderer
 }
 
 // Present runs the layer-surface overlay, drawing each frame from the
@@ -29,12 +32,16 @@ func Present(app *gogpu.App, l *launcher.Launcher, th *theme.Theme, cfg PresentC
 	// immediately instead of waiting for the next unrelated event.
 	l.OnChange(app.RequestRedraw)
 
+	rdr := cfg.Renderer
+	if rdr == nil {
+		rdr = New()
+	}
 	p := &presenter{
 		l:    l,
 		th:   th,
 		cfg:  cfg,
 		draw: gg.NewContext(cfg.Width, cfg.Height),
-		rdr:  New(),
+		rdr:  rdr,
 	}
 	app = p.configure(app)
 

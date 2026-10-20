@@ -67,3 +67,18 @@ func Resample(w, h float64, cfg config.Reveal, rng *rand.Rand) Reveal {
 		Shear: math.Tan(shearDeg*degToRad) * sign,
 	}
 }
+
+// insideConvex reports whether the point is inside or within a pixel of a
+// convex quad given in winding order.
+func insideConvex(q [4][2]float64, px, py float64) bool {
+	const tolerance = 1.5
+	for i := range q {
+		a := q[i]
+		b := q[(i+1)%len(q)]
+		cross := (b[0]-a[0])*(py-a[1]) - (b[1]-a[1])*(px-a[0])
+		if cross < -tolerance*math.Hypot(b[0]-a[0], b[1]-a[1]) {
+			return false
+		}
+	}
+	return true
+}

@@ -95,8 +95,10 @@ func main() {
 			ExclusiveZone: -1,
 		}))
 
+	rdr := render.New()
+
 	// Wire input.
-	_ = input.New(l, app.EventSource())
+	in := input.New(l, app.EventSource())
 
 	// Serve the IPC socket.
 	if ln, err := ipc.Listen(); err == nil {
@@ -106,7 +108,9 @@ func main() {
 
 	// The layer surface stays mapped between summons, so the compositor never
 	// sees it "appear" again. Keyboard focus therefore has to be requested on
-	// each show: exclusive while open, none while hidden.
+	// each show: exclusive while open, none while hidden. Exclusive is what
+	// makes a summon take typing immediately; a mapped layer surface cannot be
+	// focused by clicking it, so pointer presses re-request it below.
 	var keyboardMode atomic.Value
 	keyboardMode.Store(gogpu.LayerShellKeyboardNone)
 	l.OnChange(func() {
@@ -126,6 +130,21 @@ func main() {
 		_ = app.SetInputRegion(interactive)
 	})
 
+	// A click on the scrim dismisses, and a click on the band asks the
+	// compositor for keyboard focus again: the surface stays mapped, so a
+	// launcher that lost focus to another window has no other way back.
+	in.OnPress(func(x, y float64) {
+		if !l.IsOpen() {
+			return
+		}
+		if !rdr.BandContains(x, y) {
+			l.Close()
+			return
+		}
+		_ = app.SetLayerKeyboardInteractivity(gogpu.LayerShellKeyboardNone)
+		_ = app.SetLayerKeyboardInteractivity(gogpu.LayerShellKeyboardExclusive)
+	})
+
 	// Run interactively from a terminal: show the overlay immediately so the
 	// binary is usable without a keybind. As a session shell (no TTY) it starts
 	// hidden and is summoned over IPC.
@@ -133,7 +152,7 @@ func main() {
 		l.Open()
 	}
 
-	if err := render.Present(app, l, th, render.PresentConfig{Width: screenW, Height: screenH, Namespace: "keyshell", Reveal: cfg.Reveal}); err != nil {
+	if err := render.Present(app, l, th, render.PresentConfig{Width: screenW, Height: screenH, Namespace: "keyshell", Reveal: cfg.Reveal, Renderer: rdr}); err != nil {
 		fmt.Fprintln(os.Stderr, "overlay:", err)
 		os.Exit(1)
 	}

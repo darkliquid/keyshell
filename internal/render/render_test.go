@@ -3,6 +3,7 @@ package render
 import (
 	"image"
 	"image/color"
+	"math"
 	"testing"
 
 	"github.com/darkliquid/keyshell/internal/backend"
@@ -115,5 +116,62 @@ func TestDrawFrameBlanksWhenClosed(t *testing.T) {
 	img := dc.Image().(*image.RGBA)
 	if got := img.RGBAAt(0, 0); got.A != 0 {
 		t.Errorf("closed frame corner alpha = %d, want 0", got.A)
+	}
+}
+
+// TestDrawFrameClipsContentToTheBand proves nothing paints outside the slab.
+// Cards are sheared more steeply than the band tilts, so without a clip their
+// corners and the reel overflow the trapezoid and the overlay leaks onto the
+// desktop.
+func TestDrawFrameClipsContentToTheBand(t *testing.T) {
+	th, err := theme.Load()
+	if err != nil {
+		t.Fatalf("theme.Load = err %v", err)
+	}
+	defer th.Close()
+
+	rev := Reveal{
+		YLeft: 260, YRight: 640,
+		HLeft: 120, HRight: 320,
+		Angle: math.Atan2(380, 1600),
+		Shear: 0.30,
+		Yc:    450,
+	}
+	r := New()
+	r.wasOpen = true
+	r.reveal = rev
+
+	view := &fakeView{open: true, results: []rank.Match{
+		{Item: backend.Item{Title: "Ghostty", Icon: "terminal", Actions: []backend.Action{{Type: "exec", Value: "ghostty"}}}},
+		{Item: backend.Item{Title: "Firefox", Icon: "firefox", Actions: []backend.Action{{Type: "exec", Value: "firefox"}}}},
+	}}
+	dc := gg.NewContext(1600, 900)
+	r.DrawFrame(dc, view, th, config.Default().Reveal)
+	img := dc.Image().(*image.RGBA)
+
+	quad := [4][2]float64{
+		{0, rev.YLeft - rev.HLeft/2},
+		{1600, rev.YRight - rev.HRight/2},
+		{1600, rev.YRight + rev.HRight/2},
+		{0, rev.YLeft + rev.HLeft/2},
+	}
+	leaks := 0
+	var firstX, firstY int
+	for y := 0; y < img.Bounds().Dy(); y++ {
+		for x := 0; x < img.Bounds().Dx(); x++ {
+			if img.RGBAAt(x, y).A == 0 {
+				continue
+			}
+			if insideConvex(quad, float64(x)+0.5, float64(y)+0.5) {
+				continue
+			}
+			if leaks == 0 {
+				firstX, firstY = x, y
+			}
+			leaks++
+		}
+	}
+	if leaks != 0 {
+		t.Errorf("%d painted pixels outside the band; first at (%d,%d)", leaks, firstX, firstY)
 	}
 }

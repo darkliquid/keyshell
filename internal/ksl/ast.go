@@ -320,3 +320,50 @@ func (v *MethodCall) String() string {
 	}
 	return v.X.String() + "." + v.Name + "(" + strings.Join(parts, ", ") + ")"
 }
+
+// AnimVal is the `animation` property value (Grammar Rule 6): one or
+// more comma-separated steps.
+type AnimVal struct {
+	At    Position
+	Steps []AnimStep
+}
+
+// AnimStep is `name [duration] [easing] [iteration] [direction]`.
+type AnimStep struct {
+	Name      string
+	Dur       *Scalar // nil when absent
+	Easing    Value   // *Keyword or cubic-bezier *FuncCall; nil when absent
+	Iteration Value   // *Scalar (count) or *Keyword ("infinite"); nil when absent
+	Direction string  // "", "alternate", "reverse", "alternate reverse"
+}
+
+func (v *AnimVal) Pos() Position { return v.At }
+
+func (v *AnimVal) String() string {
+	parts := make([]string, len(v.Steps))
+	for i, s := range v.Steps {
+		parts[i] = s.Name
+		if s.Dur != nil {
+			parts[i] += " " + s.Dur.String()
+		}
+		if s.Easing != nil {
+			parts[i] += " " + s.Easing.String()
+		}
+		if s.Iteration != nil {
+			parts[i] += " " + s.Iteration.String()
+		}
+		if s.Direction != "" {
+			parts[i] += " " + s.Direction
+		}
+	}
+	return strings.Join(parts, ", ")
+}
+
+// Include is `include "file.ksl"`. Task 6 resolves and splices it at
+// load time (Grammar Rule 11); until then it survives as an item.
+type Include struct {
+	Pos  Position
+	Path string
+}
+
+func (i *Include) itemPos() Position { return i.Pos }

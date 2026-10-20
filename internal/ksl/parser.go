@@ -148,16 +148,12 @@ func (p *parser) requireSep() {
 func (p *parser) parseScene() *Scene {
 	s := &Scene{Name: p.name}
 	p.skipNL()
-	first := true
 	for p.peek().kind != tEOF {
 		before := p.i
-		if !first {
-			p.requireSep()
-		}
-		first = false
 		if it := p.parseTopItem(); it != nil {
 			s.Items = append(s.Items, it)
 		}
+		p.requireSep()
 		p.ensureProgress(before)
 	}
 	return s

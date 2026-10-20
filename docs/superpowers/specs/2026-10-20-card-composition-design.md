@@ -122,7 +122,8 @@ It exists for vocabulary gaps, not for per-backend layout code.
 ## Type changes
 
 ```go
-type Tone string // "neutral", "info", "positive", "warn", "alert", "attention"
+type Tone string // "accent", "neutral", "info", "positive", "warn", "alert",
+                 // "attention"
 
 type ControlKind string // adds "progress" to range, toggle, choice, text
 
@@ -139,8 +140,9 @@ type CardPart struct {
 }
 ```
 
-`Item` gains `Status`, `StatusTone`, `Image`, `Preview`, `Detail`, `Hint` and
-`Card`. `Control` gains `Display` and `Primary`. The additions are mirrored in
+`Item` gains `Status`, `StatusTone`, `Icon`, `Image`, `Preview`, `Detail`,
+`Hint` and `Card`. `Icon` is an icon-theme name and `Glyph` stays literal text,
+so a plugin can send an emoji without the host looking it up in a theme. `Control` gains `Display` and `Primary`. The additions are mirrored in
 `internal/plugin/proto`, the SDK and the plugin host, all optional and
 backward-compatible at protocol version 1.
 

@@ -66,6 +66,7 @@ func Compose(item backend.Item) Plan {
 	if item.Detail != "" && p.Visual.Kind == "" {
 		p.Detail = Part{Kind: backend.PartDetail, Control: -1, Text: item.Detail}
 	}
+	p.Accessories, p.Overflow = accessories(item)
 	p.Layout = layoutFor(item, p)
 	p.Title.Style = titleStyle(item, p)
 	if p.Layout == LayoutHero {

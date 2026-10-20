@@ -2,8 +2,8 @@ github.com/BurntSushi/toml v1.6.0 h1:dRaEfpa2VI55EwlIW72hMRHdWouJeRF7TPYhI+AUQjk
 github.com/BurntSushi/toml v1.6.0/go.mod h1:ukJfTF/6rtPPRCnwkur4qwRxa8vTRFBF0uk2lLoLwho=
 github.com/adrg/xdg v0.5.3 h1:xRnxJXne7+oWDatRhR1JLnvuccuIeCoBu2rtuLqQB78=
 github.com/adrg/xdg v0.5.3/go.mod h1:nlTsY+NNiCBGCK2tpm09vRqfVzrc2fLmXGpBLF0zlTQ=
-github.com/darkliquid/gogpu v0.54.1-0.20261019223216-43e5b4e065b1 h1:pV70pa5FlQEpWHSvVrVW9Po7Mm14YvgLYfoU4q/vdSo=
-github.com/darkliquid/gogpu v0.54.1-0.20261019223216-43e5b4e065b1/go.mod h1:V6+0B+iXxgiQkdlRJvUyjiYrGRDoooxYNgw9qTCZN8w=
+github.com/darkliquid/gogpu v0.54.1-0.20261020051850-68bbdcfe2e40 h1:zPDaq7U2PnRzjJImP1kSICJlemcnsY0YGm/ZMA6HclE=
+github.com/darkliquid/gogpu v0.54.1-0.20261020051850-68bbdcfe2e40/go.mod h1:V6+0B+iXxgiQkdlRJvUyjiYrGRDoooxYNgw9qTCZN8w=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/go-freedesktop/desktopentry v0.2.0 h1:YpweRvwprVXHO5CyFIueUFI+KBdEUFHhJnQlU3KNuCA=

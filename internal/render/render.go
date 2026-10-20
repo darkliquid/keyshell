@@ -11,6 +11,7 @@ import (
 	"math/rand"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/darkliquid/keyshell/internal/config"
 	"github.com/darkliquid/keyshell/internal/rank"
@@ -27,11 +28,15 @@ type View interface {
 	ModeBadge() string
 }
 
+// cursorBlinkPeriodMs is the QML cursor's fade cycle: 400ms out, 400ms in.
+const cursorBlinkPeriodMs = 800
+
 // Renderer holds the per-summon reveal geometry, resampled on each open.
 type Renderer struct {
 	mu      sync.Mutex
 	reveal  Reveal
 	wasOpen bool
+	opened  time.Time
 	rng     *rand.Rand
 }
 
@@ -55,8 +60,10 @@ func (r *Renderer) DrawFrame(dc *gg.Context, l View, th *theme.Theme, cfg config
 	if !r.wasOpen {
 		r.reveal = Resample(w, h, cfg, r.rng)
 		r.wasOpen = true
+		r.opened = time.Now()
 	}
 	rev := r.reveal
+	elapsed := time.Since(r.opened)
 	r.mu.Unlock()
 
 	// Outside the band is transparent: only the band itself is slab.
@@ -72,7 +79,7 @@ func (r *Renderer) DrawFrame(dc *gg.Context, l View, th *theme.Theme, cfg config
 	dc.Rotate(rev.Angle)
 	dc.Translate(-cw/2, -ch/2)
 
-	drawSearchField(dc, th, l, cfg, cw)
+	drawSearchField(dc, th, l, cfg, cw, cursorAlpha(elapsed))
 	drawCards(dc, th, l, rev, cfg, cw, ch)
 
 	dc.Pop()
@@ -95,7 +102,17 @@ func drawBand(dc *gg.Context, th *theme.Theme, rev Reveal, w, h float64) {
 
 // drawSearchField draws the mode badge, the uppercased query with its cursor
 // bar, and the result count, centred at the top of the band.
-func drawSearchField(dc *gg.Context, th *theme.Theme, l View, cfg config.Reveal, cw float64) {
+// cursorAlpha fades the cursor in and out on the QML cycle.
+func cursorAlpha(elapsed time.Duration) float64 {
+	phase := float64(elapsed.Milliseconds()%cursorBlinkPeriodMs) / cursorBlinkPeriodMs
+	// 0..1..0 triangle: full at the start of each half cycle.
+	if phase < 0.5 {
+		return 1 - phase*2
+	}
+	return (phase - 0.5) * 2
+}
+
+func drawSearchField(dc *gg.Context, th *theme.Theme, l View, cfg config.Reveal, cw float64, cursorA float64) {
 	fieldW := math.Min(cw*0.8, 1200)
 	fieldX := (cw - fieldW) / 2
 	fieldTop := cfg.ContentPaddingPx
@@ -128,7 +145,9 @@ func drawSearchField(dc *gg.Context, th *theme.Theme, l View, cfg config.Reveal,
 
 	// Cursor bar after the query.
 	cursorX := queryX + queryFace.Advance(query) + 2
-	dc.SetColor(th.Accent)
+	cursor := th.Accent
+	cursor.A = cursorA
+	dc.SetColor(cursor)
 	dc.DrawRectangle(cursorX, midY-12, 3, 24)
 	_ = dc.Fill()
 

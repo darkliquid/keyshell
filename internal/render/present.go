@@ -3,6 +3,7 @@ package render
 
 import (
 	"image"
+	"time"
 
 	"github.com/darkliquid/keyshell/internal/config"
 	"github.com/darkliquid/keyshell/internal/launcher"
@@ -23,6 +24,11 @@ type PresentConfig struct {
 // Present runs the layer-surface overlay, drawing each frame from the
 // launcher. It must run on the main goroutine and blocks until the app quits.
 func Present(app *gogpu.App, l *launcher.Launcher, th *theme.Theme, cfg PresentConfig) error {
+	// gogpu renders on demand: nothing repaints unless a redraw is requested.
+	// Every launcher change schedules one, so typing and selection are visible
+	// immediately instead of waiting for the next unrelated event.
+	l.OnChange(app.RequestRedraw)
+
 	p := &presenter{
 		l:    l,
 		th:   th,
@@ -31,6 +37,19 @@ func Present(app *gogpu.App, l *launcher.Launcher, th *theme.Theme, cfg PresentC
 		rdr:  New(),
 	}
 	app = p.configure(app)
+
+	// The cursor blinks, so while the overlay is open it needs periodic
+	// redraws; when it closes the ticker stops requesting them.
+	go func() {
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+		for range ticker.C {
+			if l.IsOpen() {
+				app.RequestRedraw()
+			}
+		}
+	}()
+
 	return app.Run()
 }
 

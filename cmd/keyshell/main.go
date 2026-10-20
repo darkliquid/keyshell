@@ -111,14 +111,19 @@ func main() {
 	keyboardMode.Store(gogpu.LayerShellKeyboardNone)
 	l.OnChange(func() {
 		want := gogpu.LayerShellKeyboardNone
+		interactive := false
 		if l.IsOpen() {
 			want = gogpu.LayerShellKeyboardExclusive
+			interactive = true
 		}
 		if keyboardMode.Load() == want {
 			return
 		}
 		keyboardMode.Store(want)
 		_ = app.SetLayerKeyboardInteractivity(want)
+		// A hidden fullscreen surface would otherwise keep swallowing every
+		// click: empty the input region, and restore it on show.
+		_ = app.SetInputRegion(interactive)
 	})
 
 	// Run interactively from a terminal: show the overlay immediately so the

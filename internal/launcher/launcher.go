@@ -41,7 +41,7 @@ type Launcher struct {
 	results []rank.Match
 
 	// change subscriptions
-	onChange func()
+	listeners []func()
 
 	debounce *time.Timer
 	settleMs time.Duration
@@ -64,14 +64,17 @@ func New(provider backend.BackendProvider, opts Options) *Launcher {
 	return &Launcher{provider: provider, opts: opts}
 }
 
-// OnChange registers a callback invoked after any state change.
+// OnChange registers a callback invoked after any state change. Several
+// listeners may be registered (rendering, focus handling, ...).
 func (l *Launcher) OnChange(fn func()) {
-	l.onChange = fn
+	if fn != nil {
+		l.listeners = append(l.listeners, fn)
+	}
 }
 
 func (l *Launcher) changed() {
-	if l.onChange != nil {
-		l.onChange()
+	for _, fn := range l.listeners {
+		fn()
 	}
 }
 

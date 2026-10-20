@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/darkliquid/keyshell/internal/backend"
@@ -242,9 +243,9 @@ func (h *Host) writeLocked(m proto.Message) error {
 	return nil
 }
 
-// supervise runs liveness: if the plugin produces no traffic (no lines read)
-// for pingMisses*pingInterval, it is considered dead. A dead plugin is killed
-// and marked inactive so queries fail cleanly; the next Get restarts it.
+// supervise checks that the plugin process is still alive. Liveness is decided
+// by the process, not by protocol traffic: an idle plugin legitimately produces
+// no lines for minutes, so a traffic-based timeout kills healthy instances.
 func (h *Host) supervise() {
 	defer close(h.doneCh)
 	ticker := time.NewTicker(pingInterval)
@@ -259,12 +260,14 @@ func (h *Host) supervise() {
 				h.mu.Unlock()
 				return
 			}
-			idle := time.Since(time.UnixMilli(h.lastSeen.Load()))
+			proc := h.cmd.Process
 			h.mu.Unlock()
-			if idle > pingInterval*pingMisses {
-				log.Printf("plugin %s: no traffic for %s, killing", h.cfg.Instance, idle.Round(time.Second))
+			if proc == nil {
+				return
+			}
+			if err := proc.Signal(syscall.Signal(0)); err != nil {
+				log.Printf("plugin %s: process is gone (%v), marking dead", h.cfg.Instance, err)
 				h.mu.Lock()
-				_ = h.kill()
 				h.active = false
 				h.mu.Unlock()
 				return

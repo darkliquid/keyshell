@@ -24,4 +24,4 @@ require (
 	golang.org/x/text v0.43.0 // indirect
 )
 
-replace github.com/gogpu/gogpu => github.com/darkliquid/gogpu v0.54.1-0.20261019223216-43e5b4e065b1
+replace github.com/gogpu/gogpu => github.com/darkliquid/gogpu v0.54.1-0.20261020051850-68bbdcfe2e40

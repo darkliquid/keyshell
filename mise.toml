@@ -28,10 +28,15 @@ run = "gofmt -l -w ."
 [tasks.check]
 description = "Format check, vet and test in one pass"
 depends = ["test"]
-run = "test -z \"$(gofmt -l .)\" && go vet ./..."
+# Only tracked sources: tool scratch directories under .tmp are not part of the
+# tree and must not reach gofmt.
+run = "test -z \"$(git ls-files -z '*.go' | xargs -0 gofmt -l)\" && go vet ./..."
 
 [tasks.race]
 description = "Run the tests under the pure-Go race detector (needs: go install github.com/kolkov/racedetector/cmd/racedetector@latest)"
+# The detector writes instrumented copies into TMPDIR; keep them out of the
+# repository so a later gofmt pass does not see them.
+env = { TMPDIR = "/tmp" }
 run = "racedetector test ./..."
 
 # =============================================================================

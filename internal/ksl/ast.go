@@ -1,5 +1,11 @@
 package ksl
 
+import (
+	"fmt"
+	"strconv"
+	"strings"
+)
+
 // Scene is one parsed .ksl file. Items preserve declaration order.
 type Scene struct {
 	Name  string
@@ -135,9 +141,11 @@ func itemsOf[T Item](s *Scene) []T {
 }
 
 // Value is one parsed property value or expression operand. Every
-// value carries its position for diagnostics.
+// value carries its position for diagnostics and renders itself
+// compactly for tests and error messages.
 type Value interface {
 	Positioner
+	fmt.Stringer
 }
 
 // Scalar is a number with an optional unit: 12px, 40%, 250ms, 0.4.
@@ -255,3 +263,60 @@ func (v *Binary) Pos() Position      { return v.At }
 func (v *Ternary) Pos() Position     { return v.At }
 func (v *Member) Pos() Position      { return v.At }
 func (v *MethodCall) Pos() Position  { return v.At }
+
+func fmtNum(n float64) string { return strconv.FormatFloat(n, 'g', -1, 64) }
+
+func (v *Scalar) String() string    { return fmtNum(v.N) + v.Unit }
+func (v *ColorVal) String() string  { return "#" + v.Hex }
+func (v *StringVal) String() string { return strconv.Quote(v.S) }
+func (v *Ref) String() string       { return "$" + v.Name }
+func (v *RefPath) String() string   { return "#" + v.ID + "." + v.Prop }
+func (v *Keyword) String() string   { return v.Name }
+
+func (v *BoolVal) String() string {
+	if v.B {
+		return "true"
+	}
+	return "false"
+}
+
+func (v *FuncCall) String() string {
+	parts := make([]string, len(v.Args))
+	for i, a := range v.Args {
+		parts[i] = a.String()
+	}
+	return v.Name + "(" + strings.Join(parts, ", ") + ")"
+}
+
+func (v *ArrayVal) String() string {
+	parts := make([]string, len(v.Elems))
+	for i, e := range v.Elems {
+		parts[i] = e.String()
+	}
+	return "[" + strings.Join(parts, ", ") + "]"
+}
+
+func (v *InlineBlock) String() string {
+	parts := make([]string, len(v.Props))
+	for i, pr := range v.Props {
+		parts[i] = pr.Key + ": " + pr.Val.String()
+	}
+	return "{" + strings.Join(parts, ", ") + "}"
+}
+
+func (v *Unary) String() string  { return v.Op + v.X.String() }
+func (v *Binary) String() string { return "(" + v.L.String() + " " + v.Op + " " + v.R.String() + ")" }
+
+func (v *Ternary) String() string {
+	return v.Cond.String() + " ? " + v.Then.String() + " : " + v.Else.String()
+}
+
+func (v *Member) String() string { return v.X.String() + "." + v.Name }
+
+func (v *MethodCall) String() string {
+	parts := make([]string, len(v.Args))
+	for i, a := range v.Args {
+		parts[i] = a.String()
+	}
+	return v.X.String() + "." + v.Name + "(" + strings.Join(parts, ", ") + ")"
+}

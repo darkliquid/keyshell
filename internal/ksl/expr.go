@@ -3,10 +3,102 @@ package ksl
 // parseValue implements the Values production:
 //
 //	value := array | inlineblock | expr
-//
-// Task 4 completes operators, arrays and inline blocks; this file
-// starts with primaries only.
-func (p *parser) parseValue() Value { return p.parsePrimary() }
+func (p *parser) parseValue() Value {
+	t := p.peek()
+	if t.kind == tPunct && t.text == "[" {
+		return p.parseArray()
+	}
+	if t.kind == tPunct && t.text == "{" {
+		return &InlineBlock{At: t.pos, Props: p.parsePropsOnly("inline block")}
+	}
+	return p.parseTernary()
+}
+
+// Precedence, tightest first (spec, Values): postfix/member access,
+// unary - !, * /, + -, comparisons, && ||, ternary.
+
+func (p *parser) parseTernary() Value {
+	cond := p.parseBinary(0)
+	if !p.atOp("?") {
+		return cond
+	}
+	p.next()
+	thenV := p.parseTernary()
+	if !p.expectPunct(":") {
+		return cond
+	}
+	elseV := p.parseTernary()
+	return &Ternary{At: cond.Pos(), Cond: cond, Then: thenV, Else: elseV}
+}
+
+// binaryLevels lists the operator levels, loosest first.
+var binaryLevels = [][]string{
+	{"||"},
+	{"&&"},
+	{"==", "!="},
+	{"<", "<=", ">", ">="},
+	{"+", "-"},
+	{"*", "/"},
+}
+
+func (p *parser) parseBinary(level int) Value {
+	if level >= len(binaryLevels) {
+		return p.parseUnary()
+	}
+	ops := binaryLevels[level]
+	l := p.parseBinary(level + 1)
+	for p.atAnyOp(ops) {
+		op := p.next().text
+		r := p.parseBinary(level + 1)
+		l = &Binary{At: l.Pos(), Op: op, L: l, R: r}
+	}
+	return l
+}
+
+func (p *parser) atAnyOp(ops []string) bool {
+	t := p.peek()
+	if t.kind != tOp {
+		return false
+	}
+	for _, o := range ops {
+		if t.text == o {
+			return true
+		}
+	}
+	return false
+}
+
+func (p *parser) parseUnary() Value {
+	if p.atOp("-") || p.atOp("!") {
+		start := p.here()
+		op := p.next().text
+		return &Unary{At: start, Op: op, X: p.parseUnary()}
+	}
+	return p.parsePostfix()
+}
+
+func (p *parser) parsePostfix() Value {
+	x := p.parsePrimary()
+	if _, isRefPath := x.(*RefPath); isRefPath {
+		// Grammar: a refpath is exactly `#id.prop`; it is not
+		// postfixable, so `.b` in `#id.prop.a` is left as an error
+		// for the separator check.
+		return x
+	}
+	for p.atPunct(".") {
+		dot := p.next()
+		name := p.expectIdent("member name after '.'")
+		if name == "" {
+			return x
+		}
+		if p.atPunct("(") {
+			x = &MethodCall{At: dot.pos, X: x, Name: name, Args: p.parseArgs()}
+		} else {
+			x = &Member{At: dot.pos, X: x, Name: name}
+		}
+	}
+	return x
+}
 
 func (p *parser) parsePrimary() Value {
 	t := p.peek()
@@ -98,5 +190,28 @@ func (p *parser) parseArgs() []Value {
 			p.next()
 			continue
 		}
+	}
+}
+
+func (p *parser) parseArray() Value {
+	start := p.here()
+	p.next() // [
+	var elems []Value
+	for {
+		p.skipNL()
+		if p.peek().kind == tEOF {
+			p.errf(p.peek().pos, "unterminated array")
+			return &ArrayVal{At: start, Elems: elems}
+		}
+		if p.atPunct("]") {
+			p.next()
+			return &ArrayVal{At: start, Elems: elems}
+		}
+		elems = append(elems, p.parseValue())
+		p.skipNL()
+		if !p.atPunct(",") {
+			continue // loop head re-checks for ']' or errors via EOF/other
+		}
+		p.next() // trailing comma allowed before ']'
 	}
 }

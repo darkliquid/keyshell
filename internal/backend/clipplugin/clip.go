@@ -63,7 +63,7 @@ func (b *Backend) Query(_ context.Context, q sdk.Query) (sdk.Stream, error) {
 		{
 			ID: "header", Title: "Clipboard",
 			Subtitle: fmt.Sprintf("%d entries", len(entries)),
-			Glyph:    "clipboard",
+			Icon:     "edit-copy",
 			Controls: []sdk.Control{
 				{ID: "pause", Kind: "toggle", Label: "Capture", Bool: !b.paused.Load()},
 				{ID: "clear", Kind: "choice", Label: "Clear", Options: []string{"clear"}},
@@ -77,7 +77,7 @@ func (b *Backend) Query(_ context.Context, q sdk.Query) (sdk.Stream, error) {
 		items = append(items, sdk.Item{
 			ID: fmt.Sprintf("%d", i), Title: firstLine(e.Text),
 			Subtitle: ageString(e.CopiedAt),
-			Glyph:    "clipboard",
+			Icon:     "edit-copy",
 			Actions:  []sdk.Action{{Type: "copy", Value: e.Text}},
 		})
 	}

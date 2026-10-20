@@ -37,7 +37,7 @@ func TestNewListsApplications(t *testing.T) {
 	}
 	defer stream.Close()
 
-	var titles []string
+	var items []backend.Item
 	for {
 		it, more, err := stream.Next()
 		if err != nil {
@@ -46,10 +46,18 @@ func TestNewListsApplications(t *testing.T) {
 		if !more {
 			break
 		}
-		titles = append(titles, it.Title)
+		items = append(items, it)
 	}
-	if len(titles) != 2 {
-		t.Errorf("items = %v, want 2 (ghostty, firefox)", titles)
+	if len(items) != 2 {
+		t.Errorf("items = %v, want 2 (ghostty, firefox)", items)
+	}
+	for _, it := range items {
+		if it.Icon == "" {
+			t.Errorf("item %q has no icon name", it.Title)
+		}
+		if it.Subtitle != "" {
+			t.Errorf("item %q carries subtitle %q, want none", it.Title, it.Subtitle)
+		}
 	}
 }
 

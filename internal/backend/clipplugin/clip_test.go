@@ -41,6 +41,9 @@ func TestQueryHeader(t *testing.T) {
 	if len(entry.Actions) != 1 || entry.Actions[0].Type != "copy" {
 		t.Errorf("entry actions = %+v", entry.Actions)
 	}
+	if entry.Icon == "" {
+		t.Errorf("entry icon = %q, want a theme icon name", entry.Icon)
+	}
 }
 
 func TestQueryFilters(t *testing.T) {

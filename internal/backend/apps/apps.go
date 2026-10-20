@@ -57,13 +57,10 @@ func (b *Backend) Query(_ context.Context, q backend.Query) (backend.Stream, err
 			continue
 		}
 		items = append(items, backend.Item{
-			ID:       backend.ResultID(e.ID),
-			Title:    e.Name,
-			Subtitle: e.GenericName,
-			Glyph:    e.Icon,
-			Badge:    "",
-			Actions:  []backend.Action{{Type: "exec", Value: joinPlaceholder(argv)}},
-			// No children, no controls for apps in step 1.
+			ID:      backend.ResultID(e.ID),
+			Title:   e.Name,
+			Icon:    e.Icon,
+			Actions: []backend.Action{{Type: "exec", Value: joinPlaceholder(argv)}},
 		})
 	}
 	return &sliceStream{items: items}, nil

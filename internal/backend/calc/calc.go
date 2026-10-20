@@ -43,7 +43,6 @@ func (b *Backend) Query(_ context.Context, q backend.Query) (backend.Stream, err
 		ID:       backend.ResultID("result"),
 		Title:    result,
 		Subtitle: "Calculator",
-		Glyph:    "calc",
 		Actions:  []backend.Action{{Type: "copy", Value: result}},
 	}}}, nil
 }

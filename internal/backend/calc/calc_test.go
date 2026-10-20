@@ -58,3 +58,23 @@ func TestInfoNonSearchable(t *testing.T) {
 		t.Errorf("Trigger = %q, want =", info.Trigger)
 	}
 }
+
+// TestResultHasNoIcon keeps the calculator a body card.
+func TestResultHasNoIcon(t *testing.T) {
+	b, err := New(config.Default())
+	if err != nil {
+		t.Fatalf("New = err %v", err)
+	}
+	stream, err := b.Query(context.Background(), backend.Query{Text: "1+1"})
+	if err != nil {
+		t.Fatalf("Query = err %v", err)
+	}
+	defer stream.Close()
+	it, more, _ := stream.Next()
+	if !more {
+		t.Fatal("no item")
+	}
+	if it.Icon != "" || it.Glyph != "" {
+		t.Errorf("icon = %q glyph = %q, want both empty", it.Icon, it.Glyph)
+	}
+}

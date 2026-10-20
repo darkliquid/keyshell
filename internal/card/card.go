@@ -55,6 +55,9 @@ type Plan struct {
 
 // Compose derives a card from item data.
 func Compose(item backend.Item) Plan {
+	if len(item.Card) > 0 {
+		return composeOverride(item)
+	}
 	p := Plan{
 		Badge:    chip(backend.PartBadge, item.Badge, backend.ToneAccent),
 		Status:   chip(backend.PartStatus, item.Status, item.StatusTone),

@@ -52,6 +52,14 @@ func main() {
 		os.Exit(runVerb(os.Args[1:]))
 	}
 
+	// gogpu gates frames on the compositor's callback and drops a redraw that
+	// arrives while one is in flight. A close is exactly that case: the band
+	// stays on screen because nothing retries once the callback never comes
+	// for a surface the compositor sees as undamaged. Run without the gate.
+	if os.Getenv("GOGPU_WAYLAND_FRAME_CALLBACK") == "" {
+		_ = os.Setenv("GOGPU_WAYLAND_FRAME_CALLBACK", "0")
+	}
+
 	cfg, err := config.Load(configPath())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "config:", err)

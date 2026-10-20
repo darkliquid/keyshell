@@ -55,6 +55,7 @@ func (b *Backend) Query(_ context.Context, q sdk.Query) (sdk.Stream, error) {
 	}
 
 	lower := strings.ToLower(q.Text)
+	defaultSink := b.defaultSink()
 	var items []sdk.Item
 	for _, s := range sinks {
 		title := s.Description
@@ -65,16 +66,19 @@ func (b *Backend) Query(_ context.Context, q sdk.Query) (sdk.Stream, error) {
 			continue
 		}
 		volume := s.VolumePercent()
-		items = append(items, sdk.Item{
-			ID:       s.Name,
-			Title:    title,
-			Subtitle: s.Name,
-			Glyph:    "audio",
+		item := sdk.Item{
+			ID: s.Name, Title: title, Subtitle: s.Name, Glyph: "audio",
+			Badge: "OUTPUT", StatusTone: "info",
 			Controls: []sdk.Control{
-				{ID: "volume", Kind: "range", Label: "Volume", Value: volume, Min: 0, Max: 1, Step: 0.01},
+				{ID: "volume", Kind: "range", Label: "Volume", Value: volume, Min: 0, Max: 1, Step: 0.01,
+					Display: "card", Primary: true},
 				{ID: "mute", Kind: "toggle", Label: "Mute", Bool: s.Mute},
 			},
-		})
+		}
+		if s.Name == defaultSink {
+			item.Status = "DEFAULT"
+		}
+		items = append(items, item)
 	}
 	return sdk.NewStream(items...), nil
 }

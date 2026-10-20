@@ -74,13 +74,17 @@ func (b *Backend) Query(_ context.Context, q sdk.Query) (sdk.Stream, error) {
 		if lower != "" && !strings.Contains(strings.ToLower(c.name), lower) {
 			continue
 		}
-		items = append(items, sdk.Item{
-			ID: c.name, Title: c.name, Subtitle: c.subtitle(),
-			Glyph: "network",
+		item := sdk.Item{
+			ID: c.name, Title: c.name, Subtitle: c.subtitle(), Glyph: "network",
+			Status: "OPEN", StatusTone: "neutral",
 			Controls: []sdk.Control{
 				{ID: "connect", Kind: "toggle", Label: "Connected", Bool: c.active},
 			},
-		})
+		}
+		if c.active {
+			item.Status, item.StatusTone = "CONNECTED", "positive"
+		}
+		items = append(items, item)
 	}
 
 	// One Wi-Fi choice item listing available networks.

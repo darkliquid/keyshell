@@ -60,6 +60,31 @@ func TestQueryListsPlayers(t *testing.T) {
 	if len(items[0].Controls) != 2 {
 		t.Errorf("item0 controls = %d, want 2 (playback + position)", len(items[0].Controls))
 	}
+
+	var song *sdk.Item
+	for i := range items {
+		if items[i].Title == "Cool Song" {
+			song = &items[i]
+		}
+	}
+	if song == nil {
+		t.Fatal("no item for Cool Song")
+	}
+	if song.Status != "PLAYING" || song.StatusTone != "info" {
+		t.Errorf("status = %q/%q, want PLAYING/info", song.Status, song.StatusTone)
+	}
+	var progress *sdk.Control
+	for i := range song.Controls {
+		if song.Controls[i].Kind == "progress" {
+			progress = &song.Controls[i]
+		}
+	}
+	if progress == nil {
+		t.Fatalf("controls = %+v, want a progress control", song.Controls)
+	}
+	if progress.Label != "0:30" || progress.Text != "4:00" {
+		t.Errorf("progress = %q/%q, want 0:30/4:00", progress.Label, progress.Text)
+	}
 	if len(items[1].Controls) != 1 {
 		t.Errorf("item1 controls = %d, want 1 (playback only)", len(items[1].Controls))
 	}

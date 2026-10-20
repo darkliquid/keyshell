@@ -67,6 +67,22 @@ func TestQueryListsConnectionsAndWifi(t *testing.T) {
 	if len(items) != 4 {
 		t.Fatalf("items = %d, want 4 (3 connections + wifi choice)", len(items))
 	}
+	var wired, active *sdk.Item
+	for i := range items {
+		switch items[i].ID {
+		case "Wired connection 1":
+			wired = &items[i]
+		case "Disable WiFi":
+			active = &items[i]
+		}
+	}
+	if active == nil || active.Status != "CONNECTED" || active.StatusTone != "positive" {
+		t.Errorf("active connection = %+v, want CONNECTED/positive", active)
+	}
+	if wired == nil || wired.Status != "OPEN" || wired.StatusTone != "neutral" {
+		t.Errorf("inactive connection = %+v, want OPEN/neutral", wired)
+	}
+
 	// The wifi choice item exists last.
 	last := items[len(items)-1]
 	if last.ID != "wifi" || len(last.Controls) != 1 || last.Controls[0].Kind != "choice" {

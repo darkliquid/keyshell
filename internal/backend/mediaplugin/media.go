@@ -5,6 +5,7 @@ package mediaplugin
 import (
 	"context"
 	"fmt"
+	"math"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -61,14 +62,19 @@ func (b *Backend) Query(_ context.Context, q sdk.Query) (sdk.Stream, error) {
 		}
 		if length > 0 {
 			controls = append(controls, sdk.Control{
-				ID: "position", Kind: "range", Label: "Position",
+				ID: "position", Kind: "progress", Label: formatClock(pos), Text: formatClock(length),
 				Value: pos, Min: 0, Max: length, Step: 1,
 			})
 		}
-		items = append(items, sdk.Item{
+		item := sdk.Item{
 			ID: p, Title: display, Subtitle: artist,
 			Glyph: "media", Controls: controls,
-		})
+			Status: strings.ToUpper(status), StatusTone: "info",
+		}
+		if !strings.EqualFold(status, "Playing") {
+			item.StatusTone = "neutral"
+		}
+		items = append(items, item)
 	}
 	return sdk.NewStream(items...), nil
 }
@@ -94,6 +100,19 @@ func (b *Backend) Control(ctx context.Context, c sdk.Change) error {
 		return b.playerctl(args...).Run()
 	}
 	return fmt.Errorf("media: no control %q", c.Control)
+}
+
+// formatClock renders seconds as m:ss or h:mm:ss for the timeline label.
+func formatClock(sec float64) string {
+	if sec < 0 || math.IsInf(sec, 0) || math.IsNaN(sec) {
+		return "0:00"
+	}
+	total := int(sec)
+	h, m, s := total/3600, (total%3600)/60, total%60
+	if h > 0 {
+		return fmt.Sprintf("%d:%02d:%02d", h, m, s)
+	}
+	return fmt.Sprintf("%d:%02d", m, s)
 }
 
 func (b *Backend) listPlayers() ([]string, error) {

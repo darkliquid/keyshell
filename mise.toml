@@ -30,6 +30,10 @@ description = "Format check, vet and test in one pass"
 depends = ["test"]
 run = "test -z \"$(gofmt -l .)\" && go vet ./..."
 
+[tasks.race]
+description = "Run the tests under the pure-Go race detector (needs: go install github.com/kolkov/racedetector/cmd/racedetector@latest)"
+run = "racedetector test ./..."
+
 # =============================================================================
 # SPIKES
 #

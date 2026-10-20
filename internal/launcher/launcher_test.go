@@ -209,8 +209,8 @@ func TestSearchRunsOffTheCallingThread(t *testing.T) {
 	l := New(&fakeProvider{backends: map[string]backend.Backend{"slow": b}},
 		Options{Searchable: []string{"slow"}, RankOpts: rank.Options{Limit: 10}})
 	l.Start()
-	l.Open()
-
+	// Deliberately no Open: it would submit its own query and consume the one
+	// gate release this test provides.
 	done := make(chan struct{})
 	go func() {
 		l.SetQuery("x")

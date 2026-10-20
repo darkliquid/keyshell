@@ -18,7 +18,12 @@ mise run build      # go build ./...
 mise run test       # go test ./...
 mise run lint       # golangci-lint
 mise run check      # gofmt check + go vet + tests
+mise run race       # tests under the pure-Go race detector (no cgo)
 ```
+
+`mise run race` needs `go install github.com/kolkov/racedetector/cmd/racedetector@latest`
+once. It is a pure-Go FastTrack detector, so it works with `CGO_ENABLED=0`,
+where `go test -race` cannot.
 
 `CGO_ENABLED=0` is set for every task in this repository.
 

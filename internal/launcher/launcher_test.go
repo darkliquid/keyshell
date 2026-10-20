@@ -182,3 +182,87 @@ func TestDebouncedControlCoalesces(t *testing.T) {
 		t.Errorf("value = %v, want 4 (last settled)", apps.control[0].Value)
 	}
 }
+
+// blockingBackend answers only once its gate is released, standing in for a
+// plugin that shells out and takes a while.
+type blockingBackend struct {
+	id    string
+	items []backend.Item
+	gate  chan struct{}
+}
+
+func (b *blockingBackend) Info() backend.Info {
+	return backend.Info{ID: b.id, Searchable: true, StableIDs: true}
+}
+func (b *blockingBackend) Query(_ context.Context, q backend.Query) (backend.Stream, error) {
+	<-b.gate
+	return &sliceStream{items: b.items}, nil
+}
+func (b *blockingBackend) Control(context.Context, backend.Change) error { return nil }
+func (b *blockingBackend) Close() error                                  { return nil }
+
+// TestSearchRunsOffTheCallingThread checks a slow query does not block the
+// caller once the worker is started: typing must never wait for a plugin.
+func TestSearchRunsOffTheCallingThread(t *testing.T) {
+	gate := make(chan struct{})
+	b := &blockingBackend{id: "slow", items: []backend.Item{{ID: "x", Title: "x"}}, gate: gate}
+	l := New(&fakeProvider{backends: map[string]backend.Backend{"slow": b}},
+		Options{Searchable: []string{"slow"}, RankOpts: rank.Options{Limit: 10}})
+	l.Start()
+	l.Open()
+
+	done := make(chan struct{})
+	go func() {
+		l.SetQuery("x")
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("SetQuery blocked on the backend query")
+	}
+
+	if got := l.Results(); len(got) != 0 {
+		t.Fatalf("results = %v before the worker finished, want none", got)
+	}
+	gate <- struct{}{}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		l.Poll()
+		if len(l.Results()) == 1 {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("worker results never arrived through Poll")
+}
+
+// TestStaleResultsAreDropped checks a superseded query cannot overwrite newer
+// results, which is what stops a slow plugin from publishing behind the field.
+func TestStaleResultsAreDropped(t *testing.T) {
+	l := New(&fakeProvider{backends: map[string]backend.Backend{}}, Options{})
+	l.mu.Lock()
+	l.levels = []*Level{{}}
+	l.gen = 7
+	l.mu.Unlock()
+
+	if l.apply(Result{gen: 6, depth: 1, matches: []rank.Match{{Source: "old"}}}) {
+		t.Fatal("apply accepted a stale result")
+	}
+	if !l.apply(Result{gen: 7, depth: 1, matches: []rank.Match{{Source: "new"}}}) {
+		t.Fatal("apply rejected the current result")
+	}
+	if got := l.Results(); len(got) != 1 || got[0].Source != "new" {
+		t.Errorf("results = %v, want the current generation", got)
+	}
+}
+
+// TestPollWithoutWorkerIsANoOp keeps the inline path safe for callers that
+// never start the worker.
+func TestPollWithoutWorkerIsANoOp(t *testing.T) {
+	l := New(&fakeProvider{backends: map[string]backend.Backend{}}, Options{})
+	l.Poll()
+	if got := l.Results(); len(got) != 0 {
+		t.Errorf("results = %v, want none", got)
+	}
+}

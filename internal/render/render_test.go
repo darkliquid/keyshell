@@ -55,6 +55,7 @@ func (v *fakeView) Results() []rank.Match {
 	}
 	return nil
 }
+func (v *fakeView) Poll()             {}
 func (v *fakeView) Selected() int     { return 0 }
 func (v *fakeView) Query() string     { return "" }
 func (v *fakeView) IsOpen() bool      { return v.open }

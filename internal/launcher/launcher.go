@@ -6,6 +6,7 @@ package launcher
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/darkliquid/keyshell/internal/backend"
@@ -31,21 +32,29 @@ type Level struct {
 	Selected int
 }
 
-// Launcher is the overlay state.
+// Launcher is the overlay state. State changes may arrive from the UI thread,
+// the IPC goroutine and the query worker, so every field below mu is guarded
+// by it. Queries never run under the lock: they take a snapshot, run off the
+// UI thread, and publish through a channel.
 type Launcher struct {
 	provider backend.BackendProvider
 	opts     Options
 
-	open   bool
-	mode   string
-	query  string
-	levels []*Level
-
-	// per-level results for the current query
+	mu      sync.RWMutex
+	open    bool
+	mode    string
+	badge   string
+	query   string
+	levels  []*Level
 	results []rank.Match
+	gen     uint64
 
 	// change subscriptions
 	listeners []func()
+
+	// query worker, nil until Start
+	jobs      chan Job
+	resultsCh chan Result
 
 	debounce *time.Timer
 	settleMs time.Duration
@@ -65,40 +74,53 @@ func New(provider backend.BackendProvider, opts Options) *Launcher {
 	if opts.SettleMs == 0 {
 		opts.SettleMs = 80 * time.Millisecond
 	}
-	return &Launcher{provider: provider, opts: opts, mode: MergedMode}
+	return &Launcher{provider: provider, opts: opts, mode: MergedMode, badge: "SEARCH"}
 }
 
 // OnChange registers a callback invoked after any state change. Several
 // listeners may be registered (rendering, focus handling, ...).
 func (l *Launcher) OnChange(fn func()) {
-	if fn != nil {
-		l.listeners = append(l.listeners, fn)
+	if fn == nil {
+		return
 	}
+	l.mu.Lock()
+	l.listeners = append(l.listeners, fn)
+	l.mu.Unlock()
 }
 
 func (l *Launcher) changed() {
-	for _, fn := range l.listeners {
+	l.mu.RLock()
+	fns := append([]func(){}, l.listeners...)
+	l.mu.RUnlock()
+	for _, fn := range fns {
 		fn()
 	}
 }
 
-// Open shows the overlay and runs the initial query.
+// Open shows the overlay and starts the initial query. It returns before the
+// query finishes: the overlay takes focus and paints immediately, and results
+// arrive through Poll.
 func (l *Launcher) Open() {
+	l.mu.Lock()
 	l.open = true
-	l.resetToRoot()
-	l.refresh()
+	l.resetToRootLocked()
+	job := l.jobLocked()
+	l.mu.Unlock()
 	l.changed()
+	l.submit(job)
 }
 
 // Close hides the overlay.
 func (l *Launcher) Close() {
+	l.mu.Lock()
 	l.open = false
+	l.mu.Unlock()
 	l.changed()
 }
 
 // Toggle flips visibility.
 func (l *Launcher) Toggle() {
-	if l.open {
+	if l.IsOpen() {
 		l.Close()
 	} else {
 		l.Open()
@@ -106,55 +128,84 @@ func (l *Launcher) Toggle() {
 }
 
 // IsOpen reports visibility.
-func (l *Launcher) IsOpen() bool { return l.open }
+func (l *Launcher) IsOpen() bool {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return l.open
+}
 
 // Mode returns the current backend mode id.
-func (l *Launcher) Mode() string { return l.mode }
+func (l *Launcher) Mode() string {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return l.mode
+}
 
 // ModeBadge returns the badge for the active mode (or SEARCH when merged).
 func (l *Launcher) ModeBadge() string {
-	if l.mode == "" || l.mode == MergedMode {
-		return "SEARCH"
-	}
-	b, err := l.provider.Get(l.mode)
-	if err != nil {
-		return "SEARCH"
-	}
-	return b.Info().Badge
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return l.badge
 }
 
-// SetMode switches the active backend and refreshes results.
+// SetMode switches the active backend and starts a query.
 func (l *Launcher) SetMode(id string) {
+	badge := "SEARCH"
+	if id != "" && id != MergedMode {
+		if b, err := l.provider.Get(id); err == nil {
+			badge = b.Info().Badge
+		}
+	}
+	l.mu.Lock()
 	l.mode = id
-	l.resetToRoot()
-	l.refresh()
+	l.badge = badge
+	l.resetToRootLocked()
+	job := l.jobLocked()
+	l.mu.Unlock()
 	l.changed()
+	l.submit(job)
 }
 
 // Query returns the current query text.
-func (l *Launcher) Query() string { return l.query }
-
-// SetQuery updates the query and refreshes results.
-func (l *Launcher) SetQuery(text string) {
-	l.query = text
-	l.refresh()
-	l.changed()
+func (l *Launcher) Query() string {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return l.query
 }
 
-// SetQueryInput updates the query text without searching. Typing calls this so
-// the field repaints immediately, and the search runs once the keys settle:
-// a merged search costs every plugin a batch of subprocess calls, which is far
-// too slow to run between keystrokes.
-func (l *Launcher) SetQueryInput(text string) {
+// SetQuery updates the query and starts a search. Without a worker the search
+// runs inline, which keeps tests and one-shot callers synchronous; with a
+// worker it returns immediately and Poll publishes the results.
+func (l *Launcher) SetQuery(text string) {
+	l.mu.Lock()
 	l.query = text
+	job := l.jobLocked()
+	l.mu.Unlock()
+	l.changed()
+	l.submit(job)
+}
+
+// SetQueryInput updates the query text without searching, so the field repaints
+// on the keystroke itself. Typing calls this and schedules SetQuery for when
+// the keys settle.
+func (l *Launcher) SetQueryInput(text string) {
+	l.mu.Lock()
+	l.query = text
+	l.mu.Unlock()
 	l.changed()
 }
 
 // Results returns the current ranked results.
-func (l *Launcher) Results() []rank.Match { return l.results }
+func (l *Launcher) Results() []rank.Match {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return l.results
+}
 
 // Selected returns the selected index within the current level.
 func (l *Launcher) Selected() int {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
 	if len(l.levels) == 0 {
 		return 0
 	}
@@ -163,59 +214,16 @@ func (l *Launcher) Selected() int {
 
 // Select moves the selection by delta.
 func (l *Launcher) Select(delta int) {
-	level := l.currentLevel()
+	l.mu.Lock()
+	level := l.currentLevelLocked()
 	if level == nil || len(level.Items) == 0 {
+		l.mu.Unlock()
 		return
 	}
 	n := len(level.Items)
 	level.Selected = (level.Selected + delta + n) % n
+	l.mu.Unlock()
 	l.changed()
-}
-
-// refresh runs the query across the active backends and stores results.
-func (l *Launcher) refresh() {
-	ctx := context.Background()
-	level := l.currentLevel()
-	if level == nil {
-		return
-	}
-	if l.mode == MergedMode || l.mode == "" {
-		// merged search: all searchable backends
-		ids := l.searchableIDs()
-		groups := []rank.Group{}
-		for _, id := range ids {
-			b, err := l.provider.Get(id)
-			if err != nil {
-				continue
-			}
-			stream, err := b.Query(ctx, backend.Query{Text: l.query, Limit: l.opts.RankOpts.Limit, Merged: true})
-			if err != nil {
-				continue
-			}
-			items := drain(stream)
-			stream.Close()
-			groups = append(groups, rank.Group{Source: id, Items: items})
-		}
-		level.Items = flattenGroups(groups)
-		level.Matches = rank.Rank(l.query, groups, nil, l.opts.RankOpts)
-		l.results = level.Matches
-	} else {
-		b, err := l.provider.Get(l.mode)
-		if err != nil {
-			l.results = nil
-			return
-		}
-		stream, err := b.Query(ctx, backend.Query{Text: l.query, Limit: l.opts.RankOpts.Limit, Merged: false, Scope: level.Scope})
-		if err != nil {
-			l.results = nil
-			return
-		}
-		items := drain(stream)
-		stream.Close()
-		level.Items = items
-		level.Matches = rank.RankOne(l.query, l.mode, items, nil, l.opts.RankOpts)
-		l.results = level.Matches
-	}
 }
 
 func (l *Launcher) searchableIDs() []string {
@@ -225,28 +233,38 @@ func (l *Launcher) searchableIDs() []string {
 	return []string{"apps", "files", "windows"}
 }
 
-func (l *Launcher) currentLevel() *Level {
+func (l *Launcher) currentLevelLocked() *Level {
 	if len(l.levels) == 0 {
 		l.levels = append(l.levels, &Level{Source: l.mode})
 	}
 	return l.levels[len(l.levels)-1]
 }
 
-func (l *Launcher) resetToRoot() {
+func (l *Launcher) resetToRootLocked() {
 	l.levels = []*Level{{Source: l.mode}}
 }
 
 // Enter routes the primary action of the selected item.
 func (l *Launcher) Enter() {
-	level := l.currentLevel()
+	// currentLevelLocked may create the root level, so this takes the write
+	// lock rather than the read lock.
+	l.mu.Lock()
+	level := l.currentLevelLocked()
 	if level == nil || len(level.Items) == 0 {
+		l.mu.Unlock()
 		return
 	}
 	idx := level.Selected
 	if idx < 0 || idx >= len(level.Items) {
+		l.mu.Unlock()
 		return
 	}
 	item := level.Items[idx]
+	source := l.mode
+	if level.Source != "" {
+		source = level.Source
+	}
+	l.mu.Unlock()
 
 	if len(item.Actions) > 0 {
 		if item.Destructive {
@@ -255,7 +273,7 @@ func (l *Launcher) Enter() {
 			l.changed()
 			return
 		}
-		l.performAction(item.Actions[0], item)
+		l.performAction(item.Actions[0], item, source)
 		return
 	}
 	if item.Expandable {
@@ -269,23 +287,18 @@ func (l *Launcher) Enter() {
 
 // performAction handles host actions and routes domain ("plugin") actions to
 // the backend that produced the item.
-func (l *Launcher) performAction(a backend.Action, item backend.Item) {
+func (l *Launcher) performAction(a backend.Action, item backend.Item, source string) {
 	switch a.Type {
 	case "set-query":
 		l.SetQuery(a.Value)
 	case "plugin":
-		l.invokeDomain(a, item)
+		l.invokeDomain(a, item, source)
 	case "copy", "open-url", "exec", "exec-terminal", "focus-window":
 		l.changed() // the host capability broker picks this up
 	}
 }
 
-func (l *Launcher) invokeDomain(a backend.Action, item backend.Item) {
-	level := l.currentLevel()
-	source := l.mode
-	if level != nil && level.Source != "" {
-		source = level.Source
-	}
+func (l *Launcher) invokeDomain(a backend.Action, item backend.Item, source string) {
 	b, err := l.provider.Get(source)
 	if err != nil {
 		return
@@ -300,7 +313,8 @@ func (l *Launcher) invokeDomain(a backend.Action, item backend.Item) {
 
 // descend pushes a scoped level for an item's children.
 func (l *Launcher) descend(item backend.Item) {
-	parent := l.currentLevel()
+	l.mu.Lock()
+	parent := l.currentLevelLocked()
 	scope := append([]string{}, parent.Scope...)
 	scope = append(scope, string(item.ID))
 	l.levels = append(l.levels, &Level{
@@ -308,30 +322,43 @@ func (l *Launcher) descend(item backend.Item) {
 		Source: l.mode,
 	})
 	l.query = ""
-	l.refresh()
+	job := l.jobLocked()
+	l.mu.Unlock()
 	l.changed()
+	l.submit(job)
 }
 
 // Back pops a level.
 func (l *Launcher) Back() {
-	if len(l.levels) > 1 {
+	l.mu.RLock()
+	depth := len(l.levels)
+	query := l.query
+	l.mu.RUnlock()
+	switch {
+	case depth > 1:
+		l.mu.Lock()
 		l.levels = l.levels[:len(l.levels)-1]
-		l.refresh()
+		job := l.jobLocked()
+		l.mu.Unlock()
 		l.changed()
-	} else if l.query != "" {
+		l.submit(job)
+	case query != "":
 		l.SetQuery("")
-	} else {
+	default:
 		l.Close()
 	}
 }
 
 // Escape pops a level or dismisses at the root.
 func (l *Launcher) Escape() {
-	if len(l.levels) > 1 {
+	l.mu.RLock()
+	depth := len(l.levels)
+	l.mu.RUnlock()
+	if depth > 1 {
 		l.Back()
-	} else {
-		l.Close()
+		return
 	}
+	l.Close()
 }
 
 // ControlSource delivers a settled value change to a named backend, used by
@@ -346,11 +373,7 @@ func (l *Launcher) ControlSource(source string, c backend.Change) error {
 
 // Control delivers a settled value change to the current item's backend.
 func (l *Launcher) Control(itemID string, controlID string, value float64) {
-	level := l.currentLevel()
-	if level == nil {
-		return
-	}
-	b, err := l.provider.Get(l.mode)
+	b, err := l.provider.Get(l.Mode())
 	if err != nil {
 		return
 	}
@@ -363,12 +386,14 @@ func (l *Launcher) Control(itemID string, controlID string, value float64) {
 
 // DebouncedControl coalesces rapid control changes using the settle window.
 func (l *Launcher) DebouncedControl(itemID, controlID string, value float64) {
+	l.mu.Lock()
 	if l.debounce != nil {
 		l.debounce.Stop()
 	}
 	l.debounce = time.AfterFunc(l.opts.SettleMs, func() {
 		l.Control(itemID, controlID, value)
 	})
+	l.mu.Unlock()
 }
 
 func (l *Launcher) openFocusView(item backend.Item) {

@@ -84,6 +84,9 @@ func main() {
 		RankOpts:   rank.Options{Limit: cfg.Overlay.MaxResults},
 		Searchable: searchable,
 	})
+	// Queries run on a worker and publish through channels, so a plugin that
+	// shells out never stalls the frame loop.
+	l.Start()
 	_ = capability.New(cfg)
 
 	screenW, screenH := display.Primary()

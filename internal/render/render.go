@@ -22,6 +22,7 @@ import (
 
 // View is the slice of launcher state the renderer reads.
 type View interface {
+	Poll()
 	Results() []rank.Match
 	Selected() int
 	Query() string
@@ -52,6 +53,10 @@ func New() *Renderer {
 func (r *Renderer) DrawFrame(dc *gg.Context, l View, th *theme.Theme, cfg config.Reveal) {
 	w := float64(dc.Width())
 	h := float64(dc.Height())
+
+	// Finished query results land here, on the frame thread, so the launcher
+	// state they update is only ever touched from one goroutine.
+	l.Poll()
 
 	if !l.IsOpen() {
 		dc.ClearWithColor(gg.RGBA{})

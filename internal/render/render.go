@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/darkliquid/keyshell/internal/card"
 	"github.com/darkliquid/keyshell/internal/config"
 	"github.com/darkliquid/keyshell/internal/rank"
 	"github.com/darkliquid/keyshell/internal/theme"
@@ -185,14 +186,15 @@ func drawCards(dc *gg.Context, th *theme.Theme, l View, rev Reveal, cfg config.R
 
 	x := 0.0
 	for i := first; i < len(results) && i < first+visible; i++ {
-		drawCard(dc, th, rev, cfg, x, cardTop, cardW, cardH, results[i], i == selected)
+		drawCard(dc, th, rev, cfg, x, cardTop, cardW, cardH, card.Compose(results[i].Item), i == selected)
 		x += cardW + 8
 	}
 }
 
 // drawCard reproduces the QML Card: a sheared slab (or accent when selected)
-// with a 3px border, and a cyan offset shadow behind unselected cards.
-func drawCard(dc *gg.Context, th *theme.Theme, rev Reveal, cfg config.Reveal, x, y, w, h float64, m rank.Match, selected bool) {
+// with a 3px border, a cyan offset shadow behind unselected cards, and the
+// composed plan painted in an axis-aligned content box inset past the shear.
+func drawCard(dc *gg.Context, th *theme.Theme, rev Reveal, cfg config.Reveal, x, y, w, h float64, p card.Plan, selected bool) {
 	if !selected {
 		shadow := th.AccentAlt
 		shadow.A = 0.7
@@ -207,33 +209,8 @@ func drawCard(dc *gg.Context, th *theme.Theme, rev Reveal, cfg config.Reveal, x,
 	}
 	cardQuad(dc, rev, x, y, w, h, fill, border, 3)
 
-	const contentPadding = 10.0
-	if m.Item.Glyph != "" {
-		iconSize := math.Max(36, math.Min(52, math.Round(h*0.40)))
-		glyphFace := th.Face(iconSize)
-		dc.SetFont(glyphFace)
-		if selected {
-			dc.SetColor(th.Slab)
-		} else {
-			dc.SetColor(th.Ink)
-		}
-		glyph := m.Item.Glyph
-		gw := glyphFace.Advance(glyph)
-		dc.DrawString(glyph, x+contentPadding+(w-2*contentPadding-gw)/2, y+contentPadding+iconSize)
-	}
-
-	titleSize := math.Max(12, math.Min(16, math.Round(h*0.14)))
-	titleFace := th.Face(titleSize)
-	dc.SetFont(titleFace)
-	if selected {
-		dc.SetColor(th.Slab)
-	} else {
-		dc.SetColor(th.Ink)
-	}
-	title := strings.ToUpper(m.Item.Title)
-	titleY := y + h - contentPadding - float64(titleSize)*0.4
-	tw := titleFace.Advance(title)
-	dc.DrawString(title, x+contentPadding+(w-2*contentPadding-tw)/2, titleY)
+	inset := math.Ceil(math.Abs(rev.Shear)*h/2) + 4 + 10
+	drawCardContent(dc, th, p, selected, x+inset, y+10, w-2*inset, h-20)
 }
 
 // cardQuad fills and strokes a parallelogram matching the QML shear matrix:

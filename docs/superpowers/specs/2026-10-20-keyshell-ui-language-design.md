@@ -75,14 +75,18 @@ Primitive {
 
 - Node names are primitives (or user-defined components). A block body
   holds properties and child nodes.
-- Properties are `key: value`, CSS-style. Values are numbers, sizes,
-  colours, strings, keywords, theme references (`$accent`), data
-  bindings (`$query`), cross-node references (`#id.prop`), or functions
-  (`tilt(12deg)`, `blur(8px)`).
-- Blocks may carry a `#id` for selectors, state targeting, and
-  cross-node references.
+- Properties are `key: value`, CSS-style. Values are expressions over
+  numbers, sizes, colours, strings, keywords, theme references
+  (`$accent`), data bindings (`$query`), cross-node references
+  (`#id.prop`), function calls (`tilt(12deg)`, `blur(8px)`), arrays,
+  and inline blocks (`viewport: { height: 320px }`).
+- Properties on one line are comma-separated; a newline always
+  separates two properties, and a trailing comma is allowed.
+- Blocks may carry `#id` and `.class` markers for selectors, state
+  targeting, and cross-node references.
 - A scene may contain non-node declarations: `@keyframes`, `state`,
-  `transition`, `theme`, `include`, and `def` components.
+  `transition`, `theme`, selector style blocks (§4), `include`, and
+  `def` components.
 
 ### Minimal example (full custom UI)
 
@@ -96,20 +100,20 @@ Window {
 
     Column { gap: 24, align: center
       Text { text: $query, size: 48, color: $ink }
-      Ring { size: 120, stroke: $ring, progress: $typing }
+      Meter#progress { variant: ring, size: 120, stroke: $ring, ratio: $typing }
       Text { text: "ENTER TO OPEN", size: 12, color: $muted }
     }
 
     state open {
-        Ring { opacity: 1, scale: 1 }
+        #progress { opacity: 1, scale: 1 }
     }
     transition open { opacity: 200ms ease-out }
 
     @keyframes breathe {
-        0%  { stroke: $ring, opacity: 0.4 }
+        0% { stroke: $ring, opacity: 0.4 }
         100% { stroke: $accent-alt, opacity: 1 }
     }
-    Ring { animation: breathe 2s ease-in-out infinite alternate }
+    Meter#progress { animation: breathe 2s ease-in-out infinite alternate }
 }
 ```
 
@@ -129,15 +133,16 @@ maps onto these, and they cover arbitrary new UIs.
 | `Box` | rectangle | `fill`, `border`, `radius`, `x`, `y`, `width`, `height`, `shear`, `opacity` |
 | `Text` | a text run | `text`, `font`, `size`, `weight`, `color`, `align`, `wrap`, `elide`, `uppercase` |
 | `Icon` | glyph or icon-theme art (no raster) | `glyph`, `icon`, `size`, `color` |
+| `Cursor` | blinking text caret | `width`, `height`, `color` |
 | `Image` | decoded raster bitmap over any rectangle | `source`, `fit`, `tint`, `radius`, `opacity` |
 | `Pill` | text on a tinted plate (badge/status/chip) | `text`, `tone`, `size`, `border`, `radius` |
-| `Meter` | ratio readout, bar or ticks | `ratio`, `ticks`, `variant`, `label`, `value`, `tone` |
+| `Meter` | ratio readout: bar, ticks or ring | `ratio`, `ticks`, `variant` (`bar` \| `ticks` \| `ring`), `stroke`, `size`, `label`, `value`, `tone` |
 | `Row` | horizontal flex container | `gap`, `align`, `justify`, `grow` |
 | `Column` | vertical flex container | `gap`, `align`, `justify`, `grow` |
 | `Grid` | tiling container (fixed columns) | `cols`, `gap`, `align`, `justify` |
 | `Stack` | overlay container | `align`, `z` |
-| `List` | data-bound repetition; a clipped viewport | `items`, `selected`, `template`, `orientation`, `viewport`, `scroll`, `overflow`, `cap`, `empty` |
-| `Path` | low-level vector drawing (escape hatch) | `d` (move/line/quad/cubic/close) |
+| `List` | data-bound repetition; a clipped viewport | `items`, `selected`, `orientation`, `viewport`, `scroll`, `overflow`, `cap`, plus `template`/`empty`/`overflowSummary` child blocks |
+| `Path` | low-level vector drawing (escape hatch) | `d` (move/line/quad/cubic/close string), `fill`, `stroke`, `strokeWidth` |
 | `Group` | transform + layer container | `translate`, `rotate`, `shear`, `scale`, `opacity`, `z` |
 
 Every node also accepts the universal properties of §3: `z`, visual
@@ -151,7 +156,12 @@ Notes:
 - `Pill` is sugar over `Box` + `Text` with a tone-mapped fill, matching
   `drawChip`.
 - `Meter` `variant: ticks` with `ticks: 10` reproduces the hold/volume/
-  battery gauge; `variant: bar` reproduces the solid bar.
+  battery gauge; `variant: bar` reproduces the solid bar;
+  `variant: ring` draws a circular progress ring.
+- `Cursor` is the text caret; its blink is a keyframes animation (§6).
+- A card's `hold` part is not drawn by today's renderer; scenes express
+  one as `Pill { text: $item.hold, tone: alert }` once the host
+  publishes the field.
 - `Path` is the guarantee that *any* shape is expressible, not a
   curated list. It is why a user can build a UI that looks nothing like
   the shipped one.
@@ -182,7 +192,8 @@ Constraints, applied after layout:
 Units and responsive scaling:
 
 - Lengths accept `px` or `%` (of the `Window`). Percentages are the
-  responsive lever: `width: 40%` tracks the surface.
+  responsive lever: `width: 40%` tracks the surface. Angles accept
+  `deg`; durations accept `ms` or `s`.
 - A per-theme `scale` factor on `Window` multiplies every geometric
   length and font size, so an entire scene constrains proportionally on
   smaller surfaces. It inherits through the tree.
@@ -245,18 +256,25 @@ Box.selected { fill: $accent }
 Text.muted   { color: $muted }
 ```
 
-  Selectors match node type, `#id`, pseudo-state (`:selected`, `:open`,
-  `:focused`), and attribute (`[mode="media"]`). Cascade order: node-local
-  property > id selector > type/pseudo > theme default.
+  Selectors match node type, `#id`, `.class`, pseudo-state (`:selected`,
+  `:open`, `:focused`), and attribute (`[mode="media"]`). Cascade order:
+  node-local property > id selector > class selector > type/pseudo >
+  theme default.
 
 ### 5. States and selectors
 
 States are boolean conditions on the scene and drive both styling and
 animation.
 
-- **Built-in states** mirror the renderer's `View`:
-  `open` (IsOpen), `focused` (query focused), `selected` (current list
-  item), plus `mode` as an attribute.
+- **Built-in states** mirror the renderer's `View`: `open` (`IsOpen`),
+  `closed` (its complement), `focused` (query focused), `selected`
+  (current list item), plus `mode` as an attribute. v1 has no
+  user-authored state conditions: a `state` block names one of these
+  and nothing else.
+- **Two `state` forms.** Inside a node body, a `state` block holds
+  properties that override that node's own. At scene level, it holds
+  selector blocks (§4 syntax) applied to every node the selector
+  matches while the state holds.
 - **Per-node states** apply a property block when the state holds:
 
 ```ksl
@@ -268,14 +286,15 @@ Box#card {
 }
 ```
 
-- **Scene-level states** can restructure the scene (show/hide groups).
+- **Scene-level states** show/hide groups by overriding properties on
+  matching nodes:
 
 ```ksl
 state open {
-    SearchField { opacity: 1 }
+    Box#search { opacity: 1 }
 }
 state closed {
-    SearchField { opacity: 0 }
+    Box#search { opacity: 0 }
 }
 ```
 
@@ -290,9 +309,9 @@ Two declarative mechanisms cover the current UI's animations and more.
 
 ```ksl
 @keyframes blink {
-    0%  { opacity: 1 }
+    0% { opacity: 1 }
     50% { opacity: 0 }
-    100%{ opacity: 1 }
+    100% { opacity: 1 }
 }
 Cursor { animation: blink 800ms linear infinite }
 ```
@@ -302,7 +321,8 @@ Properties eligible for animation: `opacity`, `translate`, `rotate`,
 `width`/`height`, and the effect parameters (`blur` radius, `shadow`
 offset/radius, `brightness`, `saturate`). Easing is a keyword
 (`linear`, `ease`, `ease-in`, `ease-out`, `ease-in-out`) or a
-cubic-bezier function.
+cubic-bezier function. The `animation` shorthand is `name [duration]
+[easing] [iteration] [direction]` (§Grammar).
 
 The reveal-on-open animation is a scene-level transition on the band
 `Group`'s `rotate`/`translate` from a closed to an open state, replacing
@@ -314,23 +334,44 @@ The scene reads the launcher's state through bound variables, items flow
 into `List` templates, and any node can reach the selection.
 
 - **Scene variables**: `$open`, `$focused`, `$query`, `$results`,
-  `$selected`, `$mode`, `$typing` (placeholder for a typing/activity
-  signal). A binding re-evaluates when its source changes and schedules
-  a repaint (the renderer already redraws on `OnChange`).
+  `$selected`, `$mode`, `$typing` (a 0..1 activity ratio). A binding
+  re-evaluates when its source changes and schedules a repaint (the
+  renderer already redraws on `OnChange`).
+- **Bound shapes**: `$reveal.*` exposes the band geometry the host
+  resamples per summon: `y` (centre line), `h` (tallest end height),
+  `hLeft`/`hRight` (the tapered end heights), `angle`, `shear`,
+  `cardShear`, and `d` (the trapezoid outline as a `Path` string).
+  `$open` and `$focused` are booleans; `$results.len` is the result
+  count.
 - **List items**: inside a `List`, `$item` exposes the item's fields
-  (`title`, `subtitle`, `badge`, `status`, `visual`, `glyph`, `icon`,
-  `detail`, `hint`, and its controls). A `List` template renders one
-  sub-tree per item; `selected` highlights the current index.
+  (`id`, `title`, `subtitle`, `badge`, `status`, `visual`, `glyph`,
+  `icon`, `detail`, `hint`, and its controls). A `List` template
+  renders one sub-tree per item; `selected` highlights the current
+  index.
 - **$active**: a top-level binding to the currently selected item,
   available anywhere in the tree. This is the hoist mechanism — a
-  full-screen background can do `background { image: $active.image }`
-  without living inside the `List` template.
+  full-screen background can do `Image { source: $active.image, fit:
+  cover, z: -1 }` without living inside the `List` template.
 - **Cross-node references**: `prop: #someId.prop` resolves a value
   already computed elsewhere, so nodes can reuse loaded assets or styled
   values without duplicating them.
-- **Expressions**: a minimal expression language for computed values —
-  arithmetic, string concatenation, and a ternary — deliberately *not*
-  general scripting. `text: $item.title.toUpper()`, `width: $results.len * 12`.
+- **Expressions**: a minimal expression language for computed values:
+  arithmetic, string concatenation, comparison, `&&`/`||`, a ternary,
+  member access (`$results.len`) and method-style calls
+  (`$item.title.toUpper()`), with precedence fixed in §Grammar —
+  deliberately *not* general scripting. `text:
+  $item.title.toUpper()`, `width: $results.len * 12`.
+- **Randomisation**: two functions with explicit sampling lifetimes.
+  `rand(min, max)` samples a uniform float **once per summon** and is
+  frozen until the next: each call site is its own draw, so
+  `rotate: rand(-4, 4) * 1deg` varies a band per summon without
+  per-frame flicker. `jitter(key, min, max)` is a deterministic hash
+  of `key` mapped into the range: it never resamples, which makes it
+  frame-safe and gives per-item variation inside `List` templates
+  (`shear: jitter($item.id, -3, 3) * 0.01`). Correlated sampling —
+  the reveal geometry's minimum-tilt enforcement and angle-coupled
+  shear — stays host-side behind `$reveal.*` (decision 2). The RNG is
+  host-owned and seedable, so tests render deterministic frames.
 
 Plugins/backends may publish extra read-only variables and functions
 through the existing plugin host, so custom UIs can bind to plugin data
@@ -500,11 +541,11 @@ expressive enough to be a drop-in description of the shipped look.
 ```ksl
 Window {
     // The slab band: a Group with the reveal tilt.
-    Group id=band {
+    Group#band {
         x: 0, y: $reveal.y, width: 100%, height: $reveal.h
         rotate: $reveal.angle
         shear: $reveal.shear
-        fill: $slab
+        Path { d: $reveal.d, fill: $slab }   // the tapered trapezoid
         // clipped to the band quad via the path mask
         Stack { align: center
             Column { gap: 8, align: center
@@ -516,10 +557,13 @@ Window {
                 }
                 List { items: $results, selected: $selected, width: 60%, height: 40%
                     // card template drawn per item; selected pill inverts
-                    Group {
-                        shear: $reveal.cardShear
-                        Box { fill: $slab, border: $muted }
-                        state selected { fill: $accent, border: $accent }
+                    template {
+                        Group#card {
+                            shear: $reveal.cardShear
+                            Box { fill: $slab, border: $muted, radius: 4px
+                                state selected { fill: $accent, border: $accent }
+                            }
+                        }
                     }
                 }
             }
@@ -533,36 +577,149 @@ Window {
 The `$reveal` variables replace `Reveal`'s per-summon geometry without
 changing any behaviour.
 
-## Grammar (informal EBNF)
+## Grammar
+
+Normative EBNF. `ws` is optional between every pair of symbols unless a
+production says otherwise; comments are whitespace.
+
+### Lexical
 
 ```ebnf
-scene     := ws ( node | decl | include | compdef )*
-decl      := themeblock | stateblock | transitiondecl | keyframes
-include   := 'include' string ws
-compdef   := 'def' IDENT '{' ws ( prop | node | decl )* '}' ws
-node      := IDENT ('#' IDENT)? '{' ws ( prop | node | decl )* '}' ws
-prop      := IDENT ':' value ws
-themedef  := 'theme' '{' ws ( IDENT ':' value ws | fontfamily | assets )* '}' ws
-fontfamily := 'font' '{' ws ( IDENT ':' string ws )* '}' ws
-assets    := 'assets' ':' arr ws
-stateblock:= 'state' IDENT '{' ws ( prop | node )* '}' ws
-transdecl  := 'transition' IDENT '{' ws ( IDENT ':' timing ws )* '}' ws
-keyframes := '@keyframes' IDENT '{' ws ( frame )* '}' ws
-frame     := ( '0%' | '100%' | INT '%' ) '{' ws ( prop )* '}' ws
-value     := scalar | color | string | ref | refpath | func | effect | arr
-ref       := '$' IDENT ( '.' IDENT )*
-refpath   := '#' IDENT '.' IDENT
-effect    := 'blur(' scalar ')' | 'shadow(' scalar ',' scalar ',' color ')' |
-             'brightness(' scalar ')' | 'saturate(' scalar ')' |
-             'linear-gradient(' color ',' color ')' |
-             'radial-gradient(' color ',' color ')'
-func      := IDENT '(' ( value ( ',' value )* )? ')'
-scalar    := number ( 'px' | 'deg' | '%' )?
-color     := '#' hex hex hex | '#' hex hex hex hex hex hex | IDENT
-string    := '"' ... '"'
-arr       := '[' value ( ',' value )* ']'
-timing    := scalar ('ms' | 's') IDENT?          // duration + easing
+comment   := '//' any-but-newline
+ws        := ( ' ' | '\t' | '\n' | comment )*
+ident     := letter ( letter | digit | '_' | '-' )*
+number    := [0-9]+ ( '.' [0-9]+ )?
+unit      := 'px' | 'deg' | '%' | 'ms' | 's'      // attaches with no space
+scalar    := number unit?                          // 12px, 40%, 250ms, 0.4
+color     := '#' hex hex hex ( hex hex ( hex hex )? )?   // #RGB #RGBA #RRGGBB #RRGGBBAA
+string    := '"' ( any-but-quote | '\"' )* '"'
+ref       := '$' ident ( '.' ident )*              // $results.len
+refpath   := '#' ident '.' ident                   // #band.width
+percent   := number '%'                            // keyframe selector
+punct     := '{' | '}' | ':' | ',' | '[' | ']' | '#' | '.' | '(' | ')'
+operator  := '+' | '-' | '*' | '/' | '==' | '!=' | '<' | '<=' | '>' | '>='
+           | '&&' | '||' | '?' | '!'
 ```
+
+- `ident` is greedy and may contain `-`, so `ease-in-out`,
+  `accent-alt` and `cardShear` are single tokens. Maximal munch:
+  `width: 100% - 20px` lexes a scalar, an operator, a scalar;
+  `accent-alt` is one ident.
+- A `unit` attaches only when it directly follows the number (`40%` is
+  one scalar; `40 %` is an error).
+- Bare identifiers are **keywords, not named colours**: a colour value
+  is a hex literal or a `$token` reference. Keyword values (`tone:`,
+  `align:`, easing names) are validated per property against that
+  property's keyword set.
+
+### Structure
+
+```ebnf
+scene     := ( node | decl )*
+decl      := themeblock | stateblock | transitionblock | keyframes
+           | selectorblock | defblock | include
+node      := ident mods? '{' blockbody '}'
+mods      := ( '#' ident | '.' ident )+     // at most one #id, many .class
+blockbody := ( prop | node | nodestate | include )*
+nodestate := 'state' ident '{' prop* '}'      // inside a node: props only
+prop      := ident ':' value sep
+sep       := ws | ',' ws                     // see Rule 1
+```
+
+### Declarations
+
+```ebnf
+themeblock      := 'theme' '{' ( token | fontblock | assetsdecl )* '}'
+token           := ident ':' value
+fontblock       := 'font' '{' ( ident ':' string )* '}'
+assetsdecl      := 'assets' ':' array
+stateblock      := 'state' ident '{' selectorblock* '}'   // scene level
+selectorblock   := selector '{' prop* '}'
+selector        := ident? mods? ( ':' ident )* ( '[' ident ( '=' string )? ']' )?
+transitionblock := 'transition' ident '{' ( ident ':' timing sep )* '}'
+timing          := scalar easing?
+easing          := ident
+                 | 'cubic-bezier' '(' number ',' number ',' number ',' number ')'
+keyframes       := '@keyframes' ident '{' frame+ '}'
+frame           := percent '{' prop* '}'
+defblock        := 'def' ident '{' blockbody '}'
+include         := 'include' string
+```
+
+### Values
+
+```ebnf
+value       := array | inlineblock | expr
+array       := '[' ( value ( ',' value )* ','? )? ']'
+inlineblock := '{' prop* '}'               // viewport: { height: 320px }
+expr        := ternary
+ternary     := logical ( '?' expr ':' expr )?
+logical     := comparison ( '&&' | '||' comparison )*
+comparison  := additive ( '==' | '!=' | '<' | '<=' | '>' | '>=' additive )?
+additive    := multiplicative ( '+' | '-' multiplicative )*
+multiplicative := unary ( '*' | '/' unary )*
+unary       := ( '-' | '!' )? postfix
+postfix     := primary ( '.' ident ( '(' value* ')' )? )*
+primary     := scalar | color | string | ref | refpath
+             | 'true' | 'false' | func | keyword | '(' expr ')'
+keyword     := ident                       // tone: accent, align: center
+func        := ident '(' ( value ( ',' value )* )? ')'
+```
+
+`func` covers effects and helpers alike (`blur(8px)`, `shadow(...)`,
+`linear-gradient(...)`, `tilt(12deg)`); the property's declared type
+decides which calls are valid. The built-ins are the §3 effects plus
+`rand`/`jitter` (§7); anything else is plugin-published. `+` is
+numeric addition, or string concatenation when either operand is a
+string (numbers stringify in shortest round-trip form); any other
+type mix is an evaluation error.
+Precedence, tightest first: postfix/member access, unary `-`/`!`,
+`*` `/`, `+` `-`, comparisons, `&&`/`||`, ternary.
+
+### Rules
+
+1. **Separators.** Properties on the same line are separated by
+   commas. A newline always ends a property, so commas are optional in
+   multi-line bodies; a trailing comma before `}` is allowed. The same
+   rule applies to the `ident: timing` pairs of a `transition` block.
+2. **Keywords are contextual.** `theme`, `state`, `transition`, `def`,
+   `include`, `font`, `assets`, and the `List` sub-block names are
+   reserved only in the positions above. The parser decides by
+   lookahead: `ident '{'` opens a block, `ident ':'` starts a
+   property, `ident '='` occurs only inside `[...]`. A `def`
+   component may not be named with a reserved word (resolve-time
+   error).
+3. **Two `state` forms.** Node-level blocks hold properties;
+   scene-level blocks hold selector blocks. State names are limited to
+   the built-ins of §5.
+4. **List sub-blocks.** `template`, `empty`, `overflowSummary` are
+   child blocks of `List`, each holding exactly one node; they are not
+   properties. `List` requires `items:`.
+5. **`Path` data.** `d` is a string of SVG-like commands (`M`, `m`,
+   `L`, `l`, `Q`, `q`, `C`, `c`, `Z`), parsed by the Path drawer, not
+   by the scene grammar.
+6. **`animation` shorthand.** Order is fixed: `name [duration]
+   [easing] [iteration] [direction]`, where iteration is `infinite`
+   or a number and direction is `alternate`, `reverse`, or
+   `alternate reverse`. Comma-separate multiple animations.
+7. **Units.** A length property without a unit means `px`. A unitless
+   number is only valid where the property is dimensionless
+   (`opacity`, `z`, `scale`, `ratio`, `ticks`).
+8. **`#` disambiguation.** `Node#id` and `#id { }` target nodes;
+   `#id.prop` in value position reads a resolved property from
+   another node. Nothing else starts with `#`.
+9. **Keyframes.** Frame selectors are `0%`..`100%`, unique and
+   ascending; `from`/`to` aliases are not in v1.
+10. **Comments.** `//` to end of line; no block comments in v1.
+11. **Includes.** `include` is allowed anywhere a node or declaration
+    is; it splices the parsed fragment in place, with cycle detection
+    at resolve time.
+12. **Random functions.** `rand(min, max)` and `jitter(key, min, max)`
+    are the only non-pure value functions. `rand` draws are cached per
+    call site for the duration of a summon, so re-evaluating a scene
+    within one summon is stable; `jitter` is a pure hash of its key.
+    A `rand` call inside a `List` template is one call site: it draws
+    once for every item, so per-item variation uses `jitter`.
 
 ## Integration with keyshell
 
@@ -614,6 +771,32 @@ timing    := scalar ('ms' | 's') IDENT?          // duration + easing
 14. **Constraints**: `minW/maxW/minH/maxH/aspect`.
 15. **Reuse**: `include` and `def` components.
 16. **Conditional presence**: a boolean `when:` on any node.
+17. **One id syntax**: `Node#id`, plus `.class` markers; `id=` is not
+    part of the language.
+18. **Separators**: commas between same-line properties, newlines
+    always separate, trailing comma optional.
+19. **Values are expressions**: one small expression grammar (member
+    access, method calls, arithmetic, concat, comparison, logic,
+    ternary) plus arrays and inline blocks (`viewport: { … }`) as
+    value forms.
+20. **Colours are hex or `$token`**: 3/4/6/8 digits with CSS shorthand
+    semantics; bare identifiers are keywords validated per property,
+    never named colours.
+21. **Two `state` forms**: node-level blocks hold properties;
+    scene-level blocks hold selector blocks; names limited to the
+    built-ins of §5 (plus `closed`) in v1.
+22. **Closed primitive kit**: `Cursor` added; there is no `Ring` (a
+    ring gauge is `Meter { variant: ring }`) and no `SearchField`;
+    anything the kit lacks is a plugin drawer or a `def` component.
+23. **List sub-blocks**: `template`/`empty`/`overflowSummary` are
+    reserved child blocks holding one node each.
+24. **`Group` paints nothing**: fills and borders live on `Box` and
+    `Image`; `Group` is transform + layer only.
+25. **Randomisation is sampled, not frame-live**: `rand(a, b)` draws
+    once per summon per call site; `jitter(key, a, b)` is a
+    deterministic hash for per-item variation. Correlated sampling
+    (minimum-tilt enforcement, angle-coupled shear) stays host-side
+    as `$reveal.*`, per decision 2.
 
 ## Out of scope (future)
 

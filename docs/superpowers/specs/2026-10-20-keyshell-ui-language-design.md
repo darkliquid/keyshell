@@ -649,7 +649,11 @@ include         := 'include' string
 ### Values
 
 ```ebnf
-value       := array | inlineblock | expr
+value       := array | inlineblock | animvalue | expr
+animvalue   := animstep ( ',' animstep )*
+animstep    := ident scalar? easing? iteration? direction?
+iteration   := 'infinite' | number
+direction   := 'alternate' | 'reverse' | 'alternate' 'reverse'
 array       := '[' ( value ( ',' value )* ','? )? ']'
 inlineblock := '{' prop* '}'               // viewport: { height: 320px }
 expr        := ternary
@@ -701,7 +705,10 @@ Precedence, tightest first: postfix/member access, unary `-`/`!`,
 6. **`animation` shorthand.** Order is fixed: `name [duration]
    [easing] [iteration] [direction]`, where iteration is `infinite`
    or a number and direction is `alternate`, `reverse`, or
-   `alternate reverse`. Comma-separate multiple animations.
+   `alternate reverse`. Comma-separate multiple animations. The
+   `animation` property parses its value with the `animvalue`
+   production (the parser dispatches on the property name); every
+   other property parses `array | inlineblock | expr`.
 7. **Units.** A length property without a unit means `px`. A unitless
    number is only valid where the property is dimensionless
    (`opacity`, `z`, `scale`, `ratio`, `ticks`).
@@ -720,6 +727,12 @@ Precedence, tightest first: postfix/member access, unary `-`/`!`,
     within one summon is stable; `jitter` is a pure hash of its key.
     A `rand` call inside a `List` template is one call site: it draws
     once for every item, so per-item variation uses `jitter`.
+13. **Style rules are decided by position.** A top-level block
+    carrying `#id`/`.class` markers is a style rule (§4); a
+    marker-less top-level block is a node. Node bodies contain
+    nodes; scene-level `state` bodies contain selector blocks. There
+    is no other way to write a style rule, and no way to put a class
+    on the scene root.
 
 ## Integration with keyshell
 
@@ -797,6 +810,10 @@ Precedence, tightest first: postfix/member access, unary `-`/`!`,
     deterministic hash for per-item variation. Correlated sampling
     (minimum-tilt enforcement, angle-coupled shear) stays host-side
     as `$reveal.*`, per decision 2.
+26. **Two grammar holes closed ahead of implementation**: the
+    `animation` property has its own value production (`animvalue`),
+    and style rules are distinguished from nodes by position
+    (top-level + markers = style rule), not by a keyword.
 
 ## Out of scope (future)
 

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"sync/atomic"
 	"time"
 
 	"github.com/darkliquid/keyshell/internal/backend"
@@ -23,6 +24,7 @@ import (
 	"github.com/darkliquid/keyshell/internal/backend/windows"
 	"github.com/darkliquid/keyshell/internal/capability"
 	"github.com/darkliquid/keyshell/internal/config"
+	"github.com/darkliquid/keyshell/internal/display"
 	"github.com/darkliquid/keyshell/internal/input"
 	"github.com/darkliquid/keyshell/internal/ipc"
 	"github.com/darkliquid/keyshell/internal/launcher"
@@ -75,15 +77,20 @@ func main() {
 	})
 	_ = capability.New(cfg)
 
+	screenW, screenH := display.Primary()
+	if screenW <= 0 || screenH <= 0 {
+		screenW, screenH = 1920, 1080
+	}
 	app := gogpu.NewApp(gogpu.DefaultConfig().
 		WithTitle("keyshell").
-		WithSize(1600, 900).
+		WithSize(screenW, screenH).
+		WithTransparent(true).
 		WithLayerShell(gogpu.LayerShellConfig{
 			Namespace:     "keyshell",
 			Layer:         gogpu.LayerShellOverlay,
 			Anchor:        gogpu.LayerShellAnchorTop | gogpu.LayerShellAnchorBottom | gogpu.LayerShellAnchorLeft | gogpu.LayerShellAnchorRight,
-			Width:         1600,
-			Height:        900,
+			Width:         int32(screenW),
+			Height:        int32(screenH),
 			Keyboard:      gogpu.LayerShellKeyboardOnDemand,
 			ExclusiveZone: -1,
 		}))
@@ -92,13 +99,36 @@ func main() {
 	_ = input.New(l, app.EventSource())
 
 	// Serve the IPC socket.
-	ln, err := net.Listen("unix", ipc.SocketPath())
-	if err == nil {
+	if ln, err := ipc.Listen(); err == nil {
 		defer ln.Close()
 		go ipc.New(l).Serve(ln)
 	}
 
-	if err := render.Present(app, l, th, render.PresentConfig{Width: 1600, Height: 900, Namespace: "keyshell", Reveal: cfg.Reveal}); err != nil {
+	// The layer surface stays mapped between summons, so the compositor never
+	// sees it "appear" again. Keyboard focus therefore has to be requested on
+	// each show: exclusive while open, none while hidden.
+	var keyboardMode atomic.Value
+	keyboardMode.Store(gogpu.LayerShellKeyboardNone)
+	l.OnChange(func() {
+		want := gogpu.LayerShellKeyboardNone
+		if l.IsOpen() {
+			want = gogpu.LayerShellKeyboardExclusive
+		}
+		if keyboardMode.Load() == want {
+			return
+		}
+		keyboardMode.Store(want)
+		_ = app.SetLayerKeyboardInteractivity(want)
+	})
+
+	// Run interactively from a terminal: show the overlay immediately so the
+	// binary is usable without a keybind. As a session shell (no TTY) it starts
+	// hidden and is summoned over IPC.
+	if isTerminal() {
+		l.Open()
+	}
+
+	if err := render.Present(app, l, th, render.PresentConfig{Width: screenW, Height: screenH, Namespace: "keyshell", Reveal: cfg.Reveal}); err != nil {
 		fmt.Fprintln(os.Stderr, "overlay:", err)
 		os.Exit(1)
 	}
@@ -230,6 +260,16 @@ func servePlugin(b pluginBackend) int {
 		return 1
 	}
 	return 0
+}
+
+// isTerminal reports whether the binary is being run interactively, so the
+// host can show the overlay immediately instead of waiting for an IPC summon.
+func isTerminal() bool {
+	info, err := os.Stdin.Stat()
+	if err != nil {
+		return false
+	}
+	return info.Mode()&os.ModeCharDevice != 0
 }
 
 func configPath() string {

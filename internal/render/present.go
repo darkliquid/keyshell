@@ -59,16 +59,18 @@ func (p *presenter) configure(app *gogpu.App) *gogpu.App {
 		// S4: the upload path expects straight alpha.
 		straight := unpremultiply(img)
 
-		if p.tex == nil {
-			p.drawer = dc.AsTextureDrawer()
-			tex, err := p.drawer.TextureCreator().NewTextureFromRGBA(p.cfg.Width, p.cfg.Height, straight.Pix)
-			if err != nil {
-				return
-			}
-			p.tex = tex
-		} else if u, ok := p.tex.(gpucontext.TextureUpdater); ok {
-			_ = u.UpdateData(straight.Pix)
+		// Create a fresh texture each draw. UpdateData stores the bytes
+		// verbatim while NewTextureFromRGBA converts straight alpha to the
+		// premultiplied form the renderer blends with, so reusing a texture via
+		// UpdateData produces black frames. Frames are drawn on change only, so
+		// the allocation is not on a hot path.
+		drawer := dc.AsTextureDrawer()
+		tex, err := drawer.TextureCreator().NewTextureFromRGBA(p.cfg.Width, p.cfg.Height, straight.Pix)
+		if err != nil {
+			return
 		}
+		p.drawer = drawer
+		p.tex = tex
 		_ = p.drawer.DrawTexture(p.tex, 0, 0)
 	})
 	return app

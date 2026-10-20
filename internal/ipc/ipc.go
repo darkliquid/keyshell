@@ -23,6 +23,16 @@ func New(l *launcher.Launcher) *Handler {
 	return &Handler{l: l}
 }
 
+// Listen opens the control socket, clearing a stale socket file left by a
+// previous instance (a killed host leaves the path behind and bind would fail).
+func Listen() (net.Listener, error) {
+	path := SocketPath()
+	if _, err := os.Stat(path); err == nil {
+		_ = os.Remove(path)
+	}
+	return net.Listen("unix", path)
+}
+
 // SocketPath returns the runtime socket path.
 func SocketPath() string {
 	rt := os.Getenv("XDG_RUNTIME_DIR")

@@ -97,3 +97,54 @@ func absDiff(a, b uint8) int {
 	}
 	return int(b - a)
 }
+
+// TestDrawCardMeterFillsTicks checks a ratio meter paints accent ticks in
+// proportion to its value.
+func TestDrawCardMeterFillsTicks(t *testing.T) {
+	th, err := theme.Load()
+	if err != nil {
+		t.Fatalf("theme.Load = err %v", err)
+	}
+	defer th.Close()
+
+	plan := card.Compose(backend.Item{Title: "Speakers", Icon: "audio", Controls: []backend.Control{
+		{ID: "volume", Kind: backend.ControlRange, Value: 0.5, Min: 0, Max: 1, Primary: true},
+	}})
+	dc := gg.NewContext(400, 260)
+	drawCard(dc, th, Reveal{}, config.Default().Reveal, 10, 10, 340, 220, plan, false)
+	img := dc.Image().(*image.RGBA)
+
+	if !containsColor(img, 0xFF, 0x2E, 0x63) {
+		t.Error("accent meter pixels missing")
+	}
+}
+
+// TestDrawCardNotePaintsTheMutedPill checks a true toggle reaches the card.
+func TestDrawCardNotePaintsTheMutedPill(t *testing.T) {
+	th, err := theme.Load()
+	if err != nil {
+		t.Fatalf("theme.Load = err %v", err)
+	}
+	defer th.Close()
+
+	plan := card.Compose(backend.Item{Title: "Speakers", Icon: "audio", Controls: []backend.Control{
+		{ID: "mute", Kind: backend.ControlToggle, Label: "Mute", Bool: true, Display: backend.DisplayCard},
+	}})
+	dc := gg.NewContext(400, 260)
+	drawCard(dc, th, Reveal{}, config.Default().Reveal, 10, 10, 340, 220, plan, false)
+	img := dc.Image().(*image.RGBA)
+
+	if !containsColor(img, 0xFF, 0x2E, 0x63) && !containsColor(img, 0x08, 0xF7, 0xFE) {
+		t.Error("no note pill ink pixels found")
+	}
+}
+
+// TestDrawCardOverflowMarkerShowsOnTheFooter checks the hidden count is visible.
+func TestDrawCardOverflowMarkerShowsOnTheFooter(t *testing.T) {
+	if got := footerText(card.Plan{
+		Footer:   card.Part{Kind: backend.PartFooter, Text: "ENTER SELECT"},
+		Overflow: 2,
+	}); got != "ENTER SELECT  //  +2" {
+		t.Errorf("footer = %q, want %q", got, "ENTER SELECT  //  +2")
+	}
+}

@@ -93,6 +93,9 @@ func drawBody(dc *gg.Context, th *theme.Theme, p card.Plan, selected bool, x, y,
 		dc.SetColor(mutedOrInk(th, selected))
 		dc.DrawStringAnchored(elide(sub, p.Subtitle.Text, w), x+w/2, next+6, 0.5, 0.5)
 	}
+	if len(p.Accessories) > 0 {
+		drawAccessories(dc, th, p.Accessories, selected, x, y+h-accessoryHeight*float64(len(p.Accessories)), w)
+	}
 }
 
 // drawRow paints the standard card: a leading visual beside a text column.
@@ -115,6 +118,12 @@ func drawRow(dc *gg.Context, th *theme.Theme, p card.Plan, selected bool, x, y, 
 		dc.SetFont(sub)
 		dc.SetColor(mutedOrInk(th, selected))
 		dc.DrawStringAnchored(elide(sub, strings.ToUpper(p.Subtitle.Text), colW), colX, top+7, 0, 0.5)
+	}
+	if len(p.Accessories) > 0 {
+		accTop := top + 16
+		if accTop+accessoryHeight <= y+h {
+			drawAccessories(dc, th, p.Accessories, selected, colX, accTop, colW)
+		}
 	}
 }
 
@@ -288,4 +297,112 @@ func elide(face text.Face, s string, width float64) string {
 		}
 	}
 	return ""
+}
+
+// accessoryHeight is the row height of one accessory plus its gap.
+const accessoryHeight = 18.0
+
+// drawAccessories paints the meter, timeline and note rows under the text
+// column, one row each.
+func drawAccessories(dc *gg.Context, th *theme.Theme, parts []card.Part, selected bool, x, y, w float64) {
+	for _, p := range parts {
+		switch p.Kind {
+		case backend.PartMeter:
+			drawMeter(dc, th, p, selected, x, y, w)
+		case backend.PartTimeline:
+			drawTimeline(dc, th, p, selected, x, y, w)
+		case backend.PartNote:
+			drawNote(dc, th, p, selected, x, y, w)
+		}
+		y += accessoryHeight
+	}
+}
+
+// drawMeter paints either ten sheared ticks or a progress bar.
+func drawMeter(dc *gg.Context, th *theme.Theme, p card.Part, selected bool, x, y, w float64) {
+	if p.Ticks > 0 {
+		drawTicks(dc, th, p.Ratio, p.Ticks, selected, x, y, w)
+		return
+	}
+	track, fill := th.SurfaceAlt, th.Accent
+	if selected {
+		track, fill = th.Slab, th.AccentAlt
+	}
+	barY := y + 4
+	dc.SetColor(track)
+	dc.DrawRoundedRectangle(x, barY, w, 5, 1)
+	_ = dc.Fill()
+	dc.NewSubPath()
+	dc.SetColor(fill)
+	dc.DrawRoundedRectangle(x, barY, math.Max(0, w*p.Ratio), 5, 1)
+	_ = dc.Fill()
+}
+
+// drawTicks reproduces the QML meter: n bars sheared 0.25, filled by ratio.
+func drawTicks(dc *gg.Context, th *theme.Theme, ratio float64, n int, selected bool, x, y, w float64) {
+	if n <= 0 {
+		return
+	}
+	gap := 2.0
+	tickW := math.Max(2, (w-gap*float64(n-1))/float64(n))
+	filled := math.Round(ratio * float64(n))
+	on, off := th.Accent, th.SurfaceAlt
+	if selected {
+		on, off = th.Slab, th.SurfaceAlt
+	}
+	for i := 0; i < n; i++ {
+		tx := x + float64(i)*(tickW+gap)
+		dc.SetColor(off)
+		if float64(i) < filled {
+			dc.SetColor(on)
+		}
+		dc.Push()
+		dc.Translate(tx+tickW/2, y+8)
+		dc.Shear(-0.25, 0)
+		dc.DrawRectangle(-tickW/2, -3.5, tickW, 7)
+		_ = dc.Fill()
+		dc.Pop()
+	}
+}
+
+// drawTimeline paints the read-only position row with its elapsed slash total
+// label on the right.
+func drawTimeline(dc *gg.Context, th *theme.Theme, p card.Part, selected bool, x, y, w float64) {
+	face := th.Face(8)
+	dc.SetFont(face)
+	label := p.Label
+	if p.Value != "" {
+		label = p.Label + "/" + p.Value
+	}
+	dc.SetColor(mutedOrInk(th, selected))
+	labelW := face.Advance(label)
+	dc.DrawStringAnchored(label, x+w, y+8, 1, 0.5)
+
+	track, fill := th.SurfaceAlt, th.Accent
+	if selected {
+		track, fill = th.Slab, th.AccentAlt
+	}
+	barW := w - labelW - 6
+	if barW <= 0 {
+		return
+	}
+	dc.SetColor(track)
+	dc.DrawRoundedRectangle(x, y+5.5, barW, 5, 1)
+	_ = dc.Fill()
+	dc.NewSubPath()
+	dc.SetColor(fill)
+	dc.DrawRoundedRectangle(x, y+5.5, math.Max(0, barW*p.Ratio), 5, 1)
+	_ = dc.Fill()
+}
+
+// drawNote paints an inline state pill such as "MUTED".
+func drawNote(dc *gg.Context, th *theme.Theme, p card.Part, selected bool, x, y, w float64) {
+	text := p.Text
+	if text == "" {
+		text = p.Label
+	}
+	if text == "" {
+		text = "ON"
+	}
+	drawChip(dc, th, x, y, w, text, p.Tone, selected)
 }

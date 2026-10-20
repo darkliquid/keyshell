@@ -45,8 +45,11 @@ nine of them, differing only in pixel constants.
 
 Layout is derived, not declared:
 
-- **hero**: `visual` and `title`, no `subtitle`, `detail` or `footer`. App-style
-  centred stack.
+- **hero**: `visual` and `title`, no `subtitle`, `detail`, accessories or
+  `footer`, and a primary action that launches (`exec`, `exec-terminal`,
+  `open-url`). App-style centred stack. A copy or plugin action makes the same
+  item a row card instead, which is what keeps a clipboard entry from becoming
+  a hero card.
 - **body**: `detail` present. Full-width text block, optional leading glyph,
   footer.
 - **row**: everything else. Header row, then leading `visual` beside a text

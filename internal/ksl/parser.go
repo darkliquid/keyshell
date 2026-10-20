@@ -2,14 +2,23 @@ package ksl
 
 import "fmt"
 
-// Parse parses a scene. Syntax errors stop at the first site and come
-// back as an ErrorList with one entry.
+// Loader loads an included scene fragment by name.
+type Loader func(name string) ([]byte, error)
+
+// Parse parses a scene with no include support.
 func Parse(name string, src []byte) (*Scene, error) {
+	return ParseWithLoader(name, src, nil)
+}
+
+// ParseWithLoader parses a scene, splicing includes in place (Grammar
+// Rule 11). The loader resolves fragment names; a nil loader turns
+// every include into an error.
+func ParseWithLoader(name string, src []byte, load Loader) (*Scene, error) {
 	toks, lerrs := lex(name, src)
 	if len(lerrs) > 0 {
 		return nil, lerrs
 	}
-	p := &parser{name: name, toks: toks}
+	p := &parser{name: name, toks: toks, load: load, stack: []string{name}}
 	s := p.parseScene()
 	if len(p.errs) > 0 {
 		return nil, p.errs
@@ -18,10 +27,13 @@ func Parse(name string, src []byte) (*Scene, error) {
 }
 
 type parser struct {
-	name string
-	toks []token
-	i    int
-	errs ErrorList
+	name  string
+	toks  []token
+	i     int
+	errs  ErrorList
+	load  Loader
+	stack []string // include chain for cycle detection
+	scene *Scene   // top-level include splices append here
 }
 
 func (p *parser) peek() token { return p.toks[p.i] }
@@ -146,17 +158,17 @@ func (p *parser) requireSep() {
 }
 
 func (p *parser) parseScene() *Scene {
-	s := &Scene{Name: p.name}
+	p.scene = &Scene{Name: p.name}
 	p.skipNL()
 	for p.peek().kind != tEOF {
 		before := p.i
 		if it := p.parseTopItem(); it != nil {
-			s.Items = append(s.Items, it)
+			p.scene.Items = append(p.scene.Items, it)
 		}
 		p.requireSep()
 		p.ensureProgress(before)
 	}
-	return s
+	return p.scene
 }
 
 func (p *parser) parseTopItem() Item {

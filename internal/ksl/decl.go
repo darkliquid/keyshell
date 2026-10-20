@@ -255,9 +255,43 @@ func (p *parser) parseDef() Item {
 	return d
 }
 
-// parseTopInclude parses `include "path"`. Task 6 splices the fragment;
-// parse-only keeps the item.
+// parseTopInclude splices an included fragment's top-level items into
+// the scene (Grammar Rule 11) and returns nil: nothing of the include
+// itself survives into the resolved scene.
 func (p *parser) parseTopInclude() Item {
+	inc := p.parseIncludeToken()
+	if inc == nil {
+		return nil
+	}
+	p.scene.Items = append(p.scene.Items, p.resolveInclude(inc)...)
+	return nil
+}
+
+// parseIncludeNodes splices an include inside a node body: only nodes
+// are legal there (Grammar Rule 11).
+func (p *parser) parseIncludeNodes() []*Node {
+	inc := p.parseIncludeToken()
+	if inc == nil {
+		return nil
+	}
+	var nodes []*Node
+	for _, it := range p.resolveInclude(inc) {
+		if n, ok := it.(*Node); ok {
+			nodes = append(nodes, n)
+			continue
+		}
+		p.errf(inc.Pos, "include fragments inside a node may only contain nodes")
+		break
+	}
+	return nodes
+}
+
+type includeToken struct {
+	Pos  Position
+	Path string
+}
+
+func (p *parser) parseIncludeToken() *includeToken {
 	start := p.here()
 	p.next() // include
 	t := p.peek()
@@ -266,12 +300,52 @@ func (p *parser) parseTopInclude() Item {
 		return nil
 	}
 	p.next()
-	return &Include{Pos: start, Path: t.text}
+	return &includeToken{Pos: start, Path: t.text}
 }
 
-// parseIncludeNodes splices an include inside a node body; completed in
-// Task 6.
-func (p *parser) parseIncludeNodes() []*Node { return nil }
+// resolveInclude parses a fragment and returns its items, with cycle
+// detection on the include chain.
+func (p *parser) resolveInclude(inc *includeToken) []Item {
+	if p.load == nil {
+		p.errf(inc.Pos, "include requires a file loader (use ParseWithLoader)")
+		return nil
+	}
+	for _, s := range p.stack {
+		if s == inc.Path {
+			p.errf(inc.Pos, "include cycle: %s", inc.Path)
+			return nil
+		}
+	}
+	src, err := p.load(inc.Path)
+	if err != nil {
+		p.errf(inc.Pos, "include %s: %v", inc.Path, err)
+		return nil
+	}
+	toks, lerrs := lex(inc.Path, src)
+	if len(lerrs) > 0 {
+		p.appendErrs(lerrs)
+		return nil
+	}
+	sub := &parser{
+		name:  inc.Path,
+		toks:  toks,
+		load:  p.load,
+		stack: append(append([]string{}, p.stack...), inc.Path),
+	}
+	subScene := sub.parseScene()
+	p.appendErrs(sub.errs)
+	return subScene.Items
+}
+
+// appendErrs merges a sub-parser's diagnostics, respecting the cap.
+func (p *parser) appendErrs(errs ErrorList) {
+	for _, e := range errs {
+		if len(p.errs) >= maxParseErrors {
+			return
+		}
+		p.errs = append(p.errs, e)
+	}
+}
 
 // parseAnimValue parses the `animation` property's own production
 // (Grammar Rule 6): comma-separated `name [duration] [easing]

@@ -101,12 +101,3 @@ Window {
 		t.Errorf("anim step = %+v", st)
 	}
 }
-
-func TestParseIncludeItem(t *testing.T) {
-	// Unresolved include survives as an item; Task 6 splices it.
-	s := mustParse(t, `include "part.ksl"`)
-	inc, ok := s.Items[0].(*Include)
-	if !ok || inc.Path != "part.ksl" {
-		t.Fatalf("item = %#v, want Include part.ksl", s.Items[0])
-	}
-}

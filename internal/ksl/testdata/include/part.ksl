@@ -1,0 +1,2 @@
+Box { fill: $slab }
+Text { text: "shared" }

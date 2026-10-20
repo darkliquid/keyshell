@@ -358,12 +358,3 @@ func (v *AnimVal) String() string {
 	}
 	return strings.Join(parts, ", ")
 }
-
-// Include is `include "file.ksl"`. Task 6 resolves and splices it at
-// load time (Grammar Rule 11); until then it survives as an item.
-type Include struct {
-	Pos  Position
-	Path string
-}
-
-func (i *Include) itemPos() Position { return i.Pos }

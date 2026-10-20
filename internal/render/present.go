@@ -2,9 +2,6 @@
 package render
 
 import (
-	"image"
-	"time"
-
 	"github.com/darkliquid/keyshell/internal/config"
 	"github.com/darkliquid/keyshell/internal/launcher"
 	"github.com/darkliquid/keyshell/internal/theme"
@@ -37,37 +34,32 @@ func Present(app *gogpu.App, l *launcher.Launcher, th *theme.Theme, cfg PresentC
 		rdr = New()
 	}
 	p := &presenter{
-		l:    l,
-		th:   th,
-		cfg:  cfg,
-		draw: gg.NewContext(cfg.Width, cfg.Height),
-		rdr:  rdr,
+		l:   l,
+		th:  th,
+		cfg: cfg,
+		rdr: rdr,
+		// gg draws into a buffer we own, so a frame never has to be copied out
+		// of the context before upload.
+		premul: make([]byte, cfg.Width*cfg.Height*4),
 	}
+	p.pixmap = gg.NewPixmapFromBuffer(p.premul, cfg.Width, cfg.Height)
+	p.draw = gg.NewContextForPixmap(p.pixmap)
 	app = p.configure(app)
-
-	// The cursor blinks, so while the overlay is open it needs periodic
-	// redraws; when it closes the ticker stops requesting them.
-	go func() {
-		ticker := time.NewTicker(100 * time.Millisecond)
-		defer ticker.Stop()
-		for range ticker.C {
-			if l.IsOpen() {
-				app.RequestRedraw()
-			}
-		}
-	}()
 
 	return app.Run()
 }
 
 type presenter struct {
-	l      *launcher.Launcher
-	th     *theme.Theme
-	cfg    PresentConfig
-	draw   *gg.Context
-	rdr    *Renderer
-	tex    gpucontext.Texture
-	drawer gpucontext.TextureDrawer
+	l       *launcher.Launcher
+	th      *theme.Theme
+	cfg     PresentConfig
+	draw    *gg.Context
+	pixmap  *gg.Pixmap
+	premul  []byte
+	rdr     *Renderer
+	tex     gpucontext.Texture
+	updater gpucontext.TextureUpdater
+	drawer  gpucontext.TextureDrawer
 }
 
 func (p *presenter) configure(app *gogpu.App) *gogpu.App {
@@ -75,28 +67,37 @@ func (p *presenter) configure(app *gogpu.App) *gogpu.App {
 		// Clear transparent: only painted content is visible, so the surface
 		// shows the desktop between and around cards.
 		dc.ClearColor(gmath.Color{R: 0, G: 0, B: 0, A: 0})
+		if !p.l.IsOpen() {
+			// Continuous rendering keeps the loop at vsync; a hidden overlay
+			// only needs the cleared frame, not a composed one.
+			return
+		}
 
-		// Draw the frame into the scratch context.
+		// Draw into our own buffer and clip it to the slab in place. gg's output
+		// is already premultiplied, which is the layout UpdateData expects, so
+		// later frames only upload bytes.
 		p.rdr.DrawFrame(p.draw, p.l, p.th, p.cfg.Reveal)
-		img, ok := p.draw.Image().(*image.RGBA)
-		if !ok {
-			return
-		}
-		// S4: the upload path expects straight alpha.
-		straight := unpremultiply(img)
+		img := p.pixmap.ImageView()
+		p.rdr.MaskFrame(img)
 
-		// Create a fresh texture each draw. UpdateData stores the bytes
-		// verbatim while NewTextureFromRGBA converts straight alpha to the
-		// premultiplied form the renderer blends with, so reusing a texture via
-		// UpdateData produces black frames. Frames are drawn on change only, so
-		// the allocation is not on a hot path.
 		drawer := dc.AsTextureDrawer()
-		tex, err := drawer.TextureCreator().NewTextureFromRGBA(p.cfg.Width, p.cfg.Height, straight.Pix)
-		if err != nil {
-			return
-		}
 		p.drawer = drawer
-		p.tex = tex
+		if p.tex == nil {
+			// NewTextureFromRGBA is the only constructor and it premultiplies,
+			// so the first frame goes through it and then the texture is reused.
+			p.tex = nil
+			tex, err := drawer.TextureCreator().NewTextureFromRGBA(p.cfg.Width, p.cfg.Height, unpremultiplied(img))
+			if err != nil {
+				return
+			}
+			p.tex = tex
+			p.updater, _ = tex.(gpucontext.TextureUpdater)
+		} else if p.updater != nil {
+			if err := p.updater.UpdateData(img.Pix); err != nil {
+				p.tex = nil
+				return
+			}
+		}
 		_ = p.drawer.DrawTexture(p.tex, 0, 0)
 	})
 	return app

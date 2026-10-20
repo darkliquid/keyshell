@@ -76,29 +76,36 @@ func containsColor(img *image.RGBA, r, g, b uint8) bool {
 	return false
 }
 
-// TestUnpremultiply checks the S4 fix: straight alpha out for semi-transparent
-// pixels, unchanged for opaque and fully transparent.
-func TestUnpremultiply(t *testing.T) {
+// TestMaskFrameKeepsTheBand checks the mask leaves pixels inside the band
+// untouched and clears everything outside it.
+func TestMaskFrameKeepsTheBandContent(t *testing.T) {
 	src := image.NewRGBA(image.Rect(0, 0, 1, 3))
-	// opaque white
 	src.SetRGBA(0, 0, color.RGBA{R: 255, G: 255, B: 255, A: 255})
-	// 50% white premultiplied: (128,128,128,128)
 	src.SetRGBA(0, 1, color.RGBA{R: 128, G: 128, B: 128, A: 128})
-	// fully transparent
 	src.SetRGBA(0, 2, color.RGBA{})
 
-	out := unpremultiply(src)
-	opaque := out.RGBAAt(0, 0)
-	if opaque.R != 255 || opaque.G != 255 || opaque.B != 255 {
-		t.Errorf("opaque = %+v, want white", opaque)
+	r := New()
+	r.wasOpen = true
+	r.surfaceW = 1
+	r.reveal = Reveal{YLeft: 75, YRight: 75, HLeft: 400, HRight: 400, Yc: 75}
+
+	r.MaskFrame(src)
+	if got := src.RGBAAt(0, 0); got.R != 255 || got.G != 255 || got.B != 255 || got.A != 255 {
+		t.Errorf("opaque = %+v, want white at full alpha", got)
 	}
-	half := out.RGBAAt(0, 1)
-	if half.R != 255 || half.A != 128 {
-		t.Errorf("half = %+v, want straight white at alpha 128", half)
+	if got := src.RGBAAt(0, 1); got.R != 128 || got.A != 128 {
+		t.Errorf("half = %+v, want the premultiplied pixel untouched", got)
 	}
-	trans := out.RGBAAt(0, 2)
-	if trans.A != 0 {
-		t.Errorf("transparent = %+v, want alpha 0", trans)
+	if got := src.RGBAAt(0, 2); got.A != 0 {
+		t.Errorf("transparent = %+v, want alpha 0", got)
+	}
+
+	// The same frame with the band moved off the rows clears them entirely.
+	r.reveal = Reveal{YLeft: -500, YRight: -500, HLeft: 100, HRight: 100}
+	src.SetRGBA(0, 0, color.RGBA{R: 255, G: 255, B: 255, A: 255})
+	r.MaskFrame(src)
+	if got := src.RGBAAt(0, 0); got.A != 0 {
+		t.Errorf("outside the band = %+v, want alpha 0", got)
 	}
 }
 
@@ -155,8 +162,20 @@ func TestDrawFrameClipsContentToTheBand(t *testing.T) {
 		{1600, rev.YRight + rev.HRight/2},
 		{0, rev.YLeft + rev.HLeft/2},
 	}
+	before := countOutsideBand(img, quad)
+	r.MaskFrame(img)
+	leaks := countOutsideBand(img, quad)
+	if before == 0 {
+		t.Fatal("no content painted outside the band: the mask is not exercised")
+	}
+	if leaks != 0 {
+		t.Errorf("%d painted pixels still outside the band after masking (was %d)", leaks, before)
+	}
+}
+
+// countOutsideBand counts painted pixels outside the quad.
+func countOutsideBand(img *image.RGBA, quad [4][2]float64) int {
 	leaks := 0
-	var firstX, firstY int
 	for y := 0; y < img.Bounds().Dy(); y++ {
 		for x := 0; x < img.Bounds().Dx(); x++ {
 			if img.RGBAAt(x, y).A == 0 {
@@ -165,13 +184,8 @@ func TestDrawFrameClipsContentToTheBand(t *testing.T) {
 			if insideConvex(quad, float64(x)+0.5, float64(y)+0.5) {
 				continue
 			}
-			if leaks == 0 {
-				firstX, firstY = x, y
-			}
 			leaks++
 		}
 	}
-	if leaks != 0 {
-		t.Errorf("%d painted pixels outside the band; first at (%d,%d)", leaks, firstX, firstY)
-	}
+	return leaks
 }

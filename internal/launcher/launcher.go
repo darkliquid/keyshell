@@ -141,6 +141,15 @@ func (l *Launcher) SetQuery(text string) {
 	l.changed()
 }
 
+// SetQueryInput updates the query text without searching. Typing calls this so
+// the field repaints immediately, and the search runs once the keys settle:
+// a merged search costs every plugin a batch of subprocess calls, which is far
+// too slow to run between keystrokes.
+func (l *Launcher) SetQueryInput(text string) {
+	l.query = text
+	l.changed()
+}
+
 // Results returns the current ranked results.
 func (l *Launcher) Results() []rank.Match { return l.results }
 

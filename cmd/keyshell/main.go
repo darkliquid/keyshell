@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -93,6 +94,10 @@ func main() {
 		WithTitle("keyshell").
 		WithSize(screenW, screenH).
 		WithTransparent(true).
+		// The overlay animates while visible, so it renders every vsync
+		// instead of waiting for a redraw request; the presenter skips all
+		// drawing while it is hidden.
+		WithContinuousRender(true).
 		WithLayerShell(gogpu.LayerShellConfig{
 			Namespace:     "keyshell",
 			Layer:         gogpu.LayerShellOverlay,
@@ -204,17 +209,33 @@ func buildProvider(cfg config.Config) backend.BackendProvider {
 type hybridProvider struct {
 	inproc  backend.BackendProvider
 	plugins map[string]plugin.Launch
+
+	// Plugin processes are started once and reused: spawning one per query
+	// costs tens of milliseconds of process setup and made every keystroke
+	// block the launcher.
+	mu    sync.Mutex
+	hosts map[string]*plugin.Host
 }
 
 func (p *hybridProvider) Get(id string) (backend.Backend, error) {
-	if launch, ok := p.plugins[id]; ok {
-		h := plugin.NewHost(launch)
-		if err := h.Start(); err != nil {
-			return nil, err
-		}
+	launch, ok := p.plugins[id]
+	if !ok {
+		return p.inproc.Get(id)
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if h, ok := p.hosts[id]; ok && h.Alive() {
 		return h, nil
 	}
-	return p.inproc.Get(id)
+	h := plugin.NewHost(launch)
+	if err := h.Start(); err != nil {
+		return nil, err
+	}
+	if p.hosts == nil {
+		p.hosts = make(map[string]*plugin.Host, len(p.plugins))
+	}
+	p.hosts[id] = h
+	return h, nil
 }
 
 // HotStart best-effort starts configured hot plugin instances before the first

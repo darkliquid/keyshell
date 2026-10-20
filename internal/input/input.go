@@ -4,6 +4,8 @@
 package input
 
 import (
+	"time"
+
 	"github.com/darkliquid/keyshell/internal/launcher"
 	"github.com/gogpu/gpucontext"
 )
@@ -13,7 +15,15 @@ type Adapter struct {
 	l       *launcher.Launcher
 	events  gpucontext.EventSource
 	onPress func(x, y float64)
+
+	// Typing updates the query text at once but only searches after the keys
+	// settle, because a merged search blocks for the length of a plugin round
+	// trip and would stutter the overlay on every keystroke.
+	searchTimer *time.Timer
 }
+
+// searchSettle is how long typing must pause before the merged search runs.
+const searchSettle = 80 * time.Millisecond
 
 // New builds an adapter over the launcher and event source.
 func New(l *launcher.Launcher, events gpucontext.EventSource) *Adapter {
@@ -31,7 +41,7 @@ func (a *Adapter) onKeyPress(key gpucontext.Key, _ gpucontext.Modifiers) {
 	case gpucontext.KeyEnter:
 		a.l.Enter()
 	case gpucontext.KeyBackspace:
-		a.l.SetQuery(trimLast(a.l.Query()))
+		a.setQuery(trimLast(a.l.Query()))
 	case gpucontext.KeyTab:
 		// mode cycling is wired by the host; launcher just changes mode
 	case gpucontext.KeyLeft:
@@ -42,7 +52,16 @@ func (a *Adapter) onKeyPress(key gpucontext.Key, _ gpucontext.Modifiers) {
 }
 
 func (a *Adapter) onTextInput(text string) {
-	a.l.SetQuery(a.l.Query() + text)
+	a.setQuery(a.l.Query() + text)
+}
+
+// setQuery shows the text now and searches once typing pauses.
+func (a *Adapter) setQuery(text string) {
+	a.l.SetQueryInput(text)
+	if a.searchTimer != nil {
+		a.searchTimer.Stop()
+	}
+	a.searchTimer = time.AfterFunc(searchSettle, func() { a.l.SetQuery(text) })
 }
 
 // OnPress registers a callback for pointer presses in surface coordinates.

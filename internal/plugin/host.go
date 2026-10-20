@@ -147,6 +147,14 @@ func (h *Host) Info() backend.Info {
 
 // Query sends a query and materializes the returned items (single in-flight
 // per instance, matching the protocol).
+// Alive reports whether the plugin process is still usable. A cached host is
+// reused only while it is alive, so a crashed plugin is restarted on demand.
+func (h *Host) Alive() bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.active
+}
+
 func (h *Host) Query(ctx context.Context, q backend.Query) (backend.Stream, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()

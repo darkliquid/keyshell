@@ -74,12 +74,6 @@ func (r *Renderer) DrawFrame(dc *gg.Context, l View, th *theme.Theme, cfg config
 	dc.ClearWithColor(gg.RGBA{})
 	drawBand(dc, th, rev, w)
 
-	// Nothing may paint outside the slab. Cards are sheared more steeply than
-	// the band tilts and the reel is wider than the band, so without this the
-	// corners of both leak onto the desktop instead of flowing inside it.
-	bandPath(dc, rev, w)
-	dc.Clip()
-
 	// Content lives in the band's rotated frame.
 	cw := math.Sqrt(w*w + (rev.YRight-rev.YLeft)*(rev.YRight-rev.YLeft))
 	ch := math.Min(rev.HLeft, rev.HRight) * math.Cos(rev.Angle)
@@ -93,6 +87,63 @@ func (r *Renderer) DrawFrame(dc *gg.Context, l View, th *theme.Theme, cfg config
 	drawCards(dc, th, l, rev, cfg, cw, ch)
 
 	dc.Pop()
+}
+
+// MaskFrame clears every pixel outside the band, in place. A path clip would
+// do this correctly but costs tens of milliseconds per frame with gg's software
+// rasteriser, so the band is treated as a span per row instead and the outside
+// is cleared with memclr.
+func (r *Renderer) MaskFrame(img *image.RGBA) {
+	r.mu.Lock()
+	rev, w := r.reveal, r.surfaceW
+	r.mu.Unlock()
+	if img == nil {
+		return
+	}
+	if w <= 0 {
+		w = float64(img.Bounds().Dx())
+	}
+	b := img.Bounds()
+	topL, topR := rev.YLeft-rev.HLeft/2, rev.YRight-rev.HRight/2
+	botL, botR := rev.YLeft+rev.HLeft/2, rev.YRight+rev.HRight/2
+	for y := 0; y < b.Dy(); y++ {
+		xa, xb := bandSpan(topL, topR, botL, botR, w, float64(y)+0.5, b.Dx())
+		row := img.Pix[y*img.Stride : y*img.Stride+b.Dx()*4]
+		clear(row[:xa*4])
+		clear(row[xb*4:])
+	}
+}
+
+// bandSpan returns the half-open column range the band covers on one row. The
+// band is convex, so a horizontal line crosses it at most twice.
+func bandSpan(topL, topR, botL, botR, w, y float64, width int) (int, int) {
+	quad := [4][2]float64{
+		{0, topL}, {w, topR}, {w, botR}, {0, botL},
+	}
+	lo, hi := math.Inf(1), math.Inf(-1)
+	for i := range quad {
+		a := quad[i]
+		b := quad[(i+1)%4]
+		if (a[1] <= y) == (b[1] <= y) {
+			continue
+		}
+		t := (y - a[1]) / (b[1] - a[1])
+		x := a[0] + (b[0]-a[0])*t
+		lo = math.Min(lo, x)
+		hi = math.Max(hi, x)
+	}
+	if hi <= lo {
+		return 0, 0
+	}
+	xa := int(math.Floor(lo))
+	xb := int(math.Ceil(hi))
+	if xa < 0 {
+		xa = 0
+	}
+	if xb > width {
+		xb = width
+	}
+	return xa, xb
 }
 
 // BandContains reports whether a surface point lies inside the band, which is
@@ -297,23 +348,21 @@ func itoa(n int) string {
 	return string(b)
 }
 
-// unpremultiply converts a premultiplied RGBA image (Go's image.RGBA
-// convention, which gg produces) into straight alpha, because the upload path
-// treats data as straight and would otherwise multiply alpha in twice.
-func unpremultiply(img *image.RGBA) *image.RGBA {
-	out := image.NewRGBA(img.Bounds())
-	for y := img.Bounds().Min.Y; y < img.Bounds().Max.Y; y++ {
-		for x := img.Bounds().Min.X; x < img.Bounds().Max.X; x++ {
-			i := img.PixOffset(x, y)
-			a := img.Pix[i+3]
-			if a == 0 || a == 255 {
-				copy(out.Pix[i:i+4], img.Pix[i:i+4])
-				continue
-			}
-			out.Pix[i] = uint8(min(255, int(img.Pix[i])*255/int(a)))
-			out.Pix[i+1] = uint8(min(255, int(img.Pix[i+1])*255/int(a)))
-			out.Pix[i+2] = uint8(min(255, int(img.Pix[i+2])*255/int(a)))
-			out.Pix[i+3] = a
+// unpremultiplied returns a straight-alpha copy of a premultiplied frame. Used
+// once per texture, when the first frame is created.
+func unpremultiplied(img *image.RGBA) []byte {
+	out := make([]byte, len(img.Pix))
+	for i := 0; i+3 < len(img.Pix); i += 4 {
+		a := img.Pix[i+3]
+		switch a {
+		case 0:
+		case 255:
+			out[i], out[i+1], out[i+2], out[i+3] = img.Pix[i], img.Pix[i+1], img.Pix[i+2], 255
+		default:
+			out[i] = uint8(min(255, int(img.Pix[i])*255/int(a)))
+			out[i+1] = uint8(min(255, int(img.Pix[i+1])*255/int(a)))
+			out[i+2] = uint8(min(255, int(img.Pix[i+2])*255/int(a)))
+			out[i+3] = a
 		}
 	}
 	return out

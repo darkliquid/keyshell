@@ -133,3 +133,18 @@ func TestFromItemCarriesCardFields(t *testing.T) {
 		t.Errorf("card = %+v", got.Card)
 	}
 }
+
+// TestHostAliveTracksClose checks the provider can tell a live plugin from a
+// finished one before deciding to reuse it.
+func TestHostAliveTracksClose(t *testing.T) {
+	h := newFakeHost(t)
+	if !h.Alive() {
+		t.Fatal("Alive = false on a started host")
+	}
+	if err := h.Close(); err != nil {
+		t.Fatalf("Close = err %v", err)
+	}
+	if h.Alive() {
+		t.Error("Alive = true after Close")
+	}
+}

@@ -9,7 +9,7 @@ const (
 	tScalar
 	tHash // '#' + name: an id marker or a hex colour; the parser
 	// decides by position (Grammar Rules 8 and 13)
-	tRef    // '$' ident, the head of a binding
+	tRef // '$' ident, the head of a binding
 	tString
 	tPunct // { } : , [ ] ( ) . @
 	tOp    // == != <= >= < > && || + - * / ! ?

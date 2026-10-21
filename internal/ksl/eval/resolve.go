@@ -51,9 +51,16 @@ func Resolve(scene *ksl.Scene, st State, opts ...Option) (*Frame, error) {
 	if st.Scale == 0 {
 		st.Scale = 1
 	}
-	if st.Tokens == nil {
-		st.Tokens = sceneTokens(scene)
+	// Host tokens are the defaults; a scene `theme` block overrides
+	// them (spec §4).
+	tokens := make(map[string]Color, len(st.Tokens)+8)
+	for k, v := range st.Tokens {
+		tokens[k] = v
 	}
+	for k, v := range sceneTokens(scene) {
+		tokens[k] = v
+	}
+	st.Tokens = tokens
 	r := &resolver{st: &st, defs: map[string]*ksl.Def{}}
 	for _, d := range scene.Defs() {
 		r.defs[d.Name] = d

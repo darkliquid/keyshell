@@ -7,6 +7,12 @@ import (
 	"github.com/darkliquid/keyshell/internal/ksl"
 )
 
+// AnimVal carries a parsed animation shorthand; the animation clock
+// (imagery/effects/animation plan) samples it.
+type AnimVal struct{ A *ksl.AnimVal }
+
+func (AnimVal) isValue() {}
+
 // FuncVal is an evaluated effect/helper call (blur, shadow, gradients,
 // tilt); the painter interprets it.
 type FuncVal struct {
@@ -81,6 +87,8 @@ func (e *Env) Eval(v ksl.Value) (Value, error) {
 			return e.Eval(x.Else)
 		}
 		return e.Eval(x.Then)
+	case *ksl.AnimVal:
+		return AnimVal{A: x}, nil
 	case *ksl.Member:
 		xv, err := e.Eval(x.X)
 		if err != nil {

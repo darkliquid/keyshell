@@ -252,8 +252,3 @@ func paintCursor(dc *gg.Context, th *theme.Theme, n *eval.ResolvedNode, deps *Pa
 	dc.DrawRectangle(r.X, r.Y, r.W, r.H)
 	_ = dc.Fill()
 }
-
-// paintCard is implemented in cardpainter.go (Task 4).
-var _ Painter = paintCard
-func paintCard(dc *gg.Context, th *theme.Theme, n *eval.ResolvedNode, deps *PainterDeps) {
-}

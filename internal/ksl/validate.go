@@ -24,24 +24,34 @@ var listSubBlocks = map[string]bool{
 
 // Validate checks the scene-level semantic rules and returns every
 // violation. Syntax has already been checked by Parse.
-func Validate(s *Scene) error {
-	v := &validator{ids: map[string]Position{}}
+func Validate(s *Scene) error { return ValidateWith(s) }
+
+// ValidateWith is Validate plus host-registered node names (a renderer's
+// built-in painters, such as Card, are legal node types).
+func ValidateWith(s *Scene, extra ...string) error {
+	v := &validator{ids: map[string]Position{}, extra: map[string]bool{}}
+	for _, name := range extra {
+		v.extra[name] = true
+	}
 	v.run(s)
 	return v.errs.OrNil()
 }
 
 type validator struct {
+	name  string
 	ids   map[string]Position
 	defs  map[string]bool
 	keyfs map[string]bool
+	extra map[string]bool
 	errs  ErrorList
 }
 
 func (v *validator) errf(pos Position, format string, args ...any) {
-	v.errs = append(v.errs, Error{Pos: pos, Msg: fmt.Sprintf(format, args...)})
+	v.errs = append(v.errs, Error{Name: v.name, Pos: pos, Msg: fmt.Sprintf(format, args...)})
 }
 
 func (v *validator) run(s *Scene) {
+	v.name = s.Name
 	v.defs = map[string]bool{}
 	v.keyfs = map[string]bool{}
 	var roots []*Node
@@ -80,7 +90,7 @@ func (v *validator) run(s *Scene) {
 }
 
 func (v *validator) walk(n *Node, inList bool) {
-	if !(inList && listSubBlocks[n.Name]) && !primitives[n.Name] && !v.defs[n.Name] {
+	if !(inList && listSubBlocks[n.Name]) && !primitives[n.Name] && !v.defs[n.Name] && !v.extra[n.Name] {
 		v.errf(n.Pos, "unknown node type %q", n.Name)
 	}
 	if n.ID != "" {

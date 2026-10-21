@@ -22,12 +22,10 @@ func Lerp(a, b eval.Value, t float64) (eval.Value, bool) {
 		}
 	case eval.Color:
 		if bv, ok := b.(eval.Color); ok {
-			return eval.Color{
-				R: uint8(float64(av.R) + (float64(bv.R)-float64(av.R))*t),
-				G: uint8(float64(av.G) + (float64(bv.G)-float64(av.G))*t),
-				B: uint8(float64(av.B) + (float64(bv.B)-float64(av.B))*t),
-				A: uint8(float64(av.A) + (float64(bv.A)-float64(av.A))*t),
-			}, true
+			l := func(a, b uint8) uint8 {
+				return uint8(float64(a) + (float64(b)-float64(a))*t + 0.5)
+			}
+			return eval.Color{R: l(av.R, bv.R), G: l(av.G, bv.G), B: l(av.B, bv.B), A: l(av.A, bv.A)}, true
 		}
 	case eval.Str:
 		if bv, ok := b.(eval.Str); ok {

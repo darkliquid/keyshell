@@ -9,6 +9,7 @@ require (
 	github.com/gogpu/gg v0.52.5
 	github.com/gogpu/gogpu v0.54.0
 	github.com/gogpu/gpucontext v0.31.3
+	golang.org/x/image v0.47.0
 )
 
 require (
@@ -19,7 +20,6 @@ require (
 	github.com/gogpu/naga v0.19.0 // indirect
 	github.com/gogpu/wgpu v0.34.2 // indirect
 	github.com/rkoesters/xdg v0.0.1 // indirect
-	golang.org/x/image v0.47.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
 )

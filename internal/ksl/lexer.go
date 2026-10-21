@@ -157,7 +157,7 @@ func (l *lexer) lexString() {
 
 var twoCharOps = map[string]bool{"==": true, "!=": true, "<=": true, ">=": true, "&&": true, "||": true}
 
-const oneCharOps = "+-*/<>!?"
+const oneCharOps = "+-*/<>!?="
 const punctChars = "{}:,[]().@"
 
 func (l *lexer) lexOp() bool {

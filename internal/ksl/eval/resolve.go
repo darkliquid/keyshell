@@ -2,6 +2,7 @@ package eval
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/darkliquid/keyshell/internal/ksl"
 )
@@ -24,6 +25,8 @@ type ResolvedNode struct {
 	// Item is the List item this node was materialised for, set on
 	// every node in a template instance's subtree.
 	Item *Item
+	// Selected is true when this node belongs to the active List item.
+	Selected bool
 }
 
 // Option configures resolution.
@@ -253,6 +256,90 @@ func (r *resolver) resolveList(n *ksl.Node, bounds RectF) (*ResolvedNode, error)
 		return rn, nil
 	}
 
+	if kwProp(props, "overflow") == "cycle" && kwProp(props, "scroll") == "center" && template != nil && limit > 0 {
+		sel := ((selected % limit) + limit) % limit
+		savedEnv, savedCtx := r.env, r.ctx
+
+		// First resolve the center template (k=0) to measure item span.
+		itemEnv := r.env.ItemScope(&items[sel])
+		itemCtx := &CascadeCtx{Scene: r.ctx.Scene, Mode: r.ctx.Mode,
+			Pseudo: map[string]bool{"selected": true}}
+		r.env, r.ctx = itemEnv, itemCtx
+		centerNode, err := r.resolveNode(template, rn.Rect)
+		r.env, r.ctx = savedEnv, savedCtx
+		if err != nil {
+			return nil, err
+		}
+		if centerNode != nil {
+			stampItem(centerNode, &items[sel], true)
+
+			itemSpan := centerNode.Rect.W
+			viewportLen := rn.Rect.W
+			if !horizontal {
+				itemSpan = centerNode.Rect.H
+				viewportLen = rn.Rect.H
+			}
+			if itemSpan <= 0 {
+				itemSpan = 100
+			}
+			stride := itemSpan + gap
+			halfSlots := int(math.Ceil((viewportLen/2-itemSpan/2)/stride)) + 1
+			if halfSlots < 1 {
+				halfSlots = 1
+			}
+
+			viewCenter := rn.Rect.X + rn.Rect.W/2
+			if !horizontal {
+				viewCenter = rn.Rect.Y + rn.Rect.H/2
+			}
+
+			slots := make([]*ResolvedNode, 0, halfSlots*2+1)
+			for k := -halfSlots; k <= halfSlots; k++ {
+				idx := ((sel+k)%limit + limit) % limit
+				isSel := (k == 0)
+				var node *ResolvedNode
+				if isSel {
+					node = centerNode
+				} else {
+					itEnv := r.env.ItemScope(&items[idx])
+					itCtx := &CascadeCtx{Scene: r.ctx.Scene, Mode: r.ctx.Mode,
+						Pseudo: map[string]bool{"selected": false}}
+					r.env, r.ctx = itEnv, itCtx
+					n, err := r.resolveNode(template, rn.Rect)
+					r.env, r.ctx = savedEnv, savedCtx
+					if err != nil {
+						return nil, err
+					}
+					node = n
+					if node != nil {
+						stampItem(node, &items[idx], false)
+					}
+				}
+				if node != nil {
+					slotCenter := viewCenter + float64(k)*stride
+					if horizontal {
+						targetX := slotCenter - node.Rect.W/2
+						translate(node, targetX-node.Rect.X, rn.Rect.Y-node.Rect.Y)
+					} else {
+						targetY := slotCenter - node.Rect.H/2
+						translate(node, rn.Rect.X-node.Rect.X, targetY-node.Rect.Y)
+					}
+					slots = append(slots, node)
+				}
+			}
+			rn.Children = append(rn.Children, slots...)
+		}
+
+		if summary != nil && limit < len(items) {
+			kids, err := r.resolveChildrenOf(rn, summary)
+			if err != nil {
+				return nil, err
+			}
+			rn.Children = append(rn.Children, kids...)
+		}
+		return rn, nil
+	}
+
 	savedEnv, savedCtx := r.env, r.ctx
 	for i := 0; i < limit; i++ {
 		if template == nil {
@@ -268,7 +355,7 @@ func (r *resolver) resolveList(n *ksl.Node, bounds RectF) (*ResolvedNode, error)
 			return nil, err
 		}
 		if node != nil {
-			stampItem(node, &items[i])
+			stampItem(node, &items[i], i == selected)
 			rn.Children = append(rn.Children, node)
 		}
 	}
@@ -332,8 +419,6 @@ func (r *resolver) resolveList(n *ksl.Node, bounds RectF) (*ResolvedNode, error)
 			if shift < minShift {
 				shift = minShift
 			}
-		} else {
-			shift = 0
 		}
 		for _, it := range rn.Children {
 			if horizontal {
@@ -376,18 +461,25 @@ func listItems(v Value) []Item {
 }
 
 // translate shifts a resolved subtree by (dx, dy).
+// Group children live in the group's local (0,0,W,H) coordinate frame
+// (applied at paint time via paintThrough), so only the Group's own
+// surface rect moves.
 func translate(n *ResolvedNode, dx, dy float64) {
 	n.Rect.X += dx
 	n.Rect.Y += dy
+	if n.Name == "Group" {
+		return
+	}
 	for _, c := range n.Children {
 		translate(c, dx, dy)
 	}
 }
 
-// stampItem records the materialised item on a subtree.
-func stampItem(n *ResolvedNode, item *Item) {
+// stampItem records the materialised item and selection status on a subtree.
+func stampItem(n *ResolvedNode, item *Item, selected bool) {
 	n.Item = item
+	n.Selected = selected
 	for _, c := range n.Children {
-		stampItem(c, item)
+		stampItem(c, item, selected)
 	}
 }

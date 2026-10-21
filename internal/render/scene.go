@@ -148,19 +148,23 @@ func (sr *SceneRenderer) state(l View, th *theme.Theme, rev Reveal, cfg config.R
 	if sw <= 0 {
 		sw, sh = 1600, 900
 	}
+	mode := l.ModeBadge()
+	if mode == "" {
+		mode = "SEARCH"
+	}
 	return eval.State{
 		Name:     "keyshell",
 		Open:     l.IsOpen(),
 		Focused:  true,
 		Query:    l.Query(),
-		Mode:     l.ModeBadge(),
+		Mode:     mode,
 		Selected: l.Selected(),
 		Results:  items,
 		Reveal: eval.Reveal{
 			Y: rev.Yc, H: minF(rev.HLeft, rev.HRight),
 			HLeft: rev.HLeft, HRight: rev.HRight,
 			Angle: rev.Angle, Shear: rev.Shear, CardShear: rev.Shear,
-			D:  bandD(rev, cfg, 0),
+			D:  bandD(rev, cfg, sw),
 			Cw: contentW(rev, sw, sh), Ch: contentH(rev),
 			FrameX: (sw - contentW(rev, sw, sh)) / 2,
 			FrameY: rev.Yc - contentH(rev)/2,
@@ -170,8 +174,8 @@ func (sr *SceneRenderer) state(l View, th *theme.Theme, rev Reveal, cfg config.R
 		Summon:    sr.summonEpoch,
 		Seed:      sr.seed,
 		RandCache: sr.randCache,
-		Width:     sr.surfaceWidth(),
-		Height:    sr.surfaceHeight(),
+		Width:     sw,
+		Height:    sh,
 		Scale:     cfg.BandHeightPx / 290,
 	}
 }
@@ -217,6 +221,7 @@ func (sr *SceneRenderer) DrawFrame(dc *gg.Context, l View, th *theme.Theme, cfg 
 	if !l.IsOpen() {
 		dc.ClearWithColor(gg.RGBA{})
 		sr.inner.wasOpen = false
+		clear(sr.prevProps)
 		return
 	}
 
@@ -235,7 +240,7 @@ func (sr *SceneRenderer) DrawFrame(dc *gg.Context, l View, th *theme.Theme, cfg 
 	dc.ClearWithColor(gg.RGBA{})
 	now := time.Now()
 	st := sr.state(l, th, rev, cfg)
-	frame, err := eval.Resolve(sr.scene, st)
+	frame, err := eval.Resolve(sr.scene, st, eval.WithMeasurer(themeMeasurer{th}))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "ksl: frame resolve: %v\n", err)
 		return
@@ -352,7 +357,11 @@ func (sr *SceneRenderer) tweenTree(n *eval.ResolvedNode, tr *ksl.Transition, ela
 
 func (sr *SceneRenderer) snapshotProps(n *eval.ResolvedNode, path string) {
 	key := nodeKey(n, path)
-	sr.prevProps[key] = n.Props
+	m := make(map[string]eval.Value, len(n.Props))
+	for k, v := range n.Props {
+		m[k] = v
+	}
+	sr.prevProps[key] = m
 	for _, c := range n.Children {
 		sr.snapshotProps(c, key)
 	}

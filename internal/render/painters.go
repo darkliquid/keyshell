@@ -134,11 +134,21 @@ func paintBox(dc *gg.Context, th *theme.Theme, n *eval.ResolvedNode, deps *Paint
 		dc.SetColor(borderCol)
 		_ = dc.Stroke()
 	}
+	paintChildren(dc, th, n, deps)
 }
 
 func paintText(dc *gg.Context, th *theme.Theme, n *eval.ResolvedNode, deps *PainterDeps) {
-	txt, ok := n.Props["text"].(eval.Str)
-	if !ok {
+	var rawTxt string
+	switch t := n.Props["text"].(type) {
+	case eval.Str:
+		rawTxt = string(t)
+	case eval.Num:
+		rawTxt = strconv.FormatFloat(float64(t), 'g', -1, 64)
+	case eval.Length:
+		rawTxt = strconv.FormatFloat(t.V, 'g', -1, 64) + t.Unit
+	case eval.Kw:
+		rawTxt = string(t)
+	default:
 		return
 	}
 	size := 22.0
@@ -148,14 +158,26 @@ func paintText(dc *gg.Context, th *theme.Theme, n *eval.ResolvedNode, deps *Pain
 		size = float64(v)
 	}
 	if v, ok := n.Props["uppercase"].(eval.Bool); ok && bool(v) {
-		txt = eval.Str(strings.ToUpper(string(txt)))
+		rawTxt = strings.ToUpper(rawTxt)
 	}
 	col := evalColorToGG(n.Props["color"], th.Ink)
 	face := th.Face(size)
 	dc.SetFont(face)
 	dc.SetColor(gg.RGBA{R: col.R, G: col.G, B: col.B, A: col.A * opacityOf(n.Props)})
 	r := n.Rect
-	dc.DrawStringAnchored(string(txt), r.X, r.Y, 0, 0)
+	ax := 0.0
+	x := r.X
+	if align, ok := n.Props["align"].(eval.Kw); ok {
+		switch string(align) {
+		case "center":
+			ax = 0.5
+			x = r.X + r.W/2
+		case "end", "right":
+			ax = 1.0
+			x = r.X + r.W
+		}
+	}
+	dc.DrawStringAnchored(rawTxt, x, r.Y+r.H/2, ax, 0.5)
 }
 
 func paintPath(dc *gg.Context, th *theme.Theme, n *eval.ResolvedNode, deps *PainterDeps) {
@@ -202,8 +224,15 @@ func parsePath(dc *gg.Context, d string) {
 }
 
 func paintPill(dc *gg.Context, th *theme.Theme, n *eval.ResolvedNode, deps *PainterDeps) {
-	txt, ok := n.Props["text"].(eval.Str)
-	if !ok {
+	var rawTxt string
+	switch t := n.Props["text"].(type) {
+	case eval.Str:
+		rawTxt = string(t)
+	case eval.Num:
+		rawTxt = strconv.FormatFloat(float64(t), 'g', -1, 64)
+	case eval.Kw:
+		rawTxt = string(t)
+	default:
 		return
 	}
 	tone := ""
@@ -211,12 +240,34 @@ func paintPill(dc *gg.Context, th *theme.Theme, n *eval.ResolvedNode, deps *Pain
 		tone = string(v)
 	}
 	fill, ink := chipColours(th, backend.Tone(tone), false)
+	if tone == "accent" {
+		fill = th.Accent
+		ink = th.Slab
+	}
+	if v, ok := n.Props["fill"]; ok {
+		fill = evalColorToGG(v, fill)
+	}
+	if v, ok := n.Props["color"]; ok {
+		ink = evalColorToGG(v, ink)
+	}
+	radius := 2.0
+	if v, ok := n.Props["radius"].(eval.Num); ok {
+		radius = float64(v)
+	}
+	size := 12.0
+	if v, ok := n.Props["size"].(eval.Num); ok {
+		size = float64(v)
+	}
 	r := n.Rect
-	face := th.Face(12)
+	face := th.Face(size)
 	dc.SetFont(face)
-	label := strings.ToUpper(string(txt))
+	label := strings.ToUpper(rawTxt)
 	dc.SetColor(fill)
-	dc.DrawRoundedRectangle(r.X, r.Y, r.W, r.H, 2)
+	if radius > 0 {
+		dc.DrawRoundedRectangle(r.X, r.Y, r.W, r.H, radius)
+	} else {
+		dc.DrawRectangle(r.X, r.Y, r.W, r.H)
+	}
 	_ = dc.Fill()
 	dc.SetColor(ink)
 	dc.DrawStringAnchored(label, r.X+r.W/2, r.Y+r.H/2, 0.5, 0.5)

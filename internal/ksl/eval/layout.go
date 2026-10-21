@@ -2,6 +2,7 @@ package eval
 
 import (
 	"math"
+	"strings"
 
 	"github.com/darkliquid/keyshell/internal/ksl"
 )
@@ -39,6 +40,24 @@ func resolveLength(v Value, st *State, horizontal bool) float64 {
 	return 0
 }
 
+func valueText(v Value, uppercase bool) string {
+	var s string
+	switch x := v.(type) {
+	case Str:
+		s = string(x)
+	case Num:
+		s = stringify(x)
+	case Kw:
+		s = string(x)
+	default:
+		return ""
+	}
+	if uppercase {
+		s = strings.ToUpper(s)
+	}
+	return s
+}
+
 // measureText sizes Text through the injected measurer.
 func measureText(m Measurer, props map[string]Value, st *State) (w, h float64) {
 	size := 12.0
@@ -49,13 +68,39 @@ func measureText(m Measurer, props map[string]Value, st *State) (w, h float64) {
 	if m == nil {
 		return 0, h
 	}
-	text, _ := props["text"].(Str)
+	upper, _ := props["uppercase"].(Bool)
+	text := valueText(props["text"], bool(upper))
+	if text == "" {
+		return 0, h
+	}
 	weight := ""
 	if kw, ok := props["weight"].(Kw); ok {
 		weight = string(kw)
 	}
-	w, _ = m.TextSize(string(text), size, weight)
+	w, _ = m.TextSize(text, size, weight)
 	return w, h
+}
+
+// measurePill sizes a Pill badge (uppercase bold label + 16px horizontal padding, 28px height).
+func measurePill(m Measurer, props map[string]Value, st *State) (w, h float64) {
+	scale := st.Scale
+	if scale == 0 {
+		scale = 1
+	}
+	size := 12.0 * scale
+	if s, ok := props["size"]; ok {
+		size = resolveLength(s, st, false)
+	}
+	h = 28.0 * scale
+	if m == nil {
+		return 0, h
+	}
+	text := valueText(props["text"], true)
+	if text == "" {
+		return 0, h
+	}
+	tw, _ := m.TextSize(text, size, "bold")
+	return tw + 16*scale, h
 }
 
 // nodeRect resolves one node's rect from its props and the parent
@@ -66,7 +111,7 @@ func (r *resolver) nodeRect(n *ksl.Node, props map[string]Value, bounds RectF) R
 
 // refineRect applies a node's own geometry props to a rect a container
 // has already assigned: explicit x/y/width/height opt out of flow,
-// Text sizes to its content when unconstrained, and constraints clamp.
+// leaf primitives size to their content when unconstrained, and constraints clamp.
 func (r *resolver) refineRect(n *ksl.Node, props map[string]Value, rect RectF) RectF {
 	if v, ok := props["x"]; ok {
 		rect.X = resolveLength(v, r.st, true)
@@ -82,16 +127,85 @@ func (r *resolver) refineRect(n *ksl.Node, props map[string]Value, rect RectF) R
 	if v, ok := props["height"]; ok {
 		rect.H = resolveLength(v, r.st, false)
 	}
-	if n.Name == "Text" {
-		tw, th := measureText(r.measurer, props, r.st)
-		if !hasW {
-			rect.W = tw
-		}
-		if !hasH {
-			rect.H = th
-		}
+	iw, ih := r.leafIntrinsicSize(n, props)
+	if !hasW && iw > 0 {
+		rect.W = iw
+	} else if !hasW && n.Name == "Text" {
+		rect.W = iw
+	}
+	if !hasH && ih > 0 {
+		rect.H = ih
 	}
 	return applyConstraints(rect, props, r.st)
+}
+
+func (r *resolver) leafIntrinsicSize(n *ksl.Node, props map[string]Value) (w, h float64) {
+	scale := r.st.Scale
+	if scale == 0 {
+		scale = 1
+	}
+	switch n.Name {
+	case "Text":
+		return measureText(r.measurer, props, r.st)
+	case "Pill":
+		return measurePill(r.measurer, props, r.st)
+	case "Cursor":
+		return 3 * scale, 24 * scale
+	}
+	return 0, 0
+}
+
+func (r *resolver) flexChildSize(n *ksl.Node, props map[string]Value, parentHorizontal bool) (main, cross float64) {
+	w := explicitLength(props, "width", r.st, true)
+	h := explicitLength(props, "height", r.st, false)
+	_, hasW := props["width"]
+	_, hasH := props["height"]
+	iw, ih := r.leafIntrinsicSize(n, props)
+	if !hasW && (iw > 0 || n.Name == "Text") {
+		w = iw
+	}
+	if !hasH && ih > 0 {
+		h = ih
+	}
+	// A nested Row inside a Row (or Column inside a Column) without an explicit
+	// main size or grow takes the sum of its children's main sizes + gaps.
+	if numProp(props, "grow") == 0 {
+		if parentHorizontal && n.Name == "Row" && !hasW {
+			w = r.containerIntrinsicMain(n, props, true)
+		} else if !parentHorizontal && n.Name == "Column" && !hasH {
+			h = r.containerIntrinsicMain(n, props, false)
+		}
+	}
+	constrained := applyConstraints(RectF{W: w, H: h}, props, r.st)
+	if w > 0 {
+		w = constrained.W
+	}
+	if h > 0 {
+		h = constrained.H
+	}
+	if parentHorizontal {
+		return w, h
+	}
+	return h, w
+}
+
+func (r *resolver) containerIntrinsicMain(n *ksl.Node, props map[string]Value, horizontal bool) float64 {
+	gap := numProp(props, "gap")
+	total := 0.0
+	count := 0
+	for _, c := range r.children(n) {
+		cp, ok, err := resolveProps(c, r.env, r.ctx)
+		if err != nil || !ok {
+			continue
+		}
+		m, _ := r.flexChildSize(c, cp, horizontal)
+		total += m
+		count++
+	}
+	if count > 1 {
+		total += gap * float64(count-1)
+	}
+	return total
 }
 
 func applyConstraints(rect RectF, props map[string]Value, st *State) RectF {
@@ -171,15 +285,8 @@ func (r *resolver) layoutFlex(parent *ResolvedNode, n *ksl.Node, horizontal bool
 		if !ok {
 			continue
 		}
-		var main, cross, grow float64
-		if horizontal {
-			main = explicitLength(cp, "width", r.st, true)
-			cross = explicitLength(cp, "height", r.st, false)
-		} else {
-			main = explicitLength(cp, "height", r.st, false)
-			cross = explicitLength(cp, "width", r.st, true)
-		}
-		grow = numProp(cp, "grow")
+		main, cross := r.flexChildSize(c, cp, horizontal)
+		grow := numProp(cp, "grow")
 		if grow > 0 {
 			growTotal += grow
 		} else {
@@ -298,6 +405,13 @@ func (r *resolver) layoutStack(parent *ResolvedNode, n *ksl.Node) error {
 		}
 		w := explicitLength(cp, "width", r.st, true)
 		h := explicitLength(cp, "height", r.st, false)
+		iw, ih := r.leafIntrinsicSize(c, cp)
+		if w == 0 && iw > 0 {
+			w = iw
+		}
+		if h == 0 && ih > 0 {
+			h = ih
+		}
 		if w == 0 {
 			w = parent.Rect.W
 		}

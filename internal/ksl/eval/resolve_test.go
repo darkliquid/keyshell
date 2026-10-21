@@ -62,6 +62,93 @@ func TestListPositionsItems(t *testing.T) {
 	}
 }
 
+func TestListGroupChildrenStayInLocalCoordsAndMarkSelected(t *testing.T) {
+	scene := mustScene(t, `Window { List {
+	    items: $results, selected: $selected, gap: 8
+	    orientation: horizontal
+	    template { Group#card { width: 100, height: 50, Card { } } }
+	} }`)
+	st := State{
+		Width:    400,
+		Height:   100,
+		Scale:    1,
+		Results:  []Item{{ID: "a"}, {ID: "b"}},
+		Selected: 1,
+	}
+	f, err := Resolve(scene, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	list := f.Root.Children[0]
+	g0, g1 := list.Children[0], list.Children[1]
+	if g0.Rect.X != 0 || g1.Rect.X != 108 {
+		t.Fatalf("group x = %v, %v; want 0, 108", g0.Rect.X, g1.Rect.X)
+	}
+	if g1.Children[0].Rect.X != 0 || g1.Children[0].Rect.Y != 0 {
+		t.Errorf("card inside group was translated to %+v, want local (0,0)", g1.Children[0].Rect)
+	}
+	if g0.Selected || g0.Children[0].Selected {
+		t.Errorf("unselected group/card marked selected")
+	}
+	if !g1.Selected || !g1.Children[0].Selected {
+		t.Errorf("selected group/card not marked selected")
+	}
+}
+
+func TestListCycleScrollCenterFillsViewportEdgeToEdge(t *testing.T) {
+	scene := mustScene(t, `Window { List {
+	    items: $results, selected: $selected, gap: 16
+	    orientation: horizontal, scroll: center, overflow: cycle
+	    template { Group#card { width: 360, height: 120, Card { } } }
+	} }`)
+	st := State{
+		Width:    1600,
+		Height:   200,
+		Scale:    1,
+		Results:  []Item{{ID: "a", Title: "Alpha"}, {ID: "b", Title: "Beta"}, {ID: "c", Title: "Gamma"}},
+		Selected: 1,
+	}
+	f, err := Resolve(scene, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	list := f.Root.Children[0]
+	if len(list.Children) < 5 {
+		t.Fatalf("cycle list children = %d, want >= 5 to span 1600px viewport", len(list.Children))
+	}
+	first := list.Children[0]
+	last := list.Children[len(list.Children)-1]
+	if first.Rect.X > 0 {
+		t.Errorf("first card X = %v, want <= 0 to cover left edge", first.Rect.X)
+	}
+	if last.Rect.X+last.Rect.W < 1600 {
+		t.Errorf("last card right = %v, want >= 1600 to cover right edge", last.Rect.X+last.Rect.W)
+	}
+	selectedCount := 0
+	for i, ch := range list.Children {
+		if i > 0 {
+			prev := list.Children[i-1]
+			gap := ch.Rect.X - (prev.Rect.X + prev.Rect.W)
+			if gap != 16 {
+				t.Errorf("gap between slot %d and %d = %v, want 16", i-1, i, gap)
+			}
+		}
+		if ch.Selected {
+			selectedCount++
+			center := ch.Rect.X + ch.Rect.W/2
+			if center != 800 {
+				t.Errorf("selected card center = %v, want 800", center)
+			}
+			if ch.Item == nil || ch.Item.ID != "b" {
+				t.Errorf("selected card item = %+v, want b", ch.Item)
+			}
+		}
+	}
+	if selectedCount != 1 {
+		t.Errorf("selectedCount = %d, want 1", selectedCount)
+	}
+}
+
 func TestRandInSceneIsSummonScoped(t *testing.T) {
 	scene := mustScene(t, `Window { Group#band { rotate: rand(-4, 4) * 1deg } }`)
 	st := State{Width: 100, Height: 100, Scale: 1, Summon: 1, Seed: 42, RandCache: &RandCache{}}

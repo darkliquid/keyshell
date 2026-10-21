@@ -102,6 +102,55 @@ func TestTextMeasurement(t *testing.T) {
 	}
 }
 
+func TestRowIntrinsicLeafAndNestedSizing(t *testing.T) {
+	scene := mustScene(t, `Window {
+		Row { height: 48, gap: 12, align: center
+			Box { width: 12 }
+			Pill { text: $mode, tone: accent }
+			Row { gap: 2, align: center
+				Text { text: $query, size: 20 }
+				Cursor { width: 3, height: 24 }
+			}
+			Box { grow: 1 }
+			Text { text: $results.len, size: 12 }
+			Box { width: 12 }
+		}
+	}`)
+	st := State{
+		Width:   400,
+		Height:  100,
+		Scale:   1,
+		Mode:    "SEARCH",
+		Query:   "fi",
+		Results: []Item{{ID: "1"}, {ID: "2"}, {ID: "3"}},
+	}
+	f, err := Resolve(scene, st, WithMeasurer(fakeMeasurer{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := f.Root.Children[0]
+	pill := row.Children[1]
+	// fakeMeasurer: "SEARCH" at 12px = 6*12 = 72 + 16 pad = 88, height = 28, centered in 48 -> Y = 10
+	if pill.Rect.W != 88 || pill.Rect.H != 28 || pill.Rect.Y != 10 {
+		t.Errorf("pill rect = %+v, want W=88 H=28 Y=10", pill.Rect)
+	}
+	queryGroup := row.Children[2]
+	qText := queryGroup.Children[0]
+	cursor := queryGroup.Children[1]
+	// "fi" at 20px = 2*20 = 40; cursor should be at qText.X + 40 + 2
+	if qText.Rect.W != 40 || qText.Rect.H != 20 || qText.Rect.Y != 14 {
+		t.Errorf("query text rect = %+v, want W=40 H=20 Y=14", qText.Rect)
+	}
+	if cursor.Rect.X != qText.Rect.X+42 || cursor.Rect.Y != 12 {
+		t.Errorf("cursor rect = %+v, want X=%v Y=12", cursor.Rect, qText.Rect.X+42)
+	}
+	countText := row.Children[4]
+	// $results.len is Num(3) -> "3" at 12px = 12 wide, placed before right margin (12 gap + 12 box = 24 from right edge -> X = 400 - 24 - 12 = 364)
+	if countText.Rect.W != 12 || countText.Rect.X != 364 || countText.Rect.Y != 18 {
+		t.Errorf("count text rect = %+v, want X=364 Y=18 W=12", countText.Rect)
+	}
+}
+
 func TestGridLayout(t *testing.T) {
 	scene := mustScene(t, `Window { Grid { cols: 2, gap: 10
 	    Box { }, Box { }, Box { }

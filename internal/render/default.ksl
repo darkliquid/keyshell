@@ -10,19 +10,23 @@ Window {
         width: $reveal.cw, height: $reveal.ch
         rotate: $reveal.angle
 
-        // Search field: spans 80% of the frame, vertically centred at
-        // the top like the legacy drawSearchField.
+        // Search field: spans up to 1200px (or 80% on small viewports),
+        // horizontally centered at the top like the legacy drawSearchField.
         Row {
-            x: $reveal.cw * 0.1, y: 12
-            width: $reveal.cw * 0.8, height: 48
-            align: center
-            Box { width: 72, height: 28, radius: 2, fill: $accent
-                Text { text: $mode, size: 10, color: $slab, uppercase: true }
+            x: 0, y: 12
+            width: $reveal.cw, height: 48
+            justify: center
+            Row {
+                width: $reveal.cw * 0.8, maxW: 1200, height: 48
+                gap: 12, align: center
+                Pill { text: $mode, tone: accent }
+                Row { gap: 2, align: center
+                    Text { text: $query, size: 22, uppercase: true, color: $ink }
+                    Cursor { width: 3, height: 24, color: $accent, animation: blink 800ms linear infinite }
+                }
+                Box { grow: 1 }
+                Text { text: $results.len, size: 14, color: $muted }
             }
-            Text { text: $query, size: 22, uppercase: true, color: $ink }
-            Cursor { width: 3, height: 24, color: $accent, animation: blink 800ms linear infinite }
-            Box { grow: 1 }
-            Text { text: $results.len, size: 14, color: $muted }
         }
 
         // Reel: centred on the selection, sized like the legacy drawCards.
@@ -31,10 +35,11 @@ Window {
             width: $reveal.cw, height: $reveal.ch - 80
             items: $results, selected: $selected
             orientation: horizontal
-            gap: 8
+            gap: 16
             scroll: center
+            overflow: cycle
             template {
-                Group#card { width: 360, height: 200
+                Group#card { width: 360, height: $reveal.ch - 80, minH: 130
                     Card { }
                 }
             }

@@ -22,7 +22,7 @@ func paintCard(dc *gg.Context, th *theme.Theme, n *eval.ResolvedNode, deps *Pain
 		return
 	}
 	plan := card.Compose(itemToBackend(item))
-	selected := selectedProp(n)
+	selected := n.Selected || selectedProp(n)
 	drawCard(dc, th, deps.Reveal, deps.CardCfg,
 		n.Rect.X, n.Rect.Y, n.Rect.W, n.Rect.H, plan, selected)
 }

@@ -320,14 +320,14 @@ func drawCard(dc *gg.Context, th *theme.Theme, rev Reveal, cfg config.Reveal, x,
 }
 
 // cardQuad fills and strokes a parallelogram matching the QML shear matrix:
-// y' = y + shear*x, x' = x - shear*h/2.
+// x' = x_local + shear*(y_local - h/2), y' = y_local.
 func cardQuad(dc *gg.Context, rev Reveal, x, y, w, h float64, fill, border gg.RGBA, borderWidth float64) {
 	shear := rev.Shear
 	hx := shear * h / 2
 	tl := [2]float64{x - hx, y}
-	tr := [2]float64{x - hx + w, y + shear*w}
-	br := [2]float64{x - hx + w, y + shear*w + h}
-	bl := [2]float64{x - hx, y + h}
+	tr := [2]float64{x + w - hx, y}
+	br := [2]float64{x + w + hx, y + h}
+	bl := [2]float64{x + hx, y + h}
 
 	if fill.A > 0 {
 		dc.SetColor(fill)

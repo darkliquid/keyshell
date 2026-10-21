@@ -5,6 +5,8 @@ package render
 
 import (
 	"image"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/darkliquid/keyshell/internal/backend"
@@ -35,6 +37,12 @@ func renderPair(t *testing.T) (*image.RGBA, *image.RGBA) {
 	scn := New()
 	sg := gg.NewContext(1600, 900)
 	scn.DrawFrame(sg, view, th, cfg.Reveal)
+	leg.MaskFrame(lg.Image().(*image.RGBA))
+	scn.MaskFrame(sg.Image().(*image.RGBA))
+	if testing.Verbose() {
+		_ = lg.SavePNG(filepath.Join(os.TempDir(), "keyshell-legacy.png"))
+		_ = sg.SavePNG(filepath.Join(os.TempDir(), "keyshell-scene.png"))
+	}
 	return lg.Image().(*image.RGBA), sg.Image().(*image.RGBA)
 }
 
@@ -103,5 +111,11 @@ func TestParityCards(t *testing.T) {
 	t.Logf("card slab legacy=%d scene=%d", l, s)
 	if s < l/2 {
 		t.Errorf("scene card region too sparse: %d vs %d", s, l)
+	}
+	// selected card in the center should be filled with accent
+	cardAcc := accentIn(t, scn, 600, 430, 1000, 650)
+	t.Logf("selected card accent scene=%d", cardAcc)
+	if cardAcc < 500 {
+		t.Errorf("selected card accent fill missing: got %d, want >= 500", cardAcc)
 	}
 }

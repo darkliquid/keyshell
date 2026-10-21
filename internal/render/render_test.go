@@ -45,8 +45,11 @@ func TestDrawFrameProducesImage(t *testing.T) {
 }
 
 type fakeView struct {
-	open    bool
-	results []rank.Match
+	open     bool
+	results  []rank.Match
+	query    string
+	mode     string
+	selected int
 }
 
 func (v *fakeView) Results() []rank.Match {
@@ -55,11 +58,26 @@ func (v *fakeView) Results() []rank.Match {
 	}
 	return nil
 }
-func (v *fakeView) Poll()             {}
-func (v *fakeView) Selected() int     { return 0 }
-func (v *fakeView) Query() string     { return "" }
-func (v *fakeView) IsOpen() bool      { return v.open }
-func (v *fakeView) ModeBadge() string { return "SEARCH" }
+func (v *fakeView) Poll() {}
+func (v *fakeView) Selected() int {
+	if v.selected != 0 || v.results == nil {
+		return v.selected
+	}
+	return 0
+}
+func (v *fakeView) Query() string {
+	if v.query != "" {
+		return v.query
+	}
+	return ""
+}
+func (v *fakeView) IsOpen() bool { return v.open }
+func (v *fakeView) ModeBadge() string {
+	if v.mode != "" {
+		return v.mode
+	}
+	return "SEARCH"
+}
 
 func closeTo(img *image.RGBA, x, y int, r, g, b uint8) bool {
 	px := img.RGBAAt(x, y)

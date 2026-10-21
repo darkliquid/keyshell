@@ -109,6 +109,11 @@ func (p *parser) parseSelector() Selector {
 	if p.peek().kind == tIdent {
 		sel.Type = p.next().text
 	}
+	return p.parseSelectorTail(sel)
+}
+
+// parseSelectorTail parses the markers after the optional type.
+func (p *parser) parseSelectorTail(sel Selector) Selector {
 	for {
 		t := p.peek()
 		if t.kind == tHash {

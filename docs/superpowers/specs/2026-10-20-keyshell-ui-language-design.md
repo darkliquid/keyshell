@@ -731,11 +731,11 @@ Precedence, tightest first: postfix/member access, unary `-`/`!`,
     A `rand` call inside a `List` template is one call site: it draws
     once for every item, so per-item variation uses `jitter`.
 13. **Style rules are decided by position.** A top-level block
-    carrying `#id`/`.class` markers is a style rule (§4); a
-    marker-less top-level block is a node. Node bodies contain
-    nodes; scene-level `state` bodies contain selector blocks. There
-    is no other way to write a style rule, and no way to put a class
-    on the scene root.
+    carrying `#id`/`.class`/`:pseudo`/`[attr]` markers is a style rule
+    (§4); a bare `Type { }` top-level block is a node. Node bodies
+    contain nodes; scene-level `state` bodies contain selector blocks.
+    There is no other way to write a style rule, and no way to put a
+    class on the scene root.
 
 ## Integration with keyshell
 

@@ -82,3 +82,21 @@ func TestParseErrorPosition(t *testing.T) {
 		t.Errorf("error position = %v, want 2:15", el[0].Pos)
 	}
 }
+
+func TestTopLevelAttributeSelector(t *testing.T) {
+	s := mustParse(t, `Text[mode="media"] { color: #FF0000 }`)
+	sb, ok := s.Items[0].(*StyleBlock)
+	if !ok {
+		t.Fatalf("item = %T, want StyleBlock", s.Items[0])
+	}
+	if sb.Sel.Type != "Text" || sb.Sel.AttrName != "mode" || sb.Sel.AttrVal != "media" {
+		t.Errorf("selector = %+v", sb.Sel)
+	}
+}
+
+func TestTopLevelPseudoSelector(t *testing.T) {
+	s := mustParse(t, `Text:selected { color: $accent }`)
+	if _, ok := s.Items[0].(*StyleBlock); !ok {
+		t.Fatalf("item = %T, want StyleBlock", s.Items[0])
+	}
+}

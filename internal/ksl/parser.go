@@ -198,21 +198,29 @@ func (p *parser) parseTopItem() Item {
 }
 
 // parseNodeOrStyle implements Grammar Rule 13: a top-level block with
-// id/class markers is a style rule; without them, a node.
+// id/class/pseudo/attribute markers is a style rule; a bare
+// `Type { }` is a node.
 func (p *parser) parseNodeOrStyle() Item {
 	start := p.here()
 	name := p.next().text
-	m, marked := p.parseMods()
-	if marked {
-		return &StyleBlock{
-			Pos:   start,
-			Sel:   Selector{Pos: start, Type: name, ID: m.id, Classes: m.classes},
-			Props: p.parsePropsOnly("style block"),
-		}
+	if p.atSelectorTail() {
+		sel := p.parseSelectorTail(Selector{Pos: start, Type: name})
+		return &StyleBlock{Pos: start, Sel: sel, Props: p.parsePropsOnly("style block")}
 	}
+	m, _ := p.parseMods()
 	b := p.parseBlock()
 	return &Node{Pos: start, Name: name, ID: m.id, Classes: m.classes,
 		Props: b.props, Children: b.children, States: b.states}
+}
+
+// atSelectorTail reports whether the tokens after a selector's type are
+// markers (id, class, pseudo, attribute).
+func (p *parser) atSelectorTail() bool {
+	t := p.peek()
+	if t.kind == tHash {
+		return true
+	}
+	return t.kind == tPunct && (t.text == "." || t.text == ":" || t.text == "[")
 }
 
 type markerMods struct {

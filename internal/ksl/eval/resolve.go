@@ -288,6 +288,62 @@ func (r *resolver) resolveList(n *ksl.Node, bounds RectF) (*ResolvedNode, error)
 		}
 	}
 
+	// scroll: center keeps the selected item centred in the viewport,
+	// like the legacy reel. Other scroll modes are no-ops for now.
+	if kwProp(props, "scroll") == "center" && len(rn.Children) > 0 {
+		sel := selected
+		if sel < 0 {
+			sel = 0
+		}
+		if sel >= len(rn.Children) {
+			sel = len(rn.Children) - 1
+		}
+		var contentStart, contentEnd float64
+		if horizontal {
+			contentStart = rn.Children[0].Rect.X
+			last := rn.Children[len(rn.Children)-1]
+			contentEnd = last.Rect.X + last.Rect.W
+		} else {
+			contentStart = rn.Children[0].Rect.Y
+			last := rn.Children[len(rn.Children)-1]
+			contentEnd = last.Rect.Y + last.Rect.H
+		}
+		selNode := rn.Children[sel]
+		var selCenter, viewCenter, contentLen float64
+		var viewportLen float64
+		if horizontal {
+			selCenter = selNode.Rect.X + selNode.Rect.W/2
+			viewCenter = rn.Rect.X + rn.Rect.W/2
+			contentLen = contentEnd - contentStart
+			viewportLen = rn.Rect.W
+		} else {
+			selCenter = selNode.Rect.Y + selNode.Rect.H/2
+			viewCenter = rn.Rect.Y + rn.Rect.H/2
+			contentLen = contentEnd - contentStart
+			viewportLen = rn.Rect.H
+		}
+		shift := viewCenter - selCenter
+		// clamp so the selected item stays in view and the reel bounds
+		if contentLen > viewportLen {
+			if shift > 0 {
+				shift = 0
+			}
+			minShift := -(contentLen - viewportLen)
+			if shift < minShift {
+				shift = minShift
+			}
+		} else {
+			shift = 0
+		}
+		for _, it := range rn.Children {
+			if horizontal {
+				translate(it, shift, 0)
+			} else {
+				translate(it, 0, shift)
+			}
+		}
+	}
+
 	if summary != nil && limit < len(items) {
 		kids, err := r.resolveChildrenOf(rn, summary)
 		if err != nil {

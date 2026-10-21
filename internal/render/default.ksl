@@ -1,12 +1,6 @@
-// keyshell's shipped overlay. This reproduces the pre-KSL look: a
-// tapered trapezoid band, a search row in a rotated content frame, and
-// a horizontal reel of cards.
-//
-// The band is two nodes: a Path painted in surface coordinates (the
-// filled trapezoid), and a Group whose rect is the rotated content
-// frame. The Group rotates about its centre, so once $reveal.frameX/Y
-// position its centre at the band's centre, the tilt lands exactly as
-// the legacy renderer's Push/Rotate/Translate did.
+// keyshell's shipped overlay. This mirrors the legacy hard-coded look
+// inside a rotated content frame: a search row spanning the frame and
+// a centred reel of cards.
 
 Window {
     Path { d: $reveal.d, fill: $slab }
@@ -15,30 +9,37 @@ Window {
         x: $reveal.frameX, y: $reveal.frameY
         width: $reveal.cw, height: $reveal.ch
         rotate: $reveal.angle
-        Column { align: center
-            Row { height: 48, gap: 12, align: center
-                Box { width: 72, height: 28, radius: 2, fill: $accent
-                    Text { text: $mode, size: 10, color: $slab, uppercase: true }
-                }
-                Text { text: $query, size: 22, uppercase: true, color: $ink }
-                Cursor { width: 3, height: 24, color: $accent, animation: blink 800ms linear infinite }
-                Text { text: $results.len, size: 14, color: $muted }
+
+        // Search field: spans 80% of the frame, vertically centred at
+        // the top like the legacy drawSearchField.
+        Row {
+            x: $reveal.cw * 0.1, y: 12
+            width: $reveal.cw * 0.8, height: 48
+            align: center
+            Box { width: 72, height: 28, radius: 2, fill: $accent
+                Text { text: $mode, size: 10, color: $slab, uppercase: true }
             }
-            List {
-                items: $results, selected: $selected
-                orientation: horizontal
-                gap: 8
-                scroll: center
-                overflow: cycle
-                width: 100%
-                template {
-                    Group#card { width: $reveal.cw / 3, maxW: 360, height: 200
-                        Card { }
-                    }
+            Text { text: $query, size: 22, uppercase: true, color: $ink }
+            Cursor { width: 3, height: 24, color: $accent, animation: blink 800ms linear infinite }
+            Box { grow: 1 }
+            Text { text: $results.len, size: 14, color: $muted }
+        }
+
+        // Reel: centred on the selection, sized like the legacy drawCards.
+        List {
+            x: $reveal.cw * 0.15, y: 68
+            width: $reveal.cw * 0.7, height: $reveal.ch - 80
+            items: $results, selected: $selected
+            orientation: horizontal
+            gap: 8
+            scroll: center
+            template {
+                Group#card { width: 360, height: 200
+                    Card { }
                 }
-                empty {
-                    Text { text: "NO RESULTS", size: 12, color: $muted }
-                }
+            }
+            empty {
+                Text { text: "NO RESULTS", size: 12, color: $muted }
             }
         }
     }

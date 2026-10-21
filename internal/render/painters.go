@@ -20,6 +20,7 @@ type PainterDeps struct {
 	Reveal      Reveal
 	CursorAlpha float64
 	CardCfg     config.Reveal
+	Images      *ImageCache
 }
 
 func painterFor(name string) Painter {
@@ -32,6 +33,8 @@ func painterFor(name string) Painter {
 		return paintText
 	case "Path":
 		return paintPath
+	case "Image":
+		return paintImage
 	case "Pill":
 		return paintPill
 	case "Meter":
@@ -81,12 +84,18 @@ func opacityOf(props map[string]eval.Value) float64 {
 }
 
 func paintBox(dc *gg.Context, th *theme.Theme, n *eval.ResolvedNode, deps *PainterDeps) {
+	applyEffects(dc, th, n, deps)
 	fill, hasFill := n.Props["fill"]
+	// a FuncVal fill is an effect (gradient) already handled by applyEffects.
+	effectFill := false
+	if _, ok := fill.(eval.FuncVal); ok {
+		effectFill = true
+	}
 	var col gg.RGBA
 	radius := 0.0
 	border := 0.0
 	var borderCol gg.RGBA
-	if hasFill {
+	if hasFill && !effectFill {
 		col = evalColorToGG(fill, th.Slab)
 	}
 	if v, ok := n.Props["radius"].(eval.Num); ok {
@@ -101,7 +110,7 @@ func paintBox(dc *gg.Context, th *theme.Theme, n *eval.ResolvedNode, deps *Paint
 		return
 	}
 	r := n.Rect
-	if hasFill && col.A*op > 0 {
+	if hasFill && !effectFill && col.A*op > 0 {
 		dc.SetColor(gg.RGBA{R: col.R, G: col.G, B: col.B, A: col.A * op})
 		if radius > 0 {
 			dc.DrawRoundedRectangle(r.X, r.Y, r.W, r.H, radius)
@@ -246,7 +255,11 @@ func kwVal(v eval.Value) string {
 
 func paintCursor(dc *gg.Context, th *theme.Theme, n *eval.ResolvedNode, deps *PainterDeps) {
 	col := evalColorToGG(n.Props["color"], th.Accent)
-	col.A *= deps.CursorAlpha
+	if v, ok := n.Props["opacity"].(eval.Num); ok {
+		col.A *= float64(v)
+	} else {
+		col.A *= deps.CursorAlpha
+	}
 	r := n.Rect
 	dc.SetColor(col)
 	dc.DrawRectangle(r.X, r.Y, r.W, r.H)

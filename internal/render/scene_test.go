@@ -3,9 +3,12 @@ package render
 import (
 	"os"
 	"testing"
+	"time"
 
+	"github.com/darkliquid/keyshell/internal/anim"
 	"github.com/darkliquid/keyshell/internal/backend"
 	"github.com/darkliquid/keyshell/internal/config"
+	"github.com/darkliquid/keyshell/internal/ksl"
 	"github.com/darkliquid/keyshell/internal/ksl/eval"
 	"github.com/darkliquid/keyshell/internal/rank"
 	"github.com/darkliquid/keyshell/internal/theme"
@@ -93,4 +96,67 @@ func TestStateFromView(t *testing.T) {
 	if st.Tokens["accent"] == (eval.Color{}) {
 		t.Errorf("theme tokens missing")
 	}
+}
+
+func TestClockDrivesBlink(t *testing.T) {
+	sr := NewSceneRenderer(New(), config.Default())
+	kf := sr.scene.Keyframes()[0]
+	if kf.Name != "blink" {
+		t.Fatalf("default scene keyframes = %+v", sr.scene.Keyframes())
+	}
+	step := ksl.AnimStep{Name: "blink", Dur: &ksl.Scalar{N: 800, Unit: "ms"},
+		Easing: &ksl.Keyword{Name: "linear"}, Iteration: &ksl.Keyword{Name: "infinite"}}
+	at0, err := anim.Sample(kf, step, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	at400, err := anim.Sample(kf, step, 400*time.Millisecond)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if at0["opacity"] != eval.Num(1) || at400["opacity"] != eval.Num(0) {
+		t.Errorf("blink = %v, %v", at0, at400)
+	}
+}
+
+func TestSelectionTransitionTweensFill(t *testing.T) {
+	scene := mustParseScene(t, `
+		Window { Row { Box#card { fill: #0B0B0F } } }
+		transition selected { fill: 200ms ease-out }
+	`)
+	sr := NewSceneRenderer(New(), config.Default())
+	sr.scene = scene
+	now := time.Unix(0, 0)
+	sr.clock.Tick(now, map[string]bool{"open": true, "selected": false})
+
+	// frame 1: selection moves to 0, arming the edge
+	edge := now.Add(10 * time.Millisecond)
+	sr.clock.Tick(edge, map[string]bool{"open": true, "selected": true})
+
+	f := &eval.ResolvedNode{Name: "Window",
+		Children: []*eval.ResolvedNode{{Name: "Row",
+			Children: []*eval.ResolvedNode{{
+				Name: "Box", ID: "card",
+				Props: map[string]eval.Value{"fill": eval.Color{R: 0xFF, G: 0x2E, B: 0x63, A: 0xFF}},
+			}}}}}
+	// previous frame had slab fill
+	sr.prevProps["/Window/Row/Box#card"] = map[string]eval.Value{"fill": eval.Color{R: 0x0B, G: 0x0B, B: 0x0F, A: 0xFF}}
+
+	sr.applyTransitions(f, edge.Add(100*time.Millisecond))
+	got := f.Children[0].Children[0].Props["fill"].(eval.Color)
+	if got == (eval.Color{R: 0x0B, G: 0x0B, B: 0x0F, A: 0xFF}) || got == (eval.Color{R: 0xFF, G: 0x2E, B: 0x63, A: 0xFF}) {
+		t.Errorf("mid-transition fill = %v, want between slab and accent", got)
+	}
+}
+
+func mustParseScene(t *testing.T, src string) *ksl.Scene {
+	t.Helper()
+	s, err := ksl.Parse("t.ksl", []byte(src))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if err := ksl.ValidateWith(s, "Card"); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	return s
 }

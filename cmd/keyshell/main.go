@@ -111,7 +111,7 @@ func main() {
 			ExclusiveZone: -1,
 		}))
 
-	rdr := render.New()
+	rdr := render.NewConfigured(cfg)
 
 	// Wire input.
 	in := input.New(l, app.EventSource())

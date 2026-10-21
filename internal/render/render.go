@@ -47,9 +47,13 @@ type Renderer struct {
 }
 
 // New builds a renderer with the default scene.
-func New() *Renderer {
+func New() *Renderer { return NewConfigured(config.Default()) }
+
+// NewConfigured builds a renderer for the given configuration, so the
+// ui.scene override is honored.
+func NewConfigured(cfg config.Config) *Renderer {
 	r := &Renderer{rng: rand.New(rand.NewSource(1))}
-	r.scene = NewSceneRenderer(r, config.Default())
+	r.scene = NewSceneRenderer(r, cfg)
 	return r
 }
 

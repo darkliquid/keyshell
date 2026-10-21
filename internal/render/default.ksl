@@ -24,7 +24,7 @@ Window {
                 viewport: { width: 60% }
                 template {
                     Group#card { width: 320, height: 240
-                        Card { width: 100%, height: 100% }
+                        Card { }
                     }
                 }
                 empty {

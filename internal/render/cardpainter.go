@@ -12,11 +12,16 @@ import (
 // pipeline, so a scene's template { Card { } } reproduces today's
 // cards exactly.
 func paintCard(dc *gg.Context, th *theme.Theme, n *eval.ResolvedNode, deps *PainterDeps) {
-	item, ok := n.Props["item"].(eval.ItemVal)
-	if !ok {
+	var item *eval.Item
+	if n.Item != nil {
+		item = n.Item
+	} else if iv, ok := n.Props["item"].(eval.ItemVal); ok {
+		item = iv.I
+	}
+	if item == nil {
 		return
 	}
-	plan := card.Compose(itemToBackend(item.I))
+	plan := card.Compose(itemToBackend(item))
 	selected := selectedProp(n)
 	drawCard(dc, th, deps.Reveal, deps.CardCfg,
 		n.Rect.X, n.Rect.Y, n.Rect.W, n.Rect.H, plan, selected)

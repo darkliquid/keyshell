@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/darkliquid/keyshell/internal/backend"
 	"github.com/darkliquid/keyshell/internal/config"
 	"github.com/darkliquid/keyshell/internal/ksl"
 	"github.com/darkliquid/keyshell/internal/ksl/eval"
 	"github.com/darkliquid/keyshell/internal/theme"
+	"github.com/gogpu/gg"
 )
 
 //go:embed default.ksl
@@ -177,4 +179,39 @@ func bandD(rev Reveal, cfg config.Reveal, w float64) string {
 	halfR := rev.HRight / 2
 	return fmt.Sprintf("M 0 %g L %g %g L %g %g L 0 %g Z",
 		rev.Yc-halfL, w, rev.YRight-halfR, w, rev.YRight+halfR, rev.Yc+halfL)
+}
+
+// DrawFrame paints one frame of the scene. It owns the reveal
+// resample, the resolve, and the paint pass.
+func (sr *SceneRenderer) DrawFrame(dc *gg.Context, l View, th *theme.Theme, cfg config.Reveal) {
+	w, h := float64(dc.Width()), float64(dc.Height())
+
+	l.Poll()
+	if !l.IsOpen() {
+		dc.ClearWithColor(gg.RGBA{})
+		sr.inner.wasOpen = false
+		return
+	}
+
+	sr.inner.mu.Lock()
+	if !sr.inner.wasOpen {
+		sr.summonEpoch++
+		sr.inner.reveal = Resample(w, h, cfg, sr.inner.rng)
+		sr.inner.wasOpen = true
+		sr.inner.opened = time.Now()
+	}
+	rev := sr.inner.reveal
+	sr.inner.surfaceW, sr.inner.surfaceH = w, h
+	elapsed := time.Since(sr.inner.opened)
+	sr.inner.mu.Unlock()
+
+	dc.ClearWithColor(gg.RGBA{})
+	st := sr.state(l, th, rev, cfg)
+	frame, err := eval.Resolve(sr.scene, st)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "ksl: frame resolve: %v\n", err)
+		return
+	}
+	deps := &PainterDeps{Reveal: rev, CardCfg: cfg, CursorAlpha: cursorAlpha(elapsed)}
+	painterFor("Window")(dc, th, frame.Root, deps)
 }

@@ -33,7 +33,8 @@ type View interface {
 // cursorBlinkPeriodMs is the QML cursor's fade cycle: 400ms out, 400ms in.
 const cursorBlinkPeriodMs = 800
 
-// Renderer holds the per-summon reveal geometry, resampled on each open.
+// Renderer holds the per-summon reveal geometry, resampled on each open,
+// and drives the frame from the KSL scene.
 type Renderer struct {
 	mu       sync.Mutex
 	reveal   Reveal
@@ -42,15 +43,28 @@ type Renderer struct {
 	surfaceW float64
 	surfaceH float64
 	rng      *rand.Rand
+	scene    *SceneRenderer
 }
 
-// New builds a renderer.
+// New builds a renderer with the default scene.
 func New() *Renderer {
-	return &Renderer{rng: rand.New(rand.NewSource(1))}
+	r := &Renderer{rng: rand.New(rand.NewSource(1))}
+	r.scene = NewSceneRenderer(r, config.Default())
+	return r
 }
 
 // DrawFrame paints the current launcher state at the given surface size.
 func (r *Renderer) DrawFrame(dc *gg.Context, l View, th *theme.Theme, cfg config.Reveal) {
+	if r.scene != nil {
+		r.scene.DrawFrame(dc, l, th, cfg)
+		return
+	}
+	legacyDrawFrame(r, dc, l, th, cfg)
+}
+
+// legacyDrawFrame is the pre-scene implementation, kept as the fallback
+// when no scene is attached.
+func legacyDrawFrame(r *Renderer, dc *gg.Context, l View, th *theme.Theme, cfg config.Reveal) {
 	w := float64(dc.Width())
 	h := float64(dc.Height())
 

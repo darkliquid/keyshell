@@ -21,6 +21,9 @@ type ResolvedNode struct {
 	Props    map[string]Value
 	Children []*ResolvedNode
 	Z        int
+	// Item is the List item this node was materialised for, set on
+	// every node in a template instance's subtree.
+	Item *Item
 }
 
 // Option configures resolution.
@@ -237,6 +240,7 @@ func (r *resolver) resolveList(n *ksl.Node, bounds RectF) (*ResolvedNode, error)
 			return nil, err
 		}
 		if node != nil {
+			stampItem(node, &items[i])
 			rn.Children = append(rn.Children, node)
 		}
 	}
@@ -293,5 +297,13 @@ func translate(n *ResolvedNode, dx, dy float64) {
 	n.Rect.Y += dy
 	for _, c := range n.Children {
 		translate(c, dx, dy)
+	}
+}
+
+// stampItem records the materialised item on a subtree.
+func stampItem(n *ResolvedNode, item *Item) {
+	n.Item = item
+	for _, c := range n.Children {
+		stampItem(c, item)
 	}
 }

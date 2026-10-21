@@ -2,7 +2,6 @@ package render
 
 import (
 	"image"
-	"image/color"
 	"image/jpeg"
 	"image/png"
 	"io"
@@ -51,7 +50,16 @@ func (c *ImageCache) Placeholder() image.Image {
 	return placeholderImage
 }
 
-var placeholderImage = image.NewUniform(color.RGBA{0x12, 0x12, 0x18, 0xFF})
+var placeholderImage = func() image.Image {
+	img := image.NewRGBA(image.Rect(0, 0, 4, 4))
+	for i := range img.Pix {
+		img.Pix[i] = 0x12
+	}
+	for i := 3; i < len(img.Pix); i += 4 {
+		img.Pix[i] = 0xFF
+	}
+	return img
+}()
 
 func decodeInto(p *pendingImage, path string, w, h int) {
 	f, err := os.Open(path)

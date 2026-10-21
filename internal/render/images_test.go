@@ -51,7 +51,7 @@ func TestImageCacheLoadsAndCaches(t *testing.T) {
 func TestImageCachePlaceholder(t *testing.T) {
 	c := NewImageCache()
 	ph := c.Placeholder()
-	if ph == nil || ph.(*image.Uniform).Bounds().Dx() == 0 {
+	if ph == nil || ph.Bounds().Dx() == 0 {
 		t.Errorf("no placeholder")
 	}
 }
@@ -89,4 +89,3 @@ func (c *ImageCache) wait(path string, w, h int) error {
 }
 
 var errTimeout = errors.New("image decode timeout")
-

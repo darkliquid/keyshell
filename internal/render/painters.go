@@ -53,9 +53,14 @@ func painterFor(name string) Painter {
 func paintThrough(dc *gg.Context, th *theme.Theme, n *eval.ResolvedNode, deps *PainterDeps) {
 	if n.Name == "Group" {
 		dc.Push()
+		r := n.Rect
+		// Map the group's local frame to the surface: translate the
+		// group's centre to its surface position, rotate about it.
+		dc.Translate(r.X+r.W/2, r.Y+r.H/2)
 		if v, ok := n.Props["rotate"].(eval.Length); ok {
 			dc.Rotate(v.V * math.Pi / 180)
 		}
+		dc.Translate(-r.W/2, -r.H/2)
 	}
 	paintChildren(dc, th, n, deps)
 	if n.Name == "Group" {

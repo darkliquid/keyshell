@@ -1,16 +1,25 @@
 // keyshell's shipped overlay. This reproduces the pre-KSL look: a
-// tapered trapezoid band, the search row inside it, and a horizontal
-// reel of cards.
+// tapered trapezoid band, a search row in a rotated content frame, and
+// a horizontal reel of cards.
+//
+// The band is two nodes: a Path painted in surface coordinates (the
+// filled trapezoid), and a Group whose rect is the rotated content
+// frame. The Group rotates about its centre, so once $reveal.frameX/Y
+// position its centre at the band's centre, the tilt lands exactly as
+// the legacy renderer's Push/Rotate/Translate did.
 
 Window {
-    Group#band {
-        x: 0, y: $reveal.y
-        width: 100%, height: $reveal.h
+    Path { d: $reveal.d, fill: $slab }
+
+    Group#content {
+        x: $reveal.frameX, y: $reveal.frameY
+        width: $reveal.cw, height: $reveal.ch
         rotate: $reveal.angle
-        Path { d: $reveal.d, fill: $slab }
-        Column { gap: 8, align: center
+        Column { align: center
             Row { height: 48, gap: 12, align: center
-                Pill { text: $mode, tone: accent }
+                Box { width: 72, height: 28, radius: 2, fill: $accent
+                    Text { text: $mode, size: 10, color: $slab, uppercase: true }
+                }
                 Text { text: $query, size: 22, uppercase: true, color: $ink }
                 Cursor { width: 3, height: 24, color: $accent, animation: blink 800ms linear infinite }
                 Text { text: $results.len, size: 14, color: $muted }
@@ -21,9 +30,9 @@ Window {
                 gap: 8
                 scroll: center
                 overflow: cycle
-                viewport: { width: 60% }
+                width: 100%
                 template {
-                    Group#card { width: 320, height: 240
+                    Group#card { width: $reveal.cw / 3, maxW: 360, height: 200
                         Card { }
                     }
                 }
@@ -35,6 +44,6 @@ Window {
     }
 }
 
-state open { Group#band { opacity: 1 } }
+state open { Group#content { opacity: 1 } }
 transition open { rotate: 250ms ease-out, opacity: 180ms }
 @keyframes blink { 0% { opacity: 1 } 50% { opacity: 0 } 100% { opacity: 1 } }

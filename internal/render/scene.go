@@ -3,6 +3,7 @@ package render
 import (
 	_ "embed"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"time"
@@ -74,7 +75,7 @@ func themeTokens(th *theme.Theme) map[string]eval.Color {
 	if th == nil {
 		return nil
 	}
-	to8 := func(f float64) uint8 { return uint8(min(255, max(0, f))) }
+	to8 := func(f float64) uint8 { return uint8(min(255, max(0, f*255))) }
 	return map[string]eval.Color{
 		"slab":        {R: to8(th.Slab.R), G: to8(th.Slab.G), B: to8(th.Slab.B), A: to8(th.Slab.A)},
 		"surface-alt": {R: to8(th.SurfaceAlt.R), G: to8(th.SurfaceAlt.G), B: to8(th.SurfaceAlt.B), A: to8(th.SurfaceAlt.A)},
@@ -94,6 +95,20 @@ func loaderFor(name string, cfg config.Config) ksl.Loader {
 	return func(rel string) ([]byte, error) {
 		return os.ReadFile(filepath.Join(dir, rel))
 	}
+}
+
+// themeMeasurer sizes text through the loaded theme, so layouts know
+// how wide and tall text is.
+type themeMeasurer struct {
+	th *theme.Theme
+}
+
+func (m themeMeasurer) TextSize(text string, size float64, _ string) (float64, float64) {
+	if m.th == nil {
+		return 0, size
+	}
+	face := m.th.Face(size)
+	return face.Advance(text), face.Metrics().LineHeight()
 }
 
 // SceneRenderer drives the frame from a resolved scene.
@@ -129,6 +144,10 @@ func (sr *SceneRenderer) state(l View, th *theme.Theme, rev Reveal, cfg config.R
 	if th != nil && sr.stateTokens == nil {
 		sr.stateTokens = themeTokens(th)
 	}
+	sw, sh := sr.surfaceWidth(), sr.surfaceHeight()
+	if sw <= 0 {
+		sw, sh = 1600, 900
+	}
 	return eval.State{
 		Name:     "keyshell",
 		Open:     l.IsOpen(),
@@ -141,7 +160,10 @@ func (sr *SceneRenderer) state(l View, th *theme.Theme, rev Reveal, cfg config.R
 			Y: rev.Yc, H: minF(rev.HLeft, rev.HRight),
 			HLeft: rev.HLeft, HRight: rev.HRight,
 			Angle: rev.Angle, Shear: rev.Shear, CardShear: rev.Shear,
-			D: bandD(rev, cfg, 0),
+			D:  bandD(rev, cfg, 0),
+			Cw: contentW(rev, sw, sh), Ch: contentH(rev),
+			FrameX: (sw - contentW(rev, sw, sh)) / 2,
+			FrameY: rev.Yc - contentH(rev)/2,
 		},
 		Tokens:    sr.stateTokens,
 		Fonts:     map[string]string{"display": theme.DefaultFace},
@@ -342,4 +364,14 @@ func timingForProp(tr *ksl.Transition, key string) *ksl.TimingProp {
 		}
 	}
 	return nil
+}
+
+// contentW is the width of the rotated content frame in the band.
+func contentW(rev Reveal, w, h float64) float64 {
+	return math.Sqrt(w*w + (rev.YRight-rev.YLeft)*(rev.YRight-rev.YLeft))
+}
+
+// contentH is the height of the rotated content frame.
+func contentH(rev Reveal) float64 {
+	return math.Min(rev.HLeft, rev.HRight) * math.Cos(rev.Angle)
 }

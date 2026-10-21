@@ -2,6 +2,7 @@ package eval
 
 import (
 	"fmt"
+	"math"
 	"strings"
 )
 
@@ -40,6 +41,10 @@ type Reveal struct {
 	Angle, Shear        float64
 	CardShear           float64
 	D                   string // trapezoid outline for Path
+	// FrameX, FrameY, Cw, Ch are the rotated content frame: a cw×ch
+	// rectangle centred on the surface at (w/2, Yc) before the band
+	// tilt is applied.
+	FrameX, FrameY, Cw, Ch float64
 }
 
 // Item is the data a List template binds as $item.
@@ -185,6 +190,14 @@ func (e *Env) member(v Value, name string) (Value, error) {
 		}
 	case RevealVal:
 		switch name {
+		case "frameX":
+			return Num(x.FrameX), nil
+		case "frameY":
+			return Num(x.FrameY), nil
+		case "cw":
+			return Num(x.Cw), nil
+		case "ch":
+			return Num(x.Ch), nil
 		case "y":
 			return Num(x.Y), nil
 		case "h":
@@ -194,7 +207,7 @@ func (e *Env) member(v Value, name string) (Value, error) {
 		case "hRight":
 			return Num(x.HRight), nil
 		case "angle":
-			return Num(x.Angle), nil
+			return Length{V: x.Angle * 180 / math.Pi, Unit: "deg"}, nil
 		case "shear":
 			return Num(x.Shear), nil
 		case "cardShear":

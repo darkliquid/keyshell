@@ -1,6 +1,7 @@
 package eval
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
@@ -73,7 +74,8 @@ func TestReferenceSceneResolvesWithItems(t *testing.T) {
 	if band.Name != "Group" || band.ID != "band" {
 		t.Fatalf("band = %+v", band)
 	}
-	if band.Props["rotate"] != Num(0.05) {
+	rot, ok := band.Props["rotate"].(Length)
+	if !ok || math.Abs(rot.V-2.8648) > 0.001 || rot.Unit != "deg" {
 		t.Errorf("band rotate = %v", band.Props["rotate"])
 	}
 	// the List inside the Stack inside the Column must materialise items

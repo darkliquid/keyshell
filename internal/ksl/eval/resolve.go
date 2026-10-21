@@ -130,6 +130,34 @@ func (r *resolver) resolveNodeRect(n *ksl.Node, rect RectF) (*ResolvedNode, erro
 }
 
 func (r *resolver) layoutChildrenOf(rn *ResolvedNode, n *ksl.Node) error {
+	// A Group lays its children out in a local frame (0,0,W,H); the
+	// painter maps that frame to the surface via the group's transform.
+	// All other containers lay out in surface coordinates.
+	if n.Name == "Group" {
+		local := &ResolvedNode{Name: rn.Name, Rect: RectF{W: rn.Rect.W, H: rn.Rect.H}}
+		var err error
+		switch n.Name {
+		case "Row":
+			err = r.layoutFlex(local, n, true)
+		case "Column":
+			err = r.layoutFlex(local, n, false)
+		case "Grid":
+			err = r.layoutGrid(local, n)
+		case "Stack":
+			err = r.layoutStack(local, n)
+		default:
+			err = r.layoutChildren(local, n)
+		}
+		if err != nil {
+			return err
+		}
+		rn.Children = append(rn.Children, local.Children...)
+		return nil
+	}
+	return r.layoutChildrenOfSurface(rn, n)
+}
+
+func (r *resolver) layoutChildrenOfSurface(rn *ResolvedNode, n *ksl.Node) error {
 	switch n.Name {
 	case "Row":
 		return r.layoutFlex(rn, n, true)

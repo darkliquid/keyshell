@@ -65,7 +65,7 @@ func TestRevealMembers(t *testing.T) {
 	rev, _ := env.lookupRef("reveal")
 	for name, want := range map[string]Value{
 		"y": Num(100), "h": Num(64), "hLeft": Num(60), "hRight": Num(70),
-		"angle": Num(0.05), "shear": Num(-0.3), "cardShear": Num(0.3), "d": Str("M 0 0 L 1 1"),
+		"angle": Length{V: 0.05 * 180 / 3.141592653589793, Unit: "deg"}, "shear": Num(-0.3), "cardShear": Num(0.3), "d": Str("M 0 0 L 1 1"),
 	} {
 		got, err := env.member(rev, name)
 		if err != nil || got != want {

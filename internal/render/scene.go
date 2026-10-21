@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/darkliquid/keyshell/internal/anim"
+
 	"github.com/darkliquid/keyshell/internal/backend"
 	"github.com/darkliquid/keyshell/internal/config"
 	"github.com/darkliquid/keyshell/internal/ksl"
@@ -102,6 +104,7 @@ type SceneRenderer struct {
 	seed        uint64
 	randCache   *eval.RandCache
 	stateTokens map[string]eval.Color
+	clock       *anim.Clock
 }
 
 // NewSceneRenderer builds a renderer for the configured scene.
@@ -110,7 +113,7 @@ func NewSceneRenderer(r *Renderer, cfg config.Config) *SceneRenderer {
 	if err != nil {
 		panic(err) // the embedded default is a build-time invariant
 	}
-	return &SceneRenderer{inner: r, scene: s, seed: 1, randCache: &eval.RandCache{}}
+	return &SceneRenderer{inner: r, scene: s, seed: 1, randCache: &eval.RandCache{}, clock: anim.NewClock(time.Now())}
 }
 
 // state assembles the binding snapshot for one frame. The reveal quad
@@ -206,12 +209,51 @@ func (sr *SceneRenderer) DrawFrame(dc *gg.Context, l View, th *theme.Theme, cfg 
 	sr.inner.mu.Unlock()
 
 	dc.ClearWithColor(gg.RGBA{})
+	now := time.Now()
 	st := sr.state(l, th, rev, cfg)
 	frame, err := eval.Resolve(sr.scene, st)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "ksl: frame resolve: %v\n", err)
 		return
 	}
+	sr.applyAnimations(frame.Root, now)
 	deps := &PainterDeps{Reveal: rev, CardCfg: cfg, CursorAlpha: cursorAlpha(elapsed)}
 	painterFor("Window")(dc, th, frame.Root, deps)
+}
+
+// applyAnimations walks the resolved frame and samples any `animation`
+// prop against the scene's keyframes at the given time, overlaying the
+// sampled values on the node's props.
+func (sr *SceneRenderer) applyAnimations(n *eval.ResolvedNode, now time.Time) {
+	if av, ok := n.Props["animation"].(eval.AnimVal); ok {
+		for _, step := range av.A.Steps {
+			kf := sr.keyframes(step.Name)
+			if kf == nil {
+				continue
+			}
+			if sampled, err := anim.Sample(kf, step, now.Sub(sr.openTime())); err == nil {
+				for k, v := range sampled {
+					n.Props[k] = v
+				}
+			}
+		}
+	}
+	for _, c := range n.Children {
+		sr.applyAnimations(c, now)
+	}
+}
+
+func (sr *SceneRenderer) keyframes(name string) *ksl.Keyframes {
+	for _, kf := range sr.scene.Keyframes() {
+		if kf.Name == name {
+			return kf
+		}
+	}
+	return nil
+}
+
+func (sr *SceneRenderer) openTime() time.Time {
+	sr.inner.mu.Lock()
+	defer sr.inner.mu.Unlock()
+	return sr.inner.opened
 }

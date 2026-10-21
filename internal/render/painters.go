@@ -255,7 +255,11 @@ func kwVal(v eval.Value) string {
 
 func paintCursor(dc *gg.Context, th *theme.Theme, n *eval.ResolvedNode, deps *PainterDeps) {
 	col := evalColorToGG(n.Props["color"], th.Accent)
-	col.A *= deps.CursorAlpha
+	if v, ok := n.Props["opacity"].(eval.Num); ok {
+		col.A *= float64(v)
+	} else {
+		col.A *= deps.CursorAlpha
+	}
 	r := n.Rect
 	dc.SetColor(col)
 	dc.DrawRectangle(r.X, r.Y, r.W, r.H)

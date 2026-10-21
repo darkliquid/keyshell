@@ -3,9 +3,12 @@ package render
 import (
 	"os"
 	"testing"
+	"time"
 
+	"github.com/darkliquid/keyshell/internal/anim"
 	"github.com/darkliquid/keyshell/internal/backend"
 	"github.com/darkliquid/keyshell/internal/config"
+	"github.com/darkliquid/keyshell/internal/ksl"
 	"github.com/darkliquid/keyshell/internal/ksl/eval"
 	"github.com/darkliquid/keyshell/internal/rank"
 	"github.com/darkliquid/keyshell/internal/theme"
@@ -92,5 +95,26 @@ func TestStateFromView(t *testing.T) {
 	}
 	if st.Tokens["accent"] == (eval.Color{}) {
 		t.Errorf("theme tokens missing")
+	}
+}
+
+func TestClockDrivesBlink(t *testing.T) {
+	sr := NewSceneRenderer(New(), config.Default())
+	kf := sr.scene.Keyframes()[0]
+	if kf.Name != "blink" {
+		t.Fatalf("default scene keyframes = %+v", sr.scene.Keyframes())
+	}
+	step := ksl.AnimStep{Name: "blink", Dur: &ksl.Scalar{N: 800, Unit: "ms"},
+		Easing: &ksl.Keyword{Name: "linear"}, Iteration: &ksl.Keyword{Name: "infinite"}}
+	at0, err := anim.Sample(kf, step, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	at400, err := anim.Sample(kf, step, 400*time.Millisecond)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if at0["opacity"] != eval.Num(1) || at400["opacity"] != eval.Num(0) {
+		t.Errorf("blink = %v, %v", at0, at400)
 	}
 }

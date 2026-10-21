@@ -100,3 +100,21 @@ func durScalar(s ksl.Scalar) time.Duration {
 
 // evalFromAST converts an AST easing to an eval value; a nil or
 // unsupported value yields linear.
+
+// MustEasing parses an easing value, falling back to linear on error.
+func MustEasing(v ksl.Value) Easing {
+	ev := evalFromAST(v)
+	if ev == nil {
+		return linear
+	}
+	e, err := ParseEasing(ev)
+	if err != nil {
+		return linear
+	}
+	return e
+}
+
+// DurMs converts a scalar timing to milliseconds.
+func DurMs(s ksl.Scalar) float64 {
+	return float64(durScalar(s)) / float64(time.Millisecond)
+}

@@ -105,6 +105,7 @@ type SceneRenderer struct {
 	randCache   *eval.RandCache
 	stateTokens map[string]eval.Color
 	clock       *anim.Clock
+	prevProps   map[string]map[string]eval.Value
 }
 
 // NewSceneRenderer builds a renderer for the configured scene.
@@ -113,7 +114,7 @@ func NewSceneRenderer(r *Renderer, cfg config.Config) *SceneRenderer {
 	if err != nil {
 		panic(err) // the embedded default is a build-time invariant
 	}
-	return &SceneRenderer{inner: r, scene: s, seed: 1, randCache: &eval.RandCache{}, clock: anim.NewClock(time.Now())}
+	return &SceneRenderer{inner: r, scene: s, seed: 1, randCache: &eval.RandCache{}, clock: anim.NewClock(time.Now()), prevProps: map[string]map[string]eval.Value{}}
 }
 
 // state assembles the binding snapshot for one frame. The reveal quad
@@ -217,6 +218,8 @@ func (sr *SceneRenderer) DrawFrame(dc *gg.Context, l View, th *theme.Theme, cfg 
 		return
 	}
 	sr.applyAnimations(frame.Root, now)
+	sr.clock.Tick(now, map[string]bool{"open": st.Open, "closed": !st.Open, "selected": st.Selected >= 0})
+	sr.applyTransitions(frame.Root, now)
 	deps := &PainterDeps{Reveal: rev, CardCfg: cfg, CursorAlpha: cursorAlpha(elapsed)}
 	painterFor("Window")(dc, th, frame.Root, deps)
 }
@@ -256,4 +259,87 @@ func (sr *SceneRenderer) openTime() time.Time {
 	sr.inner.mu.Lock()
 	defer sr.inner.mu.Unlock()
 	return sr.inner.opened
+}
+
+// applyTransitions tweens props that just changed as part of a fresh
+// state edge. Each node's props are compared to the previous frame; a
+// transition covering the flipped state and the property interpolates
+// from the old value toward the new one.
+func (sr *SceneRenderer) applyTransitions(root *eval.ResolvedNode, now time.Time) {
+	// collect states whose edge just fired
+	fresh := map[string]bool{}
+	for _, tr := range sr.scene.Transitions() {
+		if edge, ok := sr.clock.Edge(tr.State); ok && edge.After(now.Add(-time.Second)) {
+			fresh[tr.State] = true
+		}
+	}
+	if len(fresh) == 0 {
+		sr.snapshotProps(root, "")
+		return
+	}
+	for _, tr := range sr.scene.Transitions() {
+		if !fresh[tr.State] {
+			continue
+		}
+		edge, _ := sr.clock.Edge(tr.State)
+		elapsed := now.Sub(edge)
+		sr.tweenTree(root, tr, elapsed, "")
+	}
+	sr.snapshotProps(root, "")
+}
+
+func nodeKey(n *eval.ResolvedNode, path string) string {
+	id := ""
+	if n.ID != "" {
+		id = "#" + n.ID
+	}
+	return path + "/" + n.Name + id
+}
+
+func (sr *SceneRenderer) tweenTree(n *eval.ResolvedNode, tr *ksl.Transition, elapsed time.Duration, path string) {
+	key := nodeKey(n, path)
+	prev := sr.prevProps[key]
+	if prev != nil {
+		for k, tv := range n.Props {
+			fv, ok := prev[k]
+			if !ok {
+				continue
+			}
+			tp := timingForProp(tr, k)
+			if tp == nil {
+				continue
+			}
+			easing := anim.MustEasing(tp.Easing)
+			t := float64(elapsed/time.Millisecond) / anim.DurMs(tp.Dur)
+			if t < 0 {
+				t = 0
+			}
+			if t > 1 {
+				t = 1
+			}
+			if v, ok := anim.Lerp(fv, tv, easing(t)); ok {
+				n.Props[k] = v
+			}
+		}
+	}
+	for _, c := range n.Children {
+		sr.tweenTree(c, tr, elapsed, key)
+	}
+}
+
+func (sr *SceneRenderer) snapshotProps(n *eval.ResolvedNode, path string) {
+	key := nodeKey(n, path)
+	sr.prevProps[key] = n.Props
+	for _, c := range n.Children {
+		sr.snapshotProps(c, key)
+	}
+}
+
+func timingForProp(tr *ksl.Transition, key string) *ksl.TimingProp {
+	for _, tp := range tr.Props {
+		if tp.Key == key {
+			return tp
+		}
+	}
+	return nil
 }

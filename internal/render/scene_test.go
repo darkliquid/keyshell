@@ -118,3 +118,45 @@ func TestClockDrivesBlink(t *testing.T) {
 		t.Errorf("blink = %v, %v", at0, at400)
 	}
 }
+
+func TestSelectionTransitionTweensFill(t *testing.T) {
+	scene := mustParseScene(t, `
+		Window { Row { Box#card { fill: #0B0B0F } } }
+		transition selected { fill: 200ms ease-out }
+	`)
+	sr := NewSceneRenderer(New(), config.Default())
+	sr.scene = scene
+	now := time.Unix(0, 0)
+	sr.clock.Tick(now, map[string]bool{"open": true, "selected": false})
+
+	// frame 1: selection moves to 0, arming the edge
+	edge := now.Add(10 * time.Millisecond)
+	sr.clock.Tick(edge, map[string]bool{"open": true, "selected": true})
+
+	f := &eval.ResolvedNode{Name: "Window",
+		Children: []*eval.ResolvedNode{{Name: "Row",
+			Children: []*eval.ResolvedNode{{
+				Name: "Box", ID: "card",
+				Props: map[string]eval.Value{"fill": eval.Color{R: 0xFF, G: 0x2E, B: 0x63, A: 0xFF}},
+			}}}}}
+	// previous frame had slab fill
+	sr.prevProps["/Window/Row/Box#card"] = map[string]eval.Value{"fill": eval.Color{R: 0x0B, G: 0x0B, B: 0x0F, A: 0xFF}}
+
+	sr.applyTransitions(f, edge.Add(100*time.Millisecond))
+	got := f.Children[0].Children[0].Props["fill"].(eval.Color)
+	if got == (eval.Color{R: 0x0B, G: 0x0B, B: 0x0F, A: 0xFF}) || got == (eval.Color{R: 0xFF, G: 0x2E, B: 0x63, A: 0xFF}) {
+		t.Errorf("mid-transition fill = %v, want between slab and accent", got)
+	}
+}
+
+func mustParseScene(t *testing.T, src string) *ksl.Scene {
+	t.Helper()
+	s, err := ksl.Parse("t.ksl", []byte(src))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if err := ksl.ValidateWith(s, "Card"); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	return s
+}

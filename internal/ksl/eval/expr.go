@@ -43,8 +43,12 @@ func (e *Env) Eval(v ksl.Value) (Value, error) {
 			}
 			args[i] = av
 		}
-		// rand()/jitter() arrive in Task 4; until then they are plain
-		// function values.
+		if x.Name == "rand" {
+			return e.evalRand(x, args)
+		}
+		if x.Name == "jitter" {
+			return e.evalJitter(x, args)
+		}
 		return FuncVal{At: x.Pos(), Name: x.Name, Args: args}, nil
 	case *ksl.Unary:
 		xv, err := e.Eval(x.X)

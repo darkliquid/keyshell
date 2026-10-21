@@ -51,9 +51,6 @@ type Item struct {
 	Controls                           map[string]ItemControl
 }
 
-// RandCache freezes rand() draws per summon; completed in Task 4.
-type RandCache struct{}
-
 // ItemControl is one item control ($item.<control>).
 type ItemControl struct {
 	Value string

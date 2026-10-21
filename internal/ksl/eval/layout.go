@@ -163,7 +163,7 @@ func (r *resolver) layoutFlex(parent *ResolvedNode, n *ksl.Node, horizontal bool
 	fixed := 0.0
 	growTotal := 0.0
 	count := 0
-	for _, c := range n.Children {
+	for _, c := range r.children(n) {
 		cp, ok, err := resolveProps(c, r.env, r.ctx)
 		if err != nil {
 			return err
@@ -263,7 +263,7 @@ func (r *resolver) layoutGrid(parent *ResolvedNode, n *ksl.Node) error {
 	rows := (len(n.Children) + cols - 1) / cols
 	cellW := (parent.Rect.W - gap*float64(cols-1)) / float64(cols)
 	cellH := (parent.Rect.H - gap*float64(rows-1)) / float64(rows)
-	for i, c := range n.Children {
+	for i, c := range r.children(n) {
 		col := i % cols
 		row := i / cols
 		rect := RectF{
@@ -288,7 +288,7 @@ func (r *resolver) layoutGrid(parent *ResolvedNode, n *ksl.Node) error {
 // for the painter to order.
 func (r *resolver) layoutStack(parent *ResolvedNode, n *ksl.Node) error {
 	align := kwProp(parent.Props, "align")
-	for _, c := range n.Children {
+	for _, c := range r.children(n) {
 		cp, ok, err := resolveProps(c, r.env, r.ctx)
 		if err != nil {
 			return err
@@ -332,7 +332,7 @@ func (r *resolver) layoutStack(parent *ResolvedNode, n *ksl.Node) error {
 
 // layoutChildren is the fallback: children layered in the parent rect.
 func (r *resolver) layoutChildren(parent *ResolvedNode, n *ksl.Node) error {
-	for _, c := range n.Children {
+	for _, c := range r.children(n) {
 		rn, err := r.resolveNodeRect(c, parent.Rect)
 		if err != nil {
 			return err

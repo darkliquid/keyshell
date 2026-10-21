@@ -137,7 +137,7 @@ func durationOf(step ksl.AnimStep) (time.Duration, error) {
 	case "ms":
 		return time.Duration(step.Dur.N) * time.Millisecond, nil
 	case "s":
-		return time.Duration(step.Dur.N * 1000) * time.Millisecond, nil
+		return time.Duration(step.Dur.N*1000) * time.Millisecond, nil
 	}
 	return time.Duration(step.Dur.N) * time.Millisecond, nil
 }

@@ -27,8 +27,8 @@ Window {
 
         // Reel: centred on the selection, sized like the legacy drawCards.
         List {
-            x: $reveal.cw * 0.15, y: 68
-            width: $reveal.cw * 0.7, height: $reveal.ch - 80
+            x: 0, y: 68
+            width: $reveal.cw, height: $reveal.ch - 80
             items: $results, selected: $selected
             orientation: horizontal
             gap: 8

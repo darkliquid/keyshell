@@ -203,8 +203,9 @@ func bandD(rev Reveal, cfg config.Reveal, w float64) string {
 	}
 	halfL := rev.HLeft / 2
 	halfR := rev.HRight / 2
+	// Match legacy bandPath: left edge hangs off YLeft, right off YRight.
 	return fmt.Sprintf("M 0 %g L %g %g L %g %g L 0 %g Z",
-		rev.Yc-halfL, w, rev.YRight-halfR, w, rev.YRight+halfR, rev.Yc+halfL)
+		rev.YLeft-halfL, w, rev.YRight-halfR, w, rev.YRight+halfR, rev.YLeft+halfL)
 }
 
 // DrawFrame paints one frame of the scene. It owns the reveal

@@ -70,6 +70,11 @@ type Instance struct {
 	NoReap  bool     `toml:"noreap"`
 }
 
+// UI holds the scene override.
+type UI struct {
+	Scene string `toml:"scene"` // path to a .ksl file; empty = embedded default
+}
+
 // Config is the parsed host configuration.
 type Config struct {
 	Reveal    Reveal
@@ -78,6 +83,7 @@ type Config struct {
 	Drinks    Drinks
 	Frecency  Frecency
 	Instances []Instance `toml:"instance"`
+	UI        UI         `toml:"ui"`
 }
 
 // Default returns the built-in configuration. It is the zero base for any

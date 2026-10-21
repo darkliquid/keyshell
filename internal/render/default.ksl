@@ -1,0 +1,40 @@
+// keyshell's shipped overlay. This reproduces the pre-KSL look: a
+// tapered trapezoid band, the search row inside it, and a horizontal
+// reel of cards.
+
+Window {
+    Group#band {
+        x: 0, y: $reveal.y
+        width: 100%, height: $reveal.h
+        rotate: $reveal.angle
+        Path { d: $reveal.d, fill: $slab }
+        Column { gap: 8, align: center
+            Row { height: 48, gap: 12, align: center
+                Pill { text: $mode, tone: accent }
+                Text { text: $query, size: 22, uppercase: true, color: $ink }
+                Cursor { width: 3, height: 24, color: $accent, animation: blink 800ms linear infinite }
+                Text { text: $results.len, size: 14, color: $muted }
+            }
+            List {
+                items: $results, selected: $selected
+                orientation: horizontal
+                gap: 8
+                scroll: center
+                overflow: cycle
+                viewport: { width: 60% }
+                template {
+                    Group#card { width: 320, height: 240
+                        Card { }
+                    }
+                }
+                empty {
+                    Text { text: "NO RESULTS", size: 12, color: $muted }
+                }
+            }
+        }
+    }
+}
+
+state open { Group#band { opacity: 1 } }
+transition open { rotate: 250ms ease-out, opacity: 180ms }
+@keyframes blink { 0% { opacity: 1 } 50% { opacity: 0 } 100% { opacity: 1 } }

@@ -74,12 +74,12 @@ func themeTokens(th *theme.Theme) map[string]eval.Color {
 	}
 	to8 := func(f float64) uint8 { return uint8(min(255, max(0, f))) }
 	return map[string]eval.Color{
-		"slab":        {to8(th.Slab.R), to8(th.Slab.G), to8(th.Slab.B), to8(th.Slab.A)},
-		"surface-alt": {to8(th.SurfaceAlt.R), to8(th.SurfaceAlt.G), to8(th.SurfaceAlt.B), to8(th.SurfaceAlt.A)},
-		"ink":         {to8(th.Ink.R), to8(th.Ink.G), to8(th.Ink.B), to8(th.Ink.A)},
-		"accent":      {to8(th.Accent.R), to8(th.Accent.G), to8(th.Accent.B), to8(th.Accent.A)},
-		"accent-alt":  {to8(th.AccentAlt.R), to8(th.AccentAlt.G), to8(th.AccentAlt.B), to8(th.AccentAlt.A)},
-		"muted":       {to8(th.Muted.R), to8(th.Muted.G), to8(th.Muted.B), to8(th.Muted.A)},
+		"slab":        {R: to8(th.Slab.R), G: to8(th.Slab.G), B: to8(th.Slab.B), A: to8(th.Slab.A)},
+		"surface-alt": {R: to8(th.SurfaceAlt.R), G: to8(th.SurfaceAlt.G), B: to8(th.SurfaceAlt.B), A: to8(th.SurfaceAlt.A)},
+		"ink":         {R: to8(th.Ink.R), G: to8(th.Ink.G), B: to8(th.Ink.B), A: to8(th.Ink.A)},
+		"accent":      {R: to8(th.Accent.R), G: to8(th.Accent.G), B: to8(th.Accent.B), A: to8(th.Accent.A)},
+		"accent-alt":  {R: to8(th.AccentAlt.R), G: to8(th.AccentAlt.G), B: to8(th.AccentAlt.B), A: to8(th.AccentAlt.A)},
+		"muted":       {R: to8(th.Muted.R), G: to8(th.Muted.G), B: to8(th.Muted.B), A: to8(th.Muted.A)},
 	}
 }
 

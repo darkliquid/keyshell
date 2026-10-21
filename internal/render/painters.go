@@ -68,7 +68,7 @@ func paintChildren(dc *gg.Context, th *theme.Theme, n *eval.ResolvedNode, deps *
 
 func evalColorToGG(v eval.Value, def gg.RGBA) gg.RGBA {
 	if c, ok := v.(eval.Color); ok {
-		return gg.RGBA{float64(c.R) / 255, float64(c.G) / 255, float64(c.B) / 255, float64(c.A) / 255}
+		return gg.RGBA{R: float64(c.R) / 255, G: float64(c.G) / 255, B: float64(c.B) / 255, A: float64(c.A) / 255}
 	}
 	return def
 }
@@ -102,7 +102,7 @@ func paintBox(dc *gg.Context, th *theme.Theme, n *eval.ResolvedNode, deps *Paint
 	}
 	r := n.Rect
 	if hasFill && col.A*op > 0 {
-		dc.SetColor(gg.RGBA{col.R, col.G, col.B, col.A * op})
+		dc.SetColor(gg.RGBA{R: col.R, G: col.G, B: col.B, A: col.A * op})
 		if radius > 0 {
 			dc.DrawRoundedRectangle(r.X, r.Y, r.W, r.H, radius)
 		} else {
@@ -139,7 +139,7 @@ func paintText(dc *gg.Context, th *theme.Theme, n *eval.ResolvedNode, deps *Pain
 	col := evalColorToGG(n.Props["color"], th.Ink)
 	face := th.Face(size)
 	dc.SetFont(face)
-	dc.SetColor(gg.RGBA{col.R, col.G, col.B, col.A * opacityOf(n.Props)})
+	dc.SetColor(gg.RGBA{R: col.R, G: col.G, B: col.B, A: col.A * opacityOf(n.Props)})
 	r := n.Rect
 	dc.DrawStringAnchored(string(txt), r.X, r.Y, 0, 0)
 }

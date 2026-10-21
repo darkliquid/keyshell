@@ -29,11 +29,11 @@ func TestPaintersPaint(t *testing.T) {
 		node *eval.ResolvedNode
 	}{
 		{"Box", &eval.ResolvedNode{Name: "Box", Rect: eval.RectF{X: 10, Y: 10, W: 50, H: 30},
-			Props: map[string]eval.Value{"fill": eval.Color{0xFF, 0, 0, 0xFF}}}},
+			Props: map[string]eval.Value{"fill": eval.Color{R: 0xFF, G: 0, B: 0, A: 0xFF}}}},
 		{"Path", &eval.ResolvedNode{Name: "Path", Rect: eval.RectF{X: 0, Y: 0, W: 200, H: 100},
-			Props: map[string]eval.Value{"d": eval.Str("M 0 0 L 200 0 L 200 100 L 0 100 Z"), "fill": eval.Color{0, 0, 0xFF, 0xFF}}}},
+			Props: map[string]eval.Value{"d": eval.Str("M 0 0 L 200 0 L 200 100 L 0 100 Z"), "fill": eval.Color{R: 0, G: 0, B: 0xFF, A: 0xFF}}}},
 		{"Cursor", &eval.ResolvedNode{Name: "Cursor", Rect: eval.RectF{X: 60, Y: 10, W: 3, H: 24},
-			Props: map[string]eval.Value{"color": eval.Color{0xFF, 0x2E, 0x63, 0xFF}}}},
+			Props: map[string]eval.Value{"color": eval.Color{R: 0xFF, G: 0x2E, B: 0x63, A: 0xFF}}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -56,7 +56,7 @@ func TestPaintTextUppercase(t *testing.T) {
 	n := &eval.ResolvedNode{Name: "Text", Rect: eval.RectF{X: 5, Y: 10, W: 90, H: 20},
 		Props: map[string]eval.Value{
 			"text": eval.Str("hi"), "size": eval.Length{V: 12, Unit: "px"},
-			"color": eval.Color{0xF2, 0xF2, 0xF7, 0xFF}, "uppercase": eval.Bool(true),
+			"color": eval.Color{R: 0xF2, G: 0xF2, B: 0xF7, A: 0xFF}, "uppercase": eval.Bool(true),
 		}}
 	painterFor("Text")(dc, th, n, &PainterDeps{CursorAlpha: 1})
 	if !containsColor(img, 0xF2, 0xF2, 0xF7) {

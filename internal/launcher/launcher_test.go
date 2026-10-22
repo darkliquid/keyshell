@@ -3,6 +3,7 @@ package launcher
 import (
 	"context"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -24,6 +25,7 @@ func (p *fakeProvider) Get(id string) (backend.Backend, error) {
 
 // listBackend returns fixed items.
 type listBackend struct {
+	mu      sync.Mutex
 	id      string
 	items   []backend.Item
 	query   backend.Query
@@ -34,12 +36,23 @@ func (b *listBackend) Info() backend.Info {
 	return backend.Info{ID: b.id, Searchable: true, StableIDs: true}
 }
 func (b *listBackend) Query(_ context.Context, q backend.Query) (backend.Stream, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	b.query = q
 	return &sliceStream{items: b.items}, nil
 }
 func (b *listBackend) Control(_ context.Context, c backend.Change) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	b.control = append(b.control, c)
 	return nil
+}
+func (b *listBackend) ControlCalls() []backend.Change {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	out := make([]backend.Change, len(b.control))
+	copy(out, b.control)
+	return out
 }
 func (b *listBackend) Close() error { return nil }
 
@@ -175,11 +188,12 @@ func TestDebouncedControlCoalesces(t *testing.T) {
 	}
 	// Wait past the settle window.
 	time.Sleep(80 * time.Millisecond)
-	if len(apps.control) != 1 {
-		t.Errorf("control calls = %d, want 1 (coalesced)", len(apps.control))
+	calls := apps.ControlCalls()
+	if len(calls) != 1 {
+		t.Errorf("control calls = %d, want 1 (coalesced)", len(calls))
 	}
-	if apps.control[0].Value != 4 {
-		t.Errorf("value = %v, want 4 (last settled)", apps.control[0].Value)
+	if len(calls) > 0 && calls[0].Value != 4 {
+		t.Errorf("value = %v, want 4 (last settled)", calls[0].Value)
 	}
 }
 
@@ -264,6 +278,112 @@ func TestPollWithoutWorkerIsANoOp(t *testing.T) {
 	l.Poll()
 	if got := l.Results(); len(got) != 0 {
 		t.Errorf("results = %v, want none", got)
+	}
+}
+
+// TestEnterQueuesHostAction proves Enter hands the selected item's host
+// action to the host: the launcher queues it for the capability broker and
+// TakeAction drains it exactly once. Before this, Enter silently dropped
+// host actions in the GUI host.
+func TestEnterQueuesHostAction(t *testing.T) {
+	l, _ := newTestLauncher()
+	l.Open()
+	l.SetMode("apps")
+	l.Enter()
+	a, ok := l.TakeAction()
+	if !ok {
+		t.Fatal("TakeAction after Enter = none, want the exec action")
+	}
+	if a.Type != "exec" || a.Value != "ghostty" {
+		t.Errorf("action = %v %q, want exec ghostty", a.Type, a.Value)
+	}
+	if _, ok := l.TakeAction(); ok {
+		t.Error("TakeAction drained the same action twice")
+	}
+}
+
+// TestEnterHostActionClosesOverlay checks activating a host action dismisses
+// the overlay: the launched or focused window needs the keyboard back.
+func TestEnterHostActionClosesOverlay(t *testing.T) {
+	l, _ := newTestLauncher()
+	l.Open()
+	l.SetMode("apps")
+	l.Enter()
+	if l.IsOpen() {
+		t.Error("overlay still open after a host action")
+	}
+}
+
+// TestSetQueryActionStaysInternal guards the action queue: set-query changes
+// the query in place and must never reach the capability broker.
+func TestSetQueryActionStaysInternal(t *testing.T) {
+	apps := &listBackend{id: "apps", items: []backend.Item{
+		{ID: "a", Title: "Again", Actions: []backend.Action{{Type: "set-query", Value: "next"}}},
+	}}
+	l := New(&fakeProvider{backends: map[string]backend.Backend{"apps": apps}},
+		Options{Searchable: []string{"apps"}, RankOpts: rank.Options{Limit: 10}})
+	l.Open()
+	l.SetMode("apps")
+	l.Enter()
+	if _, ok := l.TakeAction(); ok {
+		t.Error("set-query leaked into the host action queue")
+	}
+	if l.Query() != "next" {
+		t.Errorf("query = %q, want next", l.Query())
+	}
+	if !l.IsOpen() {
+		t.Error("set-query closed the overlay")
+	}
+}
+
+// TestSearchingTracksPendingWork proves Searching is true from submit until
+// the current generation's results land, so the UI can show a loading
+// indicator while the merged search is in flight.
+func TestSearchingTracksPendingWork(t *testing.T) {
+	gate := make(chan struct{})
+	b := &blockingBackend{id: "slow", items: []backend.Item{{ID: "x", Title: "x"}}, gate: gate}
+	l := New(&fakeProvider{backends: map[string]backend.Backend{"slow": b}},
+		Options{Searchable: []string{"slow"}, RankOpts: rank.Options{Limit: 10}})
+	l.Start()
+
+	l.SetQuery("x")
+	if !l.Searching() {
+		t.Fatal("Searching = false while the query is in flight")
+	}
+	gate <- struct{}{}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		l.Poll()
+		if !l.Searching() {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("Searching stayed true after results published")
+}
+
+// TestSearchingStaysUntilNewestGeneration keeps the indicator up when a
+// superseded result is dropped: only the newest generation's landing marks
+// the search as finished.
+func TestSearchingStaysUntilNewestGeneration(t *testing.T) {
+	l := New(&fakeProvider{backends: map[string]backend.Backend{}}, Options{})
+	l.mu.Lock()
+	l.levels = []*Level{{}}
+	l.gen = 7
+	l.searching = true
+	l.mu.Unlock()
+
+	if l.apply(Result{gen: 6, depth: 1, matches: []rank.Match{{Source: "old"}}}) {
+		t.Fatal("apply accepted a stale result")
+	}
+	if !l.Searching() {
+		t.Error("Searching cleared while the newest search is still pending")
+	}
+	if !l.apply(Result{gen: 7, depth: 1, matches: []rank.Match{{Source: "new"}}}) {
+		t.Fatal("apply rejected the current result")
+	}
+	if l.Searching() {
+		t.Error("Searching stayed true after the current result landed")
 	}
 }
 

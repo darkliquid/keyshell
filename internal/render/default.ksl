@@ -29,6 +29,15 @@ Window {
             }
         }
 
+        // Busy strip: an accent bar under the search row, painted only
+        // while a query is in flight.
+        Row {
+            x: 0, y: 60
+            width: $reveal.cw, height: 4
+            justify: center
+            Box#busy { width: 300, height: 4, fill: $accent, radius: 2, when: $searching }
+        }
+
         // Reel: centred on the selection, sized like the legacy drawCards.
         List {
             x: 0, y: 68

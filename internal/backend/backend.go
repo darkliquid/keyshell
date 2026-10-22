@@ -6,6 +6,7 @@ package backend
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/darkliquid/keyshell/internal/config"
 )
@@ -191,10 +192,16 @@ func NewInProc(factory func(id string, cfg config.Config) (Backend, error)) Back
 
 type inProcProvider struct {
 	factory func(id string, cfg config.Config) (Backend, error)
-	built   map[string]Backend
+
+	// The query worker and a host-side prewarm call Get from different
+	// goroutines, so the memo map is guarded.
+	mu    sync.Mutex
+	built map[string]Backend
 }
 
 func (p *inProcProvider) Get(id string) (Backend, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	if b, ok := p.built[id]; ok {
 		return b, nil
 	}

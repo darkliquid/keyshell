@@ -34,13 +34,16 @@ func NewImageCache() *ImageCache {
 func (c *ImageCache) Get(path string, w, h int) (image.Image, bool) {
 	key := path + "@" + itoa(w) + "x" + itoa(h)
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	p, ok := c.reqs[key]
 	if !ok {
 		p = &pendingImage{}
 		c.reqs[key] = p
 		go decodeInto(p, path, w, h)
 	}
+	c.mu.Unlock()
+	// The decode writes p under p.mu; read the result under the same lock.
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	return p.img, p.ready
 }
 

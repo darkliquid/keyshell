@@ -48,6 +48,16 @@ type Drinks struct {
 	Terminal []string `toml:"terminal"`
 }
 
+// Commands holds the host-action executables, overriding the built-in tools
+// for portability across compositors and desktops. An empty entry keeps the
+// default. FocusWindow accepts an {id} placeholder anywhere in the argv;
+// without one the window id is appended.
+type Commands struct {
+	Copy        []string `toml:"copy"`
+	OpenURL     []string `toml:"open_url"`
+	FocusWindow []string `toml:"focus_window"`
+}
+
 // FrecencyBucket is one age/weight pair in the frecency score.
 type FrecencyBucket struct {
 	MaxAgeMs int64 `toml:"max_age_ms"`
@@ -81,6 +91,7 @@ type Config struct {
 	Anim      Anim
 	Overlay   Overlay
 	Drinks    Drinks
+	Commands  Commands `toml:"commands"`
 	Frecency  Frecency
 	Instances []Instance `toml:"instance"`
 	UI        UI         `toml:"ui"`

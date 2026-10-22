@@ -6,6 +6,7 @@ package launcher
 
 import (
 	"context"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -54,6 +55,15 @@ type Launcher struct {
 	// lastQuerySC carries the trace context of the most recently published
 	// query, so the frame that paints the results can join the same trace.
 	lastQuerySC trace.SpanContext
+
+	// hostActions holds host-executed actions queued by Enter, awaiting the
+	// host's capability broker. The launcher never performs effects itself;
+	// it queues and the host drains.
+	hostActions []backend.Action
+
+	// searching is true while a query job is in flight, so the UI can paint
+	// a loading indicator instead of an empty-looking card row.
+	searching bool
 
 	// change subscriptions
 	listeners []func()
@@ -152,6 +162,15 @@ func (l *Launcher) ModeBadge() string {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
 	return l.badge
+}
+
+// Searching reports whether a query is in flight. It is set when a job is
+// submitted to the worker and cleared when the current generation's results
+// are published.
+func (l *Launcher) Searching() bool {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return l.searching
 }
 
 // SetMode switches the active backend and starts a query.
@@ -285,6 +304,7 @@ func (l *Launcher) Enter() {
 	}
 	l.mu.Unlock()
 
+	slog.Debug("enter", "item", item.ID, "title", item.Title, "source", source, "actions", len(item.Actions))
 	if len(item.Actions) > 0 {
 		if item.Destructive {
 			// Gating is checked by the input layer; here we route it anyway.
@@ -313,8 +333,28 @@ func (l *Launcher) performAction(a backend.Action, item backend.Item, source str
 	case "plugin":
 		l.invokeDomain(a, item, source)
 	case "copy", "open-url", "exec", "exec-terminal", "focus-window":
-		l.changed() // the host capability broker picks this up
+		// Queue for the host capability broker, then dismiss: the launched
+		// or focused window needs the keyboard back.
+		slog.Debug("host action queued", "type", a.Type, "value", a.Value)
+		l.mu.Lock()
+		l.hostActions = append(l.hostActions, a)
+		l.mu.Unlock()
+		l.Close()
 	}
+}
+
+// TakeAction pops the oldest queued host action. The host drains the queue
+// after each change notification and performs it through its capability
+// broker.
+func (l *Launcher) TakeAction() (backend.Action, bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if len(l.hostActions) == 0 {
+		return backend.Action{}, false
+	}
+	a := l.hostActions[0]
+	l.hostActions = l.hostActions[1:]
+	return a, true
 }
 
 func (l *Launcher) invokeDomain(a backend.Action, item backend.Item, source string) {
@@ -323,6 +363,7 @@ func (l *Launcher) invokeDomain(a backend.Action, item backend.Item, source stri
 		return
 	}
 	if inv, ok := b.(backend.Invoker); ok {
+		slog.Debug("plugin action", "source", source, "item", item.ID, "action", a.Value)
 		_ = inv.Invoke(context.Background(), backend.Invoke{
 			Item: item.ID, Action: a.Value, Value: a.Value,
 		})

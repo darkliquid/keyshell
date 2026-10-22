@@ -147,8 +147,9 @@ func loadConfig(hf hostFlags) (config.Config, error) {
 
 // buildProvider serves configured plugin instances as subprocesses and falls
 // back to in-process backends for the rest. Plugin instances start lazily on
-// first use.
-func buildProvider(cfg config.Config) backend.BackendProvider {
+// first use. It returns the concrete provider so hosts can hot-start plugins
+// and report the active count without asserting through the interface.
+func buildProvider(cfg config.Config) *hybridProvider {
 	inproc := backend.NewInProc(func(id string, c config.Config) (backend.Backend, error) {
 		switch id {
 		case "apps":
@@ -240,6 +241,20 @@ func (p *hybridProvider) HotStart(cfg config.Config) {
 		go func(id string) {
 			_, _ = p.Get(id)
 		}(inst.ID)
+	}
+}
+
+// Warm pre-builds the given in-process backends in the background, so the
+// first summon does not pay their one-time scan or detection costs. Plugin
+// instances are ignored: HotStart covers those.
+func (p *hybridProvider) Warm(ids ...string) {
+	for _, id := range ids {
+		if _, isPlugin := p.plugins[id]; isPlugin {
+			continue
+		}
+		go func(id string) {
+			_, _ = p.inproc.Get(id)
+		}(id)
 	}
 }
 

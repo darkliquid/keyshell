@@ -7,6 +7,7 @@ import (
 
 	"github.com/darkliquid/keyshell/internal/backend"
 	"github.com/darkliquid/keyshell/internal/config"
+	"github.com/darkliquid/keyshell/internal/icons"
 	"github.com/darkliquid/keyshell/internal/ksl/eval"
 	"github.com/darkliquid/keyshell/internal/theme"
 	"github.com/gogpu/gg"
@@ -21,6 +22,7 @@ type PainterDeps struct {
 	CursorAlpha float64
 	CardCfg     config.Reveal
 	Images      *ImageCache
+	Icons       *icons.Resolver
 }
 
 func painterFor(name string) Painter {

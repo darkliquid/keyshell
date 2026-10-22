@@ -15,7 +15,7 @@ var reservedNames = map[string]bool{
 
 // stateNames is the v1 built-in set (spec §5).
 var stateNames = map[string]bool{
-	"open": true, "closed": true, "focused": true, "selected": true,
+	"open": true, "closed": true, "focused": true, "selected": true, "searching": true,
 }
 
 var listSubBlocks = map[string]bool{
@@ -135,7 +135,7 @@ func (v *validator) checkList(n *Node) {
 
 func (v *validator) checkStateName(sb *StateBlock) {
 	if !stateNames[sb.Name] {
-		v.errf(sb.Pos, "state name %q is not one of the built-ins (open, closed, focused, selected)", sb.Name)
+		v.errf(sb.Pos, "state name %q is not one of the built-ins (open, closed, focused, selected, searching)", sb.Name)
 	}
 }
 

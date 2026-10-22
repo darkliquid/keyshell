@@ -30,10 +30,11 @@ func runHeadless(args []string) int {
 	}
 
 	provider := buildProvider(cfg)
-	telemetry.PluginCountFunc = provider.(*hybridProvider).ActiveCount
-	provider.(*hybridProvider).HotStart(cfg)
+	telemetry.PluginCountFunc = provider.ActiveCount
+	provider.HotStart(cfg)
 	l := newLauncher(cfg, provider)
 	l.Start()
+	provider.Warm(newLauncherOptions(cfg).Searchable...)
 	_ = capability.New(cfg)
 
 	ln, err := ipc.Listen()

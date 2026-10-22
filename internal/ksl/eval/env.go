@@ -8,14 +8,15 @@ import (
 
 // State is the launcher snapshot a frame resolves against.
 type State struct {
-	Name     string
-	Open     bool
-	Focused  bool
-	Query    string
-	Mode     string
-	Selected int
-	Results  []Item
-	Typing   float64 // 0..1 activity ratio
+	Name      string
+	Open      bool
+	Focused   bool
+	Query     string
+	Mode      string
+	Selected  int
+	Results   []Item
+	Typing    float64 // 0..1 activity ratio
+	Searching bool    // a query is in flight
 
 	// Reveal is the host-resampled band geometry (spec §7).
 	Reveal Reveal
@@ -126,6 +127,8 @@ func (e *Env) lookupRef(name string) (Value, bool) {
 		return Str(e.st.Mode), true
 	case "typing":
 		return Num(e.st.Typing), true
+	case "searching":
+		return Bool(e.st.Searching), true
 	case "active":
 		if e.st.Selected >= 0 && e.st.Selected < len(e.st.Results) {
 			return ItemVal{&e.st.Results[e.st.Selected]}, true

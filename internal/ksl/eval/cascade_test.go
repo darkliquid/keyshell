@@ -81,6 +81,55 @@ func TestNodeAndSceneStates(t *testing.T) {
 	}
 }
 
+// TestSearchingBindingAndState proves the searching flag reaches the scene
+// both ways: as a $searching when-guard binding and as a built-in state.
+func TestSearchingBindingAndState(t *testing.T) {
+	scene, err := ksl.Parse("t.ksl", []byte(`
+		Window {
+			Box#busy { when: $searching }
+			Box#strip { }
+		}
+		state searching { Box#strip { opacity: 1 } }
+	`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	guarded := scene.Nodes()[0].Children[0]
+	strip := scene.Nodes()[0].Children[1]
+
+	busy := &State{Open: true, Searching: true}
+	_, exists, err := resolveProps(guarded, NewEnv(busy, nil), &CascadeCtx{Scene: scene})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !exists {
+		t.Error("when: $searching dropped the node while searching")
+	}
+	props, _, err := resolveProps(strip, NewEnv(busy, nil), &CascadeCtx{Scene: scene})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if props["opacity"] != Num(1) {
+		t.Errorf("searching state opacity = %v, want 1", props["opacity"])
+	}
+
+	idle := &State{Open: true}
+	_, exists, err = resolveProps(guarded, NewEnv(idle, nil), &CascadeCtx{Scene: scene})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exists {
+		t.Error("when: $searching kept the node while idle")
+	}
+	props, _, err = resolveProps(strip, NewEnv(idle, nil), &CascadeCtx{Scene: scene})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, has := props["opacity"]; has {
+		t.Errorf("inactive searching state leaked: %v", props)
+	}
+}
+
 func TestAttributeSelector(t *testing.T) {
 	scene, _ := ksl.Parse("t.ksl", []byte(`
 		Text[mode="media"] { color: #FF0000 }

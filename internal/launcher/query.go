@@ -107,6 +107,9 @@ func (l *Launcher) submit(job Job) {
 		}
 		return
 	}
+	l.mu.Lock()
+	l.searching = true
+	l.mu.Unlock()
 	select {
 	case jobs <- job:
 	default:
@@ -132,6 +135,7 @@ func (l *Launcher) apply(res Result) bool {
 	level.Items = res.items
 	level.Matches = res.matches
 	l.results = res.matches
+	l.searching = false
 	if res.sc.IsValid() {
 		l.lastQuerySC = res.sc
 	}

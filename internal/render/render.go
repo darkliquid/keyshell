@@ -18,6 +18,7 @@ import (
 
 	"github.com/darkliquid/keyshell/internal/card"
 	"github.com/darkliquid/keyshell/internal/config"
+	"github.com/darkliquid/keyshell/internal/icons"
 	"github.com/darkliquid/keyshell/internal/ksl"
 	"github.com/darkliquid/keyshell/internal/rank"
 	"github.com/darkliquid/keyshell/internal/telemetry"
@@ -33,6 +34,7 @@ type View interface {
 	Query() string
 	IsOpen() bool
 	ModeBadge() string
+	Searching() bool
 }
 
 // cursorBlinkPeriodMs is the QML cursor's fade cycle: 400ms out, 400ms in.
@@ -49,6 +51,11 @@ type Renderer struct {
 	surfaceH float64
 	rng      *rand.Rand
 	scene    *SceneRenderer
+
+	// images decodes bitmaps off the frame thread; icons resolves theme icon
+	// names to files. Both are shared by the scene and legacy painters.
+	images *ImageCache
+	icons  *icons.Resolver
 }
 
 // New builds a renderer with the default scene.
@@ -57,7 +64,11 @@ func New() *Renderer { return NewConfigured(config.Default()) }
 // NewConfigured builds a renderer for the given configuration, so the
 // ui.scene override is honored.
 func NewConfigured(cfg config.Config) *Renderer {
-	r := &Renderer{rng: rand.New(rand.NewSource(1))}
+	r := &Renderer{
+		rng:    rand.New(rand.NewSource(1)),
+		images: NewImageCache(),
+		icons:  icons.NewResolver(icons.Detect(), icons.DefaultBaseDirs()...),
+	}
 	r.scene = NewSceneRenderer(r, cfg)
 	return r
 }
@@ -134,7 +145,8 @@ func legacyDrawFrame(r *Renderer, dc *gg.Context, l View, th *theme.Theme, cfg c
 	dc.Translate(-cw/2, -ch/2)
 
 	drawSearchField(dc, th, l, cfg, cw, cursorAlpha(elapsed))
-	drawCards(dc, th, l, rev, cfg, cw, ch)
+	deps := &PainterDeps{Reveal: rev, CardCfg: cfg, CursorAlpha: cursorAlpha(elapsed), Images: r.images, Icons: r.icons}
+	drawCards(dc, th, l, deps, cw, ch)
 
 	dc.Pop()
 }
@@ -291,16 +303,24 @@ func drawSearchField(dc *gg.Context, th *theme.Theme, l View, cfg config.Reveal,
 	dc.SetColor(th.Muted)
 	count := itoa(len(l.Results()))
 	dc.DrawString(count, fieldX+fieldW-countFace.Advance(count), midY+4)
+
+	// Busy strip: an accent bar under the field while a query is in flight.
+	if l.Searching() {
+		stripW := math.Min(300, fieldW/4)
+		dc.SetColor(th.Accent)
+		dc.DrawRoundedRectangle(fieldX+(fieldW-stripW)/2, fieldTop+cfg.SearchHeightPx+4, stripW, 3, 1.5)
+		_ = dc.Fill()
+	}
 }
 
 // drawCards lays the reel across the band content.
-func drawCards(dc *gg.Context, th *theme.Theme, l View, rev Reveal, cfg config.Reveal, cw, ch float64) {
-	cardTop := cfg.ContentPaddingPx + cfg.SearchHeightPx + 8
-	cardH := ch - cardTop - cfg.ContentPaddingPx
+func drawCards(dc *gg.Context, th *theme.Theme, l View, deps *PainterDeps, cw, ch float64) {
+	cardTop := deps.CardCfg.ContentPaddingPx + deps.CardCfg.SearchHeightPx + 8
+	cardH := ch - cardTop - deps.CardCfg.ContentPaddingPx
 	if cardH <= 0 {
 		return
 	}
-	cardW := math.Min(cfg.CardWidthMaxPx, cw/3)
+	cardW := math.Min(deps.CardCfg.CardWidthMaxPx, cw/3)
 	results := l.Results()
 	selected := l.Selected()
 
@@ -319,7 +339,7 @@ func drawCards(dc *gg.Context, th *theme.Theme, l View, rev Reveal, cfg config.R
 
 	x := 0.0
 	for i := first; i < len(results) && i < first+visible; i++ {
-		drawCard(dc, th, rev, cfg, x, cardTop, cardW, cardH, card.Compose(results[i].Item), i == selected)
+		drawCard(dc, th, deps, x, cardTop, cardW, cardH, card.Compose(results[i].Item), i == selected)
 		x += cardW + 8
 	}
 }
@@ -327,7 +347,8 @@ func drawCards(dc *gg.Context, th *theme.Theme, l View, rev Reveal, cfg config.R
 // drawCard reproduces the QML Card: a sheared slab (or accent when selected)
 // with a 3px border, a cyan offset shadow behind unselected cards, and the
 // composed plan painted in an axis-aligned content box inset past the shear.
-func drawCard(dc *gg.Context, th *theme.Theme, rev Reveal, cfg config.Reveal, x, y, w, h float64, p card.Plan, selected bool) {
+func drawCard(dc *gg.Context, th *theme.Theme, deps *PainterDeps, x, y, w, h float64, p card.Plan, selected bool) {
+	rev := deps.Reveal
 	if !selected {
 		shadow := th.AccentAlt
 		shadow.A = 0.7
@@ -343,7 +364,7 @@ func drawCard(dc *gg.Context, th *theme.Theme, rev Reveal, cfg config.Reveal, x,
 	cardQuad(dc, rev, x, y, w, h, fill, border, 3)
 
 	inset := math.Ceil(math.Abs(rev.Shear)*h/2) + 4 + 10
-	drawCardContent(dc, th, p, selected, x+inset, y+10, w-2*inset, h-20)
+	drawCardContent(dc, th, p, selected, x+inset, y+10, w-2*inset, h-20, deps)
 }
 
 // cardQuad fills and strokes a parallelogram matching the QML shear matrix:

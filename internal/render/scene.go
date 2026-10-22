@@ -173,13 +173,14 @@ func (sr *SceneRenderer) state(l View, th *theme.Theme, rev Reveal, cfg config.R
 		mode = "SEARCH"
 	}
 	return eval.State{
-		Name:     "keyshell",
-		Open:     l.IsOpen(),
-		Focused:  true,
-		Query:    l.Query(),
-		Mode:     mode,
-		Selected: l.Selected(),
-		Results:  items,
+		Name:      "keyshell",
+		Open:      l.IsOpen(),
+		Focused:   true,
+		Query:     l.Query(),
+		Mode:      mode,
+		Selected:  l.Selected(),
+		Results:   items,
+		Searching: l.Searching(),
 		Reveal: eval.Reveal{
 			Y: rev.Yc, H: minF(rev.HLeft, rev.HRight),
 			HLeft: rev.HLeft, HRight: rev.HRight,
@@ -272,7 +273,7 @@ func (sr *SceneRenderer) DrawFrame(dc *gg.Context, l View, th *theme.Theme, cfg 
 	sr.applyAnimations(frame.Root, now, scene)
 	sr.clock.Tick(now, map[string]bool{"open": st.Open, "closed": !st.Open, "selected": st.Selected >= 0})
 	sr.applyTransitions(scene, frame.Root, now, prev)
-	deps := &PainterDeps{Reveal: rev, CardCfg: cfg, CursorAlpha: cursorAlpha(elapsed)}
+	deps := &PainterDeps{Reveal: rev, CardCfg: cfg, CursorAlpha: cursorAlpha(elapsed), Images: sr.inner.images, Icons: sr.inner.icons}
 	painterFor("Window")(dc, th, frame.Root, deps)
 }
 

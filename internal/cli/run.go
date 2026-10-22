@@ -66,11 +66,29 @@ func runHost(args []string) int {
 	}
 
 	provider := buildProvider(cfg)
-	telemetry.PluginCountFunc = provider.(*hybridProvider).ActiveCount
-	provider.(*hybridProvider).HotStart(cfg)
+	telemetry.PluginCountFunc = provider.ActiveCount
+	provider.HotStart(cfg)
 	l := newLauncher(cfg, provider)
 	l.Start()
-	_ = capability.New(cfg)
+	provider.Warm(newLauncherOptions(cfg).Searchable...)
+
+	// The launcher queues host actions on Enter; the capability broker
+	// performs them. Drain on every change so activation works in the GUI
+	// the same way it does in the TUI.
+	broker := capability.New(cfg)
+	l.OnChange(func() {
+		for {
+			a, ok := l.TakeAction()
+			if !ok {
+				return
+			}
+			go func() {
+				if err := broker.Execute(a); err != nil {
+					slog.Warn("action failed", "type", a.Type, "value", a.Value, "err", err)
+				}
+			}()
+		}
+	})
 
 	screenW, screenH := display.Primary()
 	if screenW <= 0 || screenH <= 0 {

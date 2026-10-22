@@ -7,6 +7,35 @@ import (
 	"testing"
 )
 
+// TestCommandsReadFromToml proves the [commands] table configures the host
+// actions instead of the built-in executables.
+func TestCommandsReadFromToml(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	toml := `
+[commands]
+copy = ["wl-copy", "--type", "text/plain"]
+open_url = ["firefox", "--new-window"]
+focus_window = ["swaymsg", "[con_id={id}]", "focus"]
+`
+	if err := os.WriteFile(path, []byte(toml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load = err %v", err)
+	}
+	if !reflect.DeepEqual(cfg.Commands.Copy, []string{"wl-copy", "--type", "text/plain"}) {
+		t.Errorf("Commands.Copy = %v", cfg.Commands.Copy)
+	}
+	if !reflect.DeepEqual(cfg.Commands.OpenURL, []string{"firefox", "--new-window"}) {
+		t.Errorf("Commands.OpenURL = %v", cfg.Commands.OpenURL)
+	}
+	if !reflect.DeepEqual(cfg.Commands.FocusWindow, []string{"swaymsg", "[con_id={id}]", "focus"}) {
+		t.Errorf("Commands.FocusWindow = %v", cfg.Commands.FocusWindow)
+	}
+}
+
 // TestDefaultsAreReturnedWhenFileMissing covers the documented behaviour: a
 // missing config file is not an error, it yields defaults.
 func TestDefaultsAreReturnedWhenFileMissing(t *testing.T) {

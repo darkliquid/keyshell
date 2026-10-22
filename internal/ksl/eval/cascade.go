@@ -131,6 +131,8 @@ func stateActive(name string, env *Env) bool {
 		return !env.st.Open
 	case "focused":
 		return env.st.Focused
+	case "searching":
+		return env.st.Searching
 	case "selected":
 		return env.st.Selected >= 0 && env.st.Selected < len(env.st.Results)
 	}

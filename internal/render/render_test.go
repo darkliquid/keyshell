@@ -3,11 +3,16 @@ package render
 import (
 	"image"
 	"image/color"
+	"image/png"
 	"math"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/darkliquid/keyshell/internal/backend"
 	"github.com/darkliquid/keyshell/internal/config"
+	"github.com/darkliquid/keyshell/internal/icons"
 	"github.com/darkliquid/keyshell/internal/rank"
 	"github.com/darkliquid/keyshell/internal/theme"
 	"github.com/gogpu/gg"
@@ -45,11 +50,12 @@ func TestDrawFrameProducesImage(t *testing.T) {
 }
 
 type fakeView struct {
-	open     bool
-	results  []rank.Match
-	query    string
-	mode     string
-	selected int
+	open      bool
+	results   []rank.Match
+	query     string
+	mode      string
+	selected  int
+	searching bool
 }
 
 func (v *fakeView) Results() []rank.Match {
@@ -72,11 +78,106 @@ func (v *fakeView) Query() string {
 	return ""
 }
 func (v *fakeView) IsOpen() bool { return v.open }
+func (v *fakeView) Searching() bool {
+	return v.searching
+}
 func (v *fakeView) ModeBadge() string {
 	if v.mode != "" {
 		return v.mode
 	}
 	return "SEARCH"
+}
+
+// TestDrawFrameSearchingIndicator proves an in-flight query paints the busy
+// strip: pixels just under the search row differ between an idle and a
+// searching frame.
+func TestDrawFrameSearchingIndicator(t *testing.T) {
+	th, err := theme.Load()
+	if err != nil {
+		t.Fatalf("theme.Load = err %v", err)
+	}
+	defer th.Close()
+
+	results := []rank.Match{{Item: backend.Item{Title: "Ghostty", Subtitle: "Terminal"}}}
+	draw := func(searching bool) *image.RGBA {
+		view := &fakeView{open: true, query: "fire", mode: "apps", results: results, searching: searching}
+		dc := gg.NewContext(1600, 900)
+		New().DrawFrame(dc, view, th, config.Default().Reveal)
+		return dc.Image().(*image.RGBA)
+	}
+	idle, busy := draw(false), draw(true)
+
+	// The strip is a 300x4 accent bar centred in the content frame just below
+	// the search row; scan a window around its surface position and require
+	// a solid block of changed pixels, so the blinking cursor (72px, outside
+	// the window) cannot satisfy this.
+	diff := 0
+	for y := 360; y <= 410; y++ {
+		for x := 640; x <= 960; x++ {
+			if idle.RGBAAt(x, y) != busy.RGBAAt(x, y) {
+				diff++
+			}
+		}
+	}
+	if diff < 100 {
+		t.Errorf("strip region diff = %d pixels, want >= 100 (searching indicator missing)", diff)
+	}
+}
+
+// TestDrawFramePaintsResolvedIcon proves a card icon name resolves through
+// the theme resolver and the decoded image reaches the card once the async
+// decode lands.
+func TestDrawFramePaintsResolvedIcon(t *testing.T) {
+	th, err := theme.Load()
+	if err != nil {
+		t.Fatalf("theme.Load = err %v", err)
+	}
+	defer th.Close()
+
+	// A one-theme tree with a pure-red 48px icon.
+	root := t.TempDir()
+	dir := filepath.Join(root, "icons", "themeA", "48x48", "apps")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "icons", "themeA", "index.theme"),
+		[]byte("[Icon Theme]\nName=themeA\nDirectories=48x48/apps\n\n[48x48/apps]\nSize=48\nType=Fixed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	img := image.NewRGBA(image.Rect(0, 0, 48, 48))
+	for y := range 48 {
+		for x := range 48 {
+			img.SetRGBA(x, y, color.RGBA{R: 255, A: 255})
+		}
+	}
+	f, err := os.Create(filepath.Join(dir, "firefox.png"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := png.Encode(f, img); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+
+	r := New()
+	r.icons = icons.NewResolver("themeA", filepath.Join(root, "icons"))
+
+	view := &fakeView{open: true, results: []rank.Match{
+		{Item: backend.Item{Title: "Firefox", Icon: "firefox"}},
+	}}
+	dc := gg.NewContext(1600, 900)
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		r.DrawFrame(dc, view, th, config.Default().Reveal)
+		out := dc.Image().(*image.RGBA)
+		if containsColor(out, 0xFF, 0, 0) {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the resolved icon never reached the card")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 func closeTo(img *image.RGBA, x, y int, r, g, b uint8) bool {

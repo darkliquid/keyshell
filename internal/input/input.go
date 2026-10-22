@@ -5,6 +5,7 @@ package input
 
 import (
 	"context"
+	"log/slog"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -50,17 +51,25 @@ func (a *Adapter) onKeyPress(key gpucontext.Key, _ gpucontext.Modifiers) {
 
 	switch key {
 	case gpucontext.KeyEscape:
+		slog.Debug("input key", "key", key, "action", "escape")
 		a.l.Escape()
 	case gpucontext.KeyEnter:
+		slog.Debug("input key", "key", key, "action", "enter")
 		a.l.Enter()
 	case gpucontext.KeyBackspace:
+		slog.Debug("input key", "key", key, "action", "backspace")
 		a.setQuery(ctx, trimLast(a.l.Query()))
 	case gpucontext.KeyTab:
+		slog.Debug("input key", "key", key, "action", "tab")
 		// mode cycling is wired by the host; launcher just changes mode
 	case gpucontext.KeyLeft:
+		slog.Debug("input key", "key", key, "action", "select", "delta", -1)
 		a.l.Select(-1)
 	case gpucontext.KeyRight:
+		slog.Debug("input key", "key", key, "action", "select", "delta", 1)
 		a.l.Select(1)
+	default:
+		slog.Debug("input key", "key", key, "action", "unhandled")
 	}
 }
 
@@ -70,6 +79,8 @@ func (a *Adapter) onTextInput(text string) {
 	defer span.End()
 	telemetry.InputEvents().Add(ctx, 1,
 		metric.WithAttributes(attribute.String(telemetry.Attrs.Kind, "text")))
+	// Log the length, not the text: a query can hold sensitive input.
+	slog.Debug("input text", "chars", len(text))
 	a.setQuery(ctx, a.l.Query()+text)
 }
 
@@ -96,6 +107,7 @@ func (a *Adapter) OnPress(fn func(x, y float64)) {
 }
 
 func (a *Adapter) onMousePress(button gpucontext.MouseButton, x, y float64) {
+	slog.Debug("input pointer", "button", button, "x", x, "y", y)
 	if button != gpucontext.MouseButtonLeft || a.onPress == nil {
 		return
 	}

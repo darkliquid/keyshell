@@ -56,9 +56,10 @@ func runTUI(args []string) int {
 	}
 
 	provider := buildProvider(cfg)
-	provider.(*hybridProvider).HotStart(cfg)
+	provider.HotStart(cfg)
 	l := launcher.New(provider, newLauncherOptions(cfg))
 	l.Start()
+	provider.Warm(newLauncherOptions(cfg).Searchable...)
 
 	st := &tuiState{
 		l:        l,

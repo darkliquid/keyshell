@@ -5,6 +5,7 @@ package apps
 
 import (
 	"context"
+	"strings"
 
 	"github.com/darkliquid/keyshell/internal/backend"
 	"github.com/darkliquid/keyshell/internal/config"
@@ -121,15 +122,27 @@ func toLower(s string) string {
 	return string(b)
 }
 
-// joinPlaceholder joins argv back into a single string for the action value.
-// The action model stores one string; the capability broker splits it.
+// joinPlaceholder flattens argv into the single string the action model
+// carries, quoting arguments so the capability broker's word split restores
+// the original boundaries.
 func joinPlaceholder(argv []string) string {
-	out := ""
-	for i, a := range argv {
-		if i > 0 {
-			out += " "
-		}
-		out += a
+	parts := make([]string, 0, len(argv))
+	for _, a := range argv {
+		parts = append(parts, shellQuote(a))
 	}
-	return out
+	return strings.Join(parts, " ")
+}
+
+// shellQuote returns the argument verbatim unless it needs quoting to survive
+// a word split: empty, or containing whitespace, quotes or backslashes.
+func shellQuote(arg string) string {
+	if arg == "" {
+		return `""`
+	}
+	if !strings.ContainsAny(arg, " \t\n'\"") && !strings.Contains(arg, "\\") {
+		return arg
+	}
+	escaped := strings.ReplaceAll(arg, "\\", "\\\\")
+	escaped = strings.ReplaceAll(escaped, "\"", "\\\"")
+	return "\"" + escaped + "\""
 }

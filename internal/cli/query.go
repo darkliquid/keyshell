@@ -97,7 +97,7 @@ func queryOneShot(mode, text string, limit int, timeout time.Duration, configPat
 		mode = launcher.MergedMode
 	}
 	provider := buildProvider(cfg)
-	provider.(*hybridProvider).HotStart(cfg)
+	provider.HotStart(cfg)
 	l := launcher.New(provider, newLauncherOptions(cfg))
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()

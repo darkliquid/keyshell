@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/darkliquid/keyshell/internal/backend"
 	"github.com/darkliquid/keyshell/internal/rank"
 )
@@ -48,6 +50,10 @@ type Launcher struct {
 	levels  []*Level
 	results []rank.Match
 	gen     uint64
+
+	// lastQuerySC carries the trace context of the most recently published
+	// query, so the frame that paints the results can join the same trace.
+	lastQuerySC trace.SpanContext
 
 	// change subscriptions
 	listeners []func()
@@ -193,6 +199,19 @@ func (l *Launcher) SetQueryInput(text string) {
 	l.query = text
 	l.mu.Unlock()
 	l.changed()
+}
+
+// SetQueryContext updates the query and starts a search whose trace joins the
+// given context, letting an input event carry its trace through to the query
+// and the plugin that answers it.
+func (l *Launcher) SetQueryContext(ctx context.Context, text string) {
+	l.mu.Lock()
+	l.query = text
+	job := l.jobLocked()
+	job.ctx = ctx
+	l.mu.Unlock()
+	l.changed()
+	l.submit(job)
 }
 
 // Results returns the current ranked results.

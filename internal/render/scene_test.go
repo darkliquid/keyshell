@@ -15,7 +15,7 @@ import (
 )
 
 func TestLoadSceneDefault(t *testing.T) {
-	s, err := loadScene(config.Default())
+	s, err := LoadScene(config.Default())
 	if err != nil {
 		t.Fatalf("default scene: %v", err)
 	}
@@ -32,7 +32,7 @@ func TestLoadSceneOverride(t *testing.T) {
 	}
 	cfg := config.Default()
 	cfg.UI.Scene = path
-	s, err := loadScene(cfg)
+	s, err := LoadScene(cfg)
 	if err != nil {
 		t.Fatalf("override: %v", err)
 	}
@@ -41,34 +41,29 @@ func TestLoadSceneOverride(t *testing.T) {
 	}
 }
 
-func TestLoadSceneFallbackOnError(t *testing.T) {
+func TestLoadSceneReportsBrokenOverride(t *testing.T) {
 	dir := t.TempDir()
 	path := dir + "/ui.ksl"
 	os.WriteFile(path, []byte("Window { Box { fill"), 0o644) // broken
 	cfg := config.Default()
 	cfg.UI.Scene = path
-	s, err := loadScene(cfg)
-	if err != nil {
-		t.Fatalf("broken override must not fail: %v", err)
-	}
-	if len(s.Nodes()) != 1 || s.Nodes()[0].Name != "Window" {
-		t.Fatalf("fallback root = %+v", s)
+	if _, err := LoadScene(cfg); err == nil {
+		t.Fatal("broken override must return an error, so a live edit can keep the previous scene")
 	}
 }
 
-func TestLoadSceneRejectsUnknownNodes(t *testing.T) {
+func TestNewSceneRendererFallsBackToDefault(t *testing.T) {
 	dir := t.TempDir()
 	path := dir + "/ui.ksl"
 	os.WriteFile(path, []byte("Window { Gizmo { } }"), 0o644)
 	cfg := config.Default()
 	cfg.UI.Scene = path
-	s, err := loadScene(cfg)
-	if err != nil {
-		t.Fatalf("invalid override must fall back, not fail: %v", err)
-	}
-	// fallback is the default scene, so no Gizmo
-	if len(s.Nodes()[0].Children) == 0 || s.Nodes()[0].Children[0].Name == "Gizmo" {
-		t.Errorf("invalid scene was accepted")
+	// A broken user scene must not stop the overlay from opening: the
+	// renderer falls back to the embedded default.
+	r := NewConfigured(cfg)
+	sr := r.scene
+	if sr == nil || len(sr.scene.Nodes()) != 1 || sr.scene.Nodes()[0].Name != "Window" {
+		t.Fatalf("fallback root = %+v", sr.scene)
 	}
 }
 
@@ -142,7 +137,7 @@ func TestSelectionTransitionTweensFill(t *testing.T) {
 	// previous frame had slab fill
 	sr.prevProps["/Window/Row/Box#card"] = map[string]eval.Value{"fill": eval.Color{R: 0x0B, G: 0x0B, B: 0x0F, A: 0xFF}}
 
-	sr.applyTransitions(f, edge.Add(100*time.Millisecond))
+	sr.applyTransitions(sr.scene, f, edge.Add(100*time.Millisecond), sr.prevProps)
 	got := f.Children[0].Children[0].Props["fill"].(eval.Color)
 	if got == (eval.Color{R: 0x0B, G: 0x0B, B: 0x0F, A: 0xFF}) || got == (eval.Color{R: 0xFF, G: 0x2E, B: 0x63, A: 0xFF}) {
 		t.Errorf("mid-transition fill = %v, want between slab and accent", got)

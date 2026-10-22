@@ -6,6 +6,7 @@
 package render
 
 import (
+	"context"
 	"image"
 	"math"
 	"math/rand"
@@ -13,9 +14,13 @@ import (
 	"sync"
 	"time"
 
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/darkliquid/keyshell/internal/card"
 	"github.com/darkliquid/keyshell/internal/config"
+	"github.com/darkliquid/keyshell/internal/ksl"
 	"github.com/darkliquid/keyshell/internal/rank"
+	"github.com/darkliquid/keyshell/internal/telemetry"
 	"github.com/darkliquid/keyshell/internal/theme"
 	"github.com/gogpu/gg"
 )
@@ -58,12 +63,34 @@ func NewConfigured(cfg config.Config) *Renderer {
 }
 
 // DrawFrame paints the current launcher state at the given surface size.
+// The frame span joins the trace of the query whose results are on screen,
+// so input, plugin work and the paint that shows them form one trace.
 func (r *Renderer) DrawFrame(dc *gg.Context, l View, th *theme.Theme, cfg config.Reveal) {
+	ctx := context.Background()
+	opts := []trace.SpanStartOption{}
+	if q, ok := l.(interface{ LastQuerySpanContext() trace.SpanContext }); ok {
+		if sc := q.LastQuerySpanContext(); sc.IsValid() {
+			opts = append(opts, trace.WithLinks(trace.Link{SpanContext: sc}))
+		}
+	}
+	ctx, span := telemetry.StartSpan(ctx, "keyshell.render.frame", opts...)
+
+	start := time.Now()
 	if r.scene != nil {
 		r.scene.DrawFrame(dc, l, th, cfg)
-		return
+	} else {
+		legacyDrawFrame(r, dc, l, th, cfg)
 	}
-	legacyDrawFrame(r, dc, l, th, cfg)
+	telemetry.FrameDuration().Record(ctx, time.Since(start).Seconds())
+	span.End()
+}
+
+// SetScene hot-swaps the scene future frames render. The scene watcher and
+// the IPC reload verb call it.
+func (r *Renderer) SetScene(s *ksl.Scene) {
+	if r.scene != nil {
+		r.scene.SetScene(s)
+	}
 }
 
 // legacyDrawFrame is the pre-scene implementation, kept as the fallback

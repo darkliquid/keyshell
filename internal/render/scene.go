@@ -1,11 +1,14 @@
 package render
 
 import (
+	"context"
 	_ "embed"
 	"fmt"
+	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/darkliquid/keyshell/internal/anim"
@@ -14,6 +17,7 @@ import (
 	"github.com/darkliquid/keyshell/internal/config"
 	"github.com/darkliquid/keyshell/internal/ksl"
 	"github.com/darkliquid/keyshell/internal/ksl/eval"
+	"github.com/darkliquid/keyshell/internal/telemetry"
 	"github.com/darkliquid/keyshell/internal/theme"
 	"github.com/gogpu/gg"
 )
@@ -21,28 +25,20 @@ import (
 //go:embed default.ksl
 var defaultScene string
 
-// loadScene reads the configured scene, falling back to the embedded
-// default on any error. The default ships with the binary, so a broken
-// user scene never keeps the overlay from opening.
-func loadScene(cfg config.Config) (*ksl.Scene, error) {
+// LoadScene reads and parses the configured scene file, or the embedded
+// default when none is set. It returns an error instead of falling back, so
+// hot reloads can report failures and keep the previous scene; startup
+// callers decide their own fallback.
+func LoadScene(cfg config.Config) (*ksl.Scene, error) {
 	name, src := "default.ksl", []byte(defaultScene)
 	if cfg.UI.Scene != "" {
 		b, err := os.ReadFile(cfg.UI.Scene)
-		if err == nil {
-			name, src = cfg.UI.Scene, b
-		} else {
-			fmt.Fprintf(os.Stderr, "ksl: read %s: %v (using default scene)\n", cfg.UI.Scene, err)
+		if err != nil {
+			return nil, fmt.Errorf("read %s: %w", cfg.UI.Scene, err)
 		}
+		name, src = cfg.UI.Scene, b
 	}
-	s, err := parseScene(name, src, loaderFor(name, cfg))
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "ksl: %v (using default scene)\n", err)
-		s, err = parseScene("default.ksl", []byte(defaultScene), nil)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("embedded default scene: %w", err)
-	}
-	return s, nil
+	return parseScene(name, src, loaderFor(name, cfg))
 }
 
 func parseScene(name string, src []byte, load ksl.Loader) (*ksl.Scene, error) {
@@ -111,10 +107,12 @@ func (m themeMeasurer) TextSize(text string, size float64, _ string) (float64, f
 	return face.Advance(text), face.Metrics().LineHeight()
 }
 
-// SceneRenderer drives the frame from a resolved scene.
+// SceneRenderer drives the frame from a resolved scene. The scene can be
+// swapped live when the file changes on disk.
 type SceneRenderer struct {
 	inner       *Renderer
 	scene       *ksl.Scene
+	sceneMu     sync.Mutex
 	summonEpoch int
 	seed        uint64
 	randCache   *eval.RandCache
@@ -125,16 +123,38 @@ type SceneRenderer struct {
 
 // NewSceneRenderer builds a renderer for the configured scene.
 func NewSceneRenderer(r *Renderer, cfg config.Config) *SceneRenderer {
-	s, err := loadScene(cfg)
+	s, err := LoadScene(cfg)
 	if err != nil {
-		panic(err) // the embedded default is a build-time invariant
+		// A broken user scene must never keep the overlay from opening:
+		// fall back to the embedded default.
+		slog.Warn("ksl: falling back to the embedded default scene", "err", err)
+		s, err = parseScene("default.ksl", []byte(defaultScene), nil)
+		if err != nil {
+			panic(err) // the embedded default is a build-time invariant
+		}
 	}
 	return &SceneRenderer{inner: r, scene: s, seed: 1, randCache: &eval.RandCache{}, clock: anim.NewClock(time.Now()), prevProps: map[string]map[string]eval.Value{}}
 }
 
-// state assembles the binding snapshot for one frame. The reveal quad
-// and the search geometry come from the host's resampled Reveal; the
-// default scene binds to them.
+// SetScene swaps the scene for every subsequent frame. Live scene editing
+// calls this from the watcher; in-flight animation state is reset because
+// node identities may have changed.
+func (sr *SceneRenderer) SetScene(s *ksl.Scene) {
+	sr.sceneMu.Lock()
+	sr.scene = s
+	sr.randCache = &eval.RandCache{}
+	sr.prevProps = map[string]map[string]eval.Value{}
+	sr.sceneMu.Unlock()
+}
+
+// snapshot returns the scene and the previous-props map the frame pass
+// works on. A SetScene during the frame swaps in a fresh pair, so the
+// frame keeps a consistent snapshot.
+func (sr *SceneRenderer) snapshot() (*ksl.Scene, map[string]map[string]eval.Value) {
+	sr.sceneMu.Lock()
+	defer sr.sceneMu.Unlock()
+	return sr.scene, sr.prevProps
+}
 func (sr *SceneRenderer) state(l View, th *theme.Theme, rev Reveal, cfg config.Reveal) eval.State {
 	results := l.Results()
 	items := make([]eval.Item, len(results))
@@ -237,17 +257,21 @@ func (sr *SceneRenderer) DrawFrame(dc *gg.Context, l View, th *theme.Theme, cfg 
 	elapsed := time.Since(sr.inner.opened)
 	sr.inner.mu.Unlock()
 
+	scene, prev := sr.snapshot()
+
 	dc.ClearWithColor(gg.RGBA{})
 	now := time.Now()
 	st := sr.state(l, th, rev, cfg)
-	frame, err := eval.Resolve(sr.scene, st, eval.WithMeasurer(themeMeasurer{th}))
+	resolveStart := time.Now()
+	frame, err := eval.Resolve(scene, st, eval.WithMeasurer(themeMeasurer{th}))
+	telemetry.ResolveDuration().Record(context.Background(), time.Since(resolveStart).Seconds())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "ksl: frame resolve: %v\n", err)
 		return
 	}
-	sr.applyAnimations(frame.Root, now)
+	sr.applyAnimations(frame.Root, now, scene)
 	sr.clock.Tick(now, map[string]bool{"open": st.Open, "closed": !st.Open, "selected": st.Selected >= 0})
-	sr.applyTransitions(frame.Root, now)
+	sr.applyTransitions(scene, frame.Root, now, prev)
 	deps := &PainterDeps{Reveal: rev, CardCfg: cfg, CursorAlpha: cursorAlpha(elapsed)}
 	painterFor("Window")(dc, th, frame.Root, deps)
 }
@@ -255,10 +279,10 @@ func (sr *SceneRenderer) DrawFrame(dc *gg.Context, l View, th *theme.Theme, cfg 
 // applyAnimations walks the resolved frame and samples any `animation`
 // prop against the scene's keyframes at the given time, overlaying the
 // sampled values on the node's props.
-func (sr *SceneRenderer) applyAnimations(n *eval.ResolvedNode, now time.Time) {
+func (sr *SceneRenderer) applyAnimations(n *eval.ResolvedNode, now time.Time, scene *ksl.Scene) {
 	if av, ok := n.Props["animation"].(eval.AnimVal); ok {
 		for _, step := range av.A.Steps {
-			kf := sr.keyframes(step.Name)
+			kf := sr.keyframes(step.Name, scene)
 			if kf == nil {
 				continue
 			}
@@ -270,12 +294,12 @@ func (sr *SceneRenderer) applyAnimations(n *eval.ResolvedNode, now time.Time) {
 		}
 	}
 	for _, c := range n.Children {
-		sr.applyAnimations(c, now)
+		sr.applyAnimations(c, now, scene)
 	}
 }
 
-func (sr *SceneRenderer) keyframes(name string) *ksl.Keyframes {
-	for _, kf := range sr.scene.Keyframes() {
+func (sr *SceneRenderer) keyframes(name string, scene *ksl.Scene) *ksl.Keyframes {
+	for _, kf := range scene.Keyframes() {
 		if kf.Name == name {
 			return kf
 		}
@@ -293,27 +317,27 @@ func (sr *SceneRenderer) openTime() time.Time {
 // state edge. Each node's props are compared to the previous frame; a
 // transition covering the flipped state and the property interpolates
 // from the old value toward the new one.
-func (sr *SceneRenderer) applyTransitions(root *eval.ResolvedNode, now time.Time) {
+func (sr *SceneRenderer) applyTransitions(scene *ksl.Scene, root *eval.ResolvedNode, now time.Time, prev map[string]map[string]eval.Value) {
 	// collect states whose edge just fired
 	fresh := map[string]bool{}
-	for _, tr := range sr.scene.Transitions() {
+	for _, tr := range scene.Transitions() {
 		if edge, ok := sr.clock.Edge(tr.State); ok && edge.After(now.Add(-time.Second)) {
 			fresh[tr.State] = true
 		}
 	}
 	if len(fresh) == 0 {
-		sr.snapshotProps(root, "")
+		sr.snapshotProps(root, "", prev)
 		return
 	}
-	for _, tr := range sr.scene.Transitions() {
+	for _, tr := range scene.Transitions() {
 		if !fresh[tr.State] {
 			continue
 		}
 		edge, _ := sr.clock.Edge(tr.State)
 		elapsed := now.Sub(edge)
-		sr.tweenTree(root, tr, elapsed, "")
+		sr.tweenTree(root, tr, elapsed, "", prev)
 	}
-	sr.snapshotProps(root, "")
+	sr.snapshotProps(root, "", prev)
 }
 
 func nodeKey(n *eval.ResolvedNode, path string) string {
@@ -324,9 +348,9 @@ func nodeKey(n *eval.ResolvedNode, path string) string {
 	return path + "/" + n.Name + id
 }
 
-func (sr *SceneRenderer) tweenTree(n *eval.ResolvedNode, tr *ksl.Transition, elapsed time.Duration, path string) {
+func (sr *SceneRenderer) tweenTree(n *eval.ResolvedNode, tr *ksl.Transition, elapsed time.Duration, path string, prevProps map[string]map[string]eval.Value) {
 	key := nodeKey(n, path)
-	prev := sr.prevProps[key]
+	prev := prevProps[key]
 	if prev != nil {
 		for k, tv := range n.Props {
 			fv, ok := prev[k]
@@ -351,19 +375,19 @@ func (sr *SceneRenderer) tweenTree(n *eval.ResolvedNode, tr *ksl.Transition, ela
 		}
 	}
 	for _, c := range n.Children {
-		sr.tweenTree(c, tr, elapsed, key)
+		sr.tweenTree(c, tr, elapsed, key, prevProps)
 	}
 }
 
-func (sr *SceneRenderer) snapshotProps(n *eval.ResolvedNode, path string) {
+func (sr *SceneRenderer) snapshotProps(n *eval.ResolvedNode, path string, prevProps map[string]map[string]eval.Value) {
 	key := nodeKey(n, path)
 	m := make(map[string]eval.Value, len(n.Props))
 	for k, v := range n.Props {
 		m[k] = v
 	}
-	sr.prevProps[key] = m
+	prevProps[key] = m
 	for _, c := range n.Children {
-		sr.snapshotProps(c, key)
+		sr.snapshotProps(c, key, prevProps)
 	}
 }
 

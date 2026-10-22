@@ -266,3 +266,24 @@ func TestPollWithoutWorkerIsANoOp(t *testing.T) {
 		t.Errorf("results = %v, want none", got)
 	}
 }
+
+// TestQuerySyncLeavesStateAlone proves the ad-hoc query path ranks results
+// without touching launcher state.
+func TestQuerySyncLeavesStateAlone(t *testing.T) {
+	l, _ := newTestLauncher()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	matches, err := l.QuerySync(ctx, "apps", "ghost", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 || matches[0].Item.Title != "Ghostty" || matches[0].Source != "apps" {
+		t.Fatalf("matches = %+v, want Ghostty from apps", matches)
+	}
+	if l.Query() != "" || l.IsOpen() {
+		t.Error("QuerySync mutated launcher state")
+	}
+	if _, err := l.QuerySync(ctx, "nope", "x", 10); err == nil {
+		t.Error("unknown backend must error")
+	}
+}

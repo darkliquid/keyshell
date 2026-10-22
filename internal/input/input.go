@@ -4,9 +4,15 @@
 package input
 
 import (
+	"context"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/darkliquid/keyshell/internal/launcher"
+	"github.com/darkliquid/keyshell/internal/telemetry"
 	"github.com/gogpu/gpucontext"
 )
 
@@ -35,13 +41,20 @@ func New(l *launcher.Launcher, events gpucontext.EventSource) *Adapter {
 }
 
 func (a *Adapter) onKeyPress(key gpucontext.Key, _ gpucontext.Modifiers) {
+	ctx, span := telemetry.StartSpan(context.Background(), "keyshell.input.key",
+		trace.WithAttributes(attribute.String(telemetry.Attrs.Kind, "key"),
+			attribute.String("keyshell.key", key.String())))
+	defer span.End()
+	telemetry.InputEvents().Add(ctx, 1,
+		metric.WithAttributes(attribute.String(telemetry.Attrs.Kind, "key")))
+
 	switch key {
 	case gpucontext.KeyEscape:
 		a.l.Escape()
 	case gpucontext.KeyEnter:
 		a.l.Enter()
 	case gpucontext.KeyBackspace:
-		a.setQuery(trimLast(a.l.Query()))
+		a.setQuery(ctx, trimLast(a.l.Query()))
 	case gpucontext.KeyTab:
 		// mode cycling is wired by the host; launcher just changes mode
 	case gpucontext.KeyLeft:
@@ -52,16 +65,29 @@ func (a *Adapter) onKeyPress(key gpucontext.Key, _ gpucontext.Modifiers) {
 }
 
 func (a *Adapter) onTextInput(text string) {
-	a.setQuery(a.l.Query() + text)
+	ctx, span := telemetry.StartSpan(context.Background(), "keyshell.input.text",
+		trace.WithAttributes(attribute.String(telemetry.Attrs.Kind, "text")))
+	defer span.End()
+	telemetry.InputEvents().Add(ctx, 1,
+		metric.WithAttributes(attribute.String(telemetry.Attrs.Kind, "text")))
+	a.setQuery(ctx, a.l.Query()+text)
 }
 
-// setQuery shows the text now and searches once typing pauses.
-func (a *Adapter) setQuery(text string) {
+// setQuery shows the text now and searches once typing pauses. The event's
+// trace context rides along, so the query span it triggers is a child of the
+// keystroke span.
+func (a *Adapter) setQuery(ctx context.Context, text string) {
 	a.l.SetQueryInput(text)
 	if a.searchTimer != nil {
 		a.searchTimer.Stop()
 	}
-	a.searchTimer = time.AfterFunc(searchSettle, func() { a.l.SetQuery(text) })
+	a.searchTimer = time.AfterFunc(searchSettle, func() {
+		if ctx != nil {
+			a.l.SetQueryContext(ctx, text)
+			return
+		}
+		a.l.SetQuery(text)
+	})
 }
 
 // OnPress registers a callback for pointer presses in surface coordinates.

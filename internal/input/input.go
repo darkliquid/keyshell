@@ -41,13 +41,18 @@ func New(l *launcher.Launcher, events gpucontext.EventSource) *Adapter {
 	return a
 }
 
-func (a *Adapter) onKeyPress(key gpucontext.Key, _ gpucontext.Modifiers) {
+func (a *Adapter) onKeyPress(key gpucontext.Key, mods gpucontext.Modifiers) {
 	ctx, span := telemetry.StartSpan(context.Background(), "keyshell.input.key",
 		trace.WithAttributes(attribute.String(telemetry.Attrs.Kind, "key"),
 			attribute.String("keyshell.key", key.String())))
 	defer span.End()
 	telemetry.InputEvents().Add(ctx, 1,
 		metric.WithAttributes(attribute.String(telemetry.Attrs.Kind, "key")))
+
+	if a.l.PanelOpen() {
+		a.panelKey(key, mods)
+		return
+	}
 
 	switch key {
 	case gpucontext.KeyEscape:
@@ -62,14 +67,42 @@ func (a *Adapter) onKeyPress(key gpucontext.Key, _ gpucontext.Modifiers) {
 	case gpucontext.KeyTab:
 		slog.Debug("input key", "key", key, "action", "tab")
 		// mode cycling is wired by the host; launcher just changes mode
-	case gpucontext.KeyLeft:
+	case gpucontext.KeyLeft, gpucontext.KeyUp:
 		slog.Debug("input key", "key", key, "action", "select", "delta", -1)
 		a.l.Select(-1)
-	case gpucontext.KeyRight:
+	case gpucontext.KeyRight, gpucontext.KeyDown:
 		slog.Debug("input key", "key", key, "action", "select", "delta", 1)
 		a.l.Select(1)
 	default:
 		slog.Debug("input key", "key", key, "action", "unhandled")
+	}
+}
+
+// panelKey routes a key press while the control panel is open: up/down move
+// between rows, left/right adjust the focused row (coarse with Shift), enter
+// activates it, and escape/backspace/typing edit or close it.
+func (a *Adapter) panelKey(key gpucontext.Key, mods gpucontext.Modifiers) {
+	delta := 1
+	if mods&gpucontext.ModShift != 0 {
+		delta = 5
+	}
+	switch key {
+	case gpucontext.KeyEscape:
+		a.l.Escape()
+	case gpucontext.KeyEnter:
+		a.l.PanelActivate()
+	case gpucontext.KeyBackspace:
+		a.l.PanelBackspace()
+	case gpucontext.KeyUp:
+		a.l.PanelNavigate(-1)
+	case gpucontext.KeyDown:
+		a.l.PanelNavigate(1)
+	case gpucontext.KeyLeft:
+		a.l.PanelAdjust(-delta)
+	case gpucontext.KeyRight:
+		a.l.PanelAdjust(delta)
+	default:
+		slog.Debug("input key", "key", key, "action", "panel-unhandled")
 	}
 }
 
@@ -81,6 +114,10 @@ func (a *Adapter) onTextInput(text string) {
 		metric.WithAttributes(attribute.String(telemetry.Attrs.Kind, "text")))
 	// Log the length, not the text: a query can hold sensitive input.
 	slog.Debug("input text", "chars", len(text))
+	if a.l.PanelOpen() {
+		a.l.PanelType(text)
+		return
+	}
 	a.setQuery(ctx, a.l.Query()+text)
 }
 

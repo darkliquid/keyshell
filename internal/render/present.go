@@ -79,6 +79,11 @@ func (p *presenter) configure(app *gogpu.App) *gogpu.App {
 		p.rdr.DrawFrame(p.draw, p.l, p.th, p.cfg.Reveal)
 		img := p.pixmap.ImageView()
 		p.rdr.MaskFrame(img)
+		// The control panel is an overlay painted *after* the band mask, so it
+		// is not clipped to the band and may extend beyond its trapezoid.
+		if p.rdr.scene != nil {
+			p.rdr.scene.DrawPanelOverlay(p.draw, p.th)
+		}
 
 		drawer := dc.AsTextureDrawer()
 		p.drawer = drawer

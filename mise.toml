@@ -6,7 +6,7 @@ CGO_ENABLED = "0"
 TMPDIR = "{{config_root}}/.tmp"
 
 [tools]
-go = "1.27.2"
+go = "1.27.3"
 golangci-lint = "latest"
 
 [tasks.build]

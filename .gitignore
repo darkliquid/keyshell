@@ -8,3 +8,6 @@ out/
 /layershell-input
 /text
 /inject
+
+.superpowers/
+crush-session.txt

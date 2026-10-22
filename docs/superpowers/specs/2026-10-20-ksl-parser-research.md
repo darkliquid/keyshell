@@ -1,0 +1,245 @@
+# KSL parser and interpreter — implementation research
+
+Date: 2026-10-20
+Status: research, no implementation
+Owner: keyshell
+Follows: 2026-10-20-keyshell-ui-language-design.md (the KSL spec)
+
+## Question
+
+Given the KSL grammar (spec §Grammar, informal EBNF), what is the best
+way to implement a parser that (a) meets the spec's integration plan,
+(b) is built at build time, not at runtime, and (c) hands off a
+structure that a per-frame interpreter can turn into gg draw calls
+against the current renderer?
+
+## What the spec pins down
+
+- §Integration: "a small tokenizer + recursive-descent parser producing
+  a scene AST. No new dependencies beyond the standard library." The
+  interpreter "walks the AST each redraw against the gg context".
+- The grammar is block-structured and tiny: one scene = declarations
+  (`theme`, `state`, `transition`, `@keyframes`, `def`, `include`) plus
+  a node tree; properties are `key: value` with ~8 value forms (scalar
+  with units, hex/named colours, strings, `$` variable refs,
+  `#id.prop` cross-node refs, functions/effects, arrays, inline value
+  blocks).
+- The spec's own §Grammar is informal and leaves a few things
+  underspecified (see "Spec gaps to resolve" below); any parser work
+  starts by firming those up.
+
+## Grammar characteristics that drive the choice
+
+1. **Open node-name space.** `node := IDENT ('#' IDENT)? '{'` — node
+   names include primitives, user `def` components, and plugin
+   drawers. The parser cannot be table-driven by node type; it always
+   produces a generic AST that a later phase validates against a
+   primitive schema.
+2. **Contextual keywords.** `theme`, `state`, `transition`, `def`,
+   `include`, `font` are keywords only in block-start position; they
+   are plain identifiers elsewhere (a property could be `state: …`, a
+   component could be named `theme`). Scannerless or hand-lexed
+   parsers handle this trivially; a keyword-table lexer + LR parser
+   makes it fiddly.
+3. **No left recursion, shallow nesting.** The tree is at most ~5
+   levels deep; values nest (functions, arrays, inline blocks) but are
+   finite forms. Every option can parse this; none needs GLR.
+4. **Diagnostics matter.** Users hand-author scenes; good errors are
+   `file:line:col` with an expected-set, not a yacc one-liner.
+5. **Parsed once, evaluated many.** Scene files load at startup (and
+   on config reload). Per-frame cost lives in evaluation, not parsing,
+   so parser runtime performance is a non-issue; the "build at build
+   time" requirement is about the parser *tooling*, not per-frame
+   speed.
+
+## Options considered (build-time parser generation)
+
+| Option | Form | Maintained | Generated code | Diagnostics | Notes |
+| --- | --- | --- | --- | --- | --- |
+| Hand-written lexer + recursive descent | hand | n/a | n/a | best (full control) | spec's own plan; zero deps |
+| **pigeon** (mna/pigeon) | PEG → Go codegen | yes, active (last push 2026-10-14; v1.3.0; BSD-3) | single self-contained file, stdlib-only | strong: `errList`/`parserError` with file:line:col + expected set, error accumulation, failure labels + recovery expressions | scannerless (no lexer); actions build AST via `any` |
+| peg (pointlander/peg) | PEG → Go codegen | yes, active (last push 2026-10-12; 1.1k stars) | single file, generics-based, grammar embedded as comment | improved: `*parseError` with line/symbol positions | `go get -tool` + `go:generate`; token-tree + `Execute()` action pass; one grammar per package |
+| goyacc (golang.org/x/tools/cmd/goyacc) | Yacc/LALR(1) → Go codegen | yes, Go-team maintained, low tempo | self-contained, stdlib-only; you hand-write the lexer (required regardless) | weak: single string via `Error`, manual yacc-style error recovery; conflict reports at grammar-compile time | contextual keywords force lexer hacking or IDENT-heavy grammar with semantic checks |
+| gocc (goccmack/gocc) | EBNF → Go codegen (lexer+parser) | moderate (last push 2026-01) | lexer + parser files | decent | niche; custom license; nothing it does that pigeon doesn't |
+| textmapper (inspirer/textmapper) | GLR/LALR → Go codegen | moderate (last push 2026-09) | lexer + parser | decent, IDE-oriented tooling | niche for a language this small; GLR is unneeded |
+| ANTLR4 (Go target) | ANTLR → Go codegen | yes, active | generated files + **runtime module dep** (`github.com/antlr4-go/antlr/v4` + `golang.org/x/exp`); codegen needs the Java ANTLR jar | strong | Java toolchain in build; runtime dep and weight disproportionate to KSL |
+| participle (alecthomas/participle) | struct-tag grammar, **runtime-compiled** | yes | n/a | good | excluded by the build-time constraint: it reflects + compiles the parser at runtime |
+| HCL v2 (hashicorp) | hand-written runtime parser of HCL | yes | n/a | good | excluded: it is a different language, not a generator for KSL |
+
+Primary-source notes:
+
+- pigeon docs (pkg.go.dev/github.com/mna/pigeon): "Neither this package
+  nor the parsers generated by this command require any third-party
+  dependency, unless such a dependency is used in the code blocks of
+  the grammar"; errors are always `errList` (`[]error`) of
+  `*parserError` carrying filename, position, expected literals and
+  rule name; the parser accumulates errors instead of stopping at the
+  first; failure labels (`%{FailureLabel}`) plus recovery expressions
+  support targeted error recovery; options are function-style
+  (`Entrypoint`, `Memoize`, `Recover`, `MaxExpressions`, `Statistics`).
+  Generated example parsers import only stdlib.
+- peg (github.com/pointlander/peg): `//go:generate go tool peg
+  mygrammar.peg` after `go get -tool github.com/pointlander/peg@main`;
+  `Parse(rule ...int) error` returns `*parseError` with furthest-token
+  line/symbol positions; `-inline -switch` optimizations; only one
+  grammar per package; action model is a token tree walked by
+  `Execute()` rather than inline AST construction.
+- goyacc (pkg.go.dev/golang.org/x/tools/cmd/goyacc): emits the full
+  engine into one file with only an `fmt` import; the lexer contract is
+  `Lex(lval *yySymType) int` + `Error(e string)`; errors route through
+  the lexer's `Error` with yacc's discard-based recovery; x/tools is
+  maintained (recent 2025-2026 modernization commits).
+- ANTLR (doc/targets.md, doc/go-target.md): Go runtime lives at
+  `github.com/antlr4-go/antlr/v4`; the single ANTLR tool is Java-based;
+  the runtime's one transitive dep is `golang.org/x/exp`.
+
+## Recommendation
+
+**Hand-write the lexer and recursive-descent parser in Go**, with a
+frozen EBNF kept in-tree as the normative grammar (next to the parser,
+tested against golden files). Rationale:
+
+- It is the spec's stated plan, and the grammar's three awkward spots
+  (open node names, contextual keywords, inline value blocks after
+  `:`) are all places where generated parsers add friction rather than
+  remove it: a hand-rolled parser checks `if tok == IDENT && peek ==
+  '{'` naturally, resolves `theme`/`state`/`font` by position, and
+  parses `viewport: { … }` as just another value form.
+- Diagnostics are the product here (users edit scenes by hand); full
+  control of the error path beats any generator's error story, at a
+  size (~600-1000 lines, one package `internal/ksl/parser`) where the
+  hand-rolled cost is low and the grammar is stable.
+- Zero new dependencies and no `go:generate` step in CI; the codegen
+  tools below are all fine, but each adds a tool dependency or a
+  5-10k-line generated file to review, for a language that will grow
+  slowly and deliberately.
+- Testability: a hand-written parser plus golden-file tests (valid
+  scenes → AST dumps; invalid scenes → exact error strings) is the
+  most maintainable setup; mutation of the grammar and tests stays in
+  one place.
+
+**If a generator is preferred anyway, pigeon is the pick** — the only
+option that is simultaneously active, dependency-free at runtime (one
+stdlib-only generated file), and strong on error reporting. Cost: PEG
+ordered-choice semantics, `any`-typed action returns needing a
+conversion layer to the typed AST, and whitespace threaded through
+rules. peg is the runner-up (fine tool, more awkward action model).
+goyacc is the weakest fit (diagnostics, contextual keywords). ANTLR is
+rejected on build-chain weight (Java codegen + runtime module).
+participle is rejected by the build-time constraint.
+
+## Turning the AST into render instructions
+
+Parser choice is orthogonal to the interpreter; this is the shape that
+fits the surveyed renderer (`internal/render` on gogpu/gg, View =
+`Poll/Results/Selected/Query/IsOpen/ModeBadge`, redraw on
+`OnChange` + continuous render while visible, 60 Hz budget, row-span
+masking instead of path clips).
+
+### Load time (once per scene file, not per frame)
+
+1. **Parse** → typed AST:
+   `Scene{Theme, Keyframes, Transitions, States, Defs, Nodes []Node}`,
+   `Node{Name, ID, Props []Prop, States []StateBlock, When, Pos}`.
+2. **Resolve** `include` (splice with cycle detection), expand `def`
+   instances into a template registry, register keyframes and
+   transitions, build the selector index (`Type#id:pseudo[attr]`).
+3. **Validate** node names against the primitive schema + `def` +
+   plugin-registered drawers; type-check property values per node
+   (static table: `Pill.tone` is a tone keyword, `Meter.ratio` is a
+   number, etc.). Fail startup with `file:line` diagnostics and fall
+   back to the shipped default scene — never a broken overlay.
+
+### Per frame (given current state)
+
+4. **Bind.** Snapshot the View into a binding table:
+   `$open/$focused/$query/$results/$selected/$mode` from the `View`
+   methods, `$reveal` from `Reveal`, theme tokens from
+   `theme.Theme`, `$active` = `Results()[Selected()]`, `$item` scoped
+   inside List templates. Values are a small tagged union
+   (`Len{px|%}`, `Color`, `Str`, `Num`, `Bool`, `Ref`). Randomisation:
+   `rand` draws live in a per-call-site cache keyed by summon epoch
+   (bumped on the closed→open edge); `jitter` is a pure hash of its
+   key (spec §7, Grammar Rule 12).
+5. **Evaluate.** Walk the tree: test `when`, evaluate scene states
+   into a pseudo-set (`:open`, `:selected`, `[mode="media"]`), run
+   the cascade (node-local > id selector > type/pseudo > theme) into
+   one resolved property set per node. `#id.prop` refs read values
+   computed earlier in the same pass (declaration order); cycles are
+   a validation error. The tiny expression language (§7: arithmetic,
+   concat, ternary, `toUpper`-style methods, `.len`) gets its own
+   Pratt-style evaluator over the same value union.
+6. **Materialize Lists.** Instantiate the template per item up to
+   `cap`, bind `$item`, render `empty`/`overflowSummary` variants.
+7. **Layout.** Resolve lengths (`px`, `%` of Window, `scale`
+   inheritance, `minW/maxW/minH/maxH/aspect`), then a flex pass over
+   Row/Column/Grid/Stack producing rectangles per node. Stack paints
+   in ascending `z`, stable on declaration order.
+8. **Paint.** Map resolved nodes to the existing draw vocabulary:
+   Box/Pill → rounded rects; Text → `WordWrap`/elide/anchored draws;
+   Meter/ticks/timeline → the existing bar/tick painters;
+   Group → push/pop transforms exactly like the band transform at
+   render.go:86-89; Path → path ops; Image → async decode cache keyed
+   by path+size with placeholder until ready. Clipping uses the
+   row-span masking trick (MaskFrame), not `gg` clips, per the
+   measured cost lesson in render.go:97-120.
+9. **Animate.** Transitions interpolate the resolved property set
+   between states (per-property duration + easing); keyframes sample
+   over time. This needs per-node previous-value tracking and a
+   per-state-change clock; the frame thread already runs continuously
+   while visible (`WithContinuousRender`), and `config.Anim`
+   (`ExpandMs`/`ScrollMs`, currently unread) is the natural home for
+   defaults.
+
+### Budget note
+
+The scene is tens to low hundreds of nodes; steps 4-7 are cheap vs the
+raster work that already dominates the frame (bench_test.go at
+3840×1080). Keep evaluation allocation-light (reused per-frame value
+pools) and it stays inside the 60 Hz budget. If it ever isn't, the
+binding/evaluation pass memoizes by changed-variable (the same
+`OnChange` signal can invalidate the binding table only).
+
+## Spec gaps — resolved in the spec
+
+All seven gaps below were fixed in
+`2026-10-20-keyshell-ui-language-design.md` the same day (see its
+rewritten §Grammar and Key decisions 17-24):
+
+1. Id syntax: `Node#id` only, `id=` dropped; `.class` markers added so
+   the §4 selector examples are valid.
+2. Property values as blocks: `inlineblock` is a value form
+   (`viewport: { height: 320px }`).
+3. Separators are normative: commas between same-line properties,
+   newlines always separate, trailing comma optional.
+4. Colours are 3/4/6/8 hex digits (CSS shorthand); bare identifiers
+   are keyword values validated per property, never named colours.
+5. Node-level `state` (properties only) vs scene-level `state`
+   (selector blocks) are distinct productions; built-in state names
+   fixed for v1, adding `closed`.
+6. The expression sub-grammar is specified: precedence, member access,
+   method-style calls, comparison/logic operators, ternary.
+7. `hold` is not a primitive; scenes express it as a `Pill` once the
+   host publishes `$item.hold`; today's renderer keeps it undrawn.
+
+Additional inconsistencies fixed in the same pass: `Ring` became
+`Meter { variant: ring }` (no new primitive), `Cursor` was added as a
+primitive (the current UI draws it), `Group` no longer paints (`fill`
+moved to a `Box` child), `List` sub-blocks (`template`/`empty`/
+`overflowSummary`) are reserved child blocks, and §7's
+`background { image: … }` became `Image { source: …, z: -1 }`.
+
+## Sources
+
+- Spec: `docs/superpowers/specs/2026-10-20-keyshell-ui-language-design.md`
+- Renderer survey: `internal/render/{render,card,present,reveal}.go`,
+  `internal/card/*`, `internal/theme/theme.go`,
+  `docs/superpowers/specs/2026-10-20-card-composition-design.md`
+- pigeon: https://pkg.go.dev/github.com/mna/pigeon ,
+  https://github.com/mna/pigeon (README; active; v1.3.0)
+- peg: https://github.com/pointlander/peg (README, docs/peg-file-syntax.md)
+- goyacc: https://pkg.go.dev/golang.org/x/tools/cmd/goyacc
+- ANTLR Go target: https://github.com/antlr/antlr4/blob/master/doc/targets.md ,
+  https://github.com/antlr/antlr4/blob/master/doc/go-target.md
+- Rejected-by-constraint: participle (runtime-compiled),
+  hashicorp/hcl (different language, runtime parser)

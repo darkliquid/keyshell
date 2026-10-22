@@ -6,6 +6,7 @@ package backend
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/darkliquid/keyshell/internal/config"
 )
@@ -96,6 +97,17 @@ type Control struct {
 	Options []string
 	Display Display
 	Primary bool
+}
+
+// PanelRow is one interactive row in an item's control panel. It is either
+// the action row (Action non-nil, Kind "action") or a control row (Control
+// non-nil, Kind is the control's kind). The launcher hands the renderer an
+// ordered panel row list so the scene can render one widget per row.
+type PanelRow struct {
+	Kind    ControlKind
+	Label   string
+	Action  *Action
+	Control *Control
 }
 
 // Item is one selectable result.
@@ -191,10 +203,16 @@ func NewInProc(factory func(id string, cfg config.Config) (Backend, error)) Back
 
 type inProcProvider struct {
 	factory func(id string, cfg config.Config) (Backend, error)
-	built   map[string]Backend
+
+	// The query worker and a host-side prewarm call Get from different
+	// goroutines, so the memo map is guarded.
+	mu    sync.Mutex
+	built map[string]Backend
 }
 
 func (p *inProcProvider) Get(id string) (Backend, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	if b, ok := p.built[id]; ok {
 		return b, nil
 	}

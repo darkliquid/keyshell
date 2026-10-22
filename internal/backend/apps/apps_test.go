@@ -101,3 +101,14 @@ func writeDesktopEntry(t *testing.T, dir, id, name, generic, exec string) {
 		t.Fatal(err)
 	}
 }
+
+// TestJoinPlaceholderQuotesArguments pins the flattening: an argument
+// containing spaces or quotes must be quoted, so the capability broker's
+// word split restores the original argv boundary.
+func TestJoinPlaceholderQuotesArguments(t *testing.T) {
+	got := joinPlaceholder([]string{"foo", "a b", `say "hi"`, `back\slash`, ""})
+	want := `foo "a b" "say \"hi\"" "back\\slash" ""`
+	if got != want {
+		t.Errorf("joinPlaceholder = %q, want %q", got, want)
+	}
+}

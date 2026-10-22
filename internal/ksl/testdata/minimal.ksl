@@ -1,0 +1,24 @@
+// A wholly different overlay: a centred search ring.
+theme {
+    ink: #EAEAEA
+    ring: #FF2E63
+}
+
+Window {
+    Column { gap: 24, align: center
+      Text { text: $query, size: 48, color: $ink }
+      Meter#progress { variant: ring, size: 120, stroke: $ring, ratio: $typing }
+      Text { text: "ENTER TO OPEN", size: 12, color: $muted }
+    }
+}
+
+state open {
+    #progress { opacity: 1, scale: 1 }
+}
+transition open { opacity: 200ms ease-out }
+
+@keyframes breathe {
+    0% { stroke: $ring, opacity: 0.4 }
+    100% { stroke: $accent-alt, opacity: 1 }
+}
+Meter#progress { animation: breathe 2s ease-in-out infinite alternate }

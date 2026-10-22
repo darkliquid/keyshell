@@ -26,7 +26,7 @@ func TestDrawCardPaintsChipsAndTitle(t *testing.T) {
 		Badge: "OUTPUT", Status: "DEFAULT", StatusTone: backend.TonePositive,
 	})
 	dc := gg.NewContext(400, 260)
-	drawCard(dc, th, Reveal{}, config.Default().Reveal, 10, 10, 340, 220, plan, false)
+	drawCard(dc, th, &PainterDeps{Reveal: Reveal{}, CardCfg: config.Default().Reveal}, 10, 10, 340, 220, plan, false)
 	img := dc.Image().(*image.RGBA)
 
 	if !containsColor(img, 0x08, 0xF7, 0xFE) {
@@ -48,7 +48,7 @@ func TestDrawCardSelectedUsesSlabText(t *testing.T) {
 
 	plan := card.Compose(backend.Item{Title: "Ghostty", Icon: "terminal", Actions: []backend.Action{{Type: "exec", Value: "ghostty"}}})
 	dc := gg.NewContext(400, 260)
-	drawCard(dc, th, Reveal{}, config.Default().Reveal, 10, 10, 340, 220, plan, true)
+	drawCard(dc, th, &PainterDeps{Reveal: Reveal{}, CardCfg: config.Default().Reveal}, 10, 10, 340, 220, plan, true)
 	img := dc.Image().(*image.RGBA)
 
 	if containsColor(img, 0xF2, 0xF2, 0xF7) {
@@ -111,7 +111,7 @@ func TestDrawCardMeterFillsTicks(t *testing.T) {
 		{ID: "volume", Kind: backend.ControlRange, Value: 0.5, Min: 0, Max: 1, Primary: true},
 	}})
 	dc := gg.NewContext(400, 260)
-	drawCard(dc, th, Reveal{}, config.Default().Reveal, 10, 10, 340, 220, plan, false)
+	drawCard(dc, th, &PainterDeps{Reveal: Reveal{}, CardCfg: config.Default().Reveal}, 10, 10, 340, 220, plan, false)
 	img := dc.Image().(*image.RGBA)
 
 	if !containsColor(img, 0xFF, 0x2E, 0x63) {
@@ -131,7 +131,7 @@ func TestDrawCardNotePaintsTheMutedPill(t *testing.T) {
 		{ID: "mute", Kind: backend.ControlToggle, Label: "Mute", Bool: true, Display: backend.DisplayCard},
 	}})
 	dc := gg.NewContext(400, 260)
-	drawCard(dc, th, Reveal{}, config.Default().Reveal, 10, 10, 340, 220, plan, false)
+	drawCard(dc, th, &PainterDeps{Reveal: Reveal{}, CardCfg: config.Default().Reveal}, 10, 10, 340, 220, plan, false)
 	img := dc.Image().(*image.RGBA)
 
 	if !containsColor(img, 0xFF, 0x2E, 0x63) && !containsColor(img, 0x08, 0xF7, 0xFE) {

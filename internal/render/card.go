@@ -1,6 +1,7 @@
 package render
 
 import (
+	"image"
 	"math"
 	"strings"
 
@@ -13,7 +14,7 @@ import (
 
 // drawCardContent paints a plan inside the axis-aligned content box, inset from
 // the sheared quad the way the QML Loader clipped its delegate.
-func drawCardContent(dc *gg.Context, th *theme.Theme, p card.Plan, selected bool, x, y, w, h float64) {
+func drawCardContent(dc *gg.Context, th *theme.Theme, p card.Plan, selected bool, x, y, w, h float64, deps *PainterDeps) {
 	muted := th.Muted
 	if selected {
 		muted = th.Slab
@@ -44,11 +45,11 @@ func drawCardContent(dc *gg.Context, th *theme.Theme, p card.Plan, selected bool
 	}
 	switch p.Layout {
 	case card.LayoutHero:
-		drawHero(dc, th, p, selected, x, top, w, bottom-top)
+		drawHero(dc, th, p, selected, x, top, w, bottom-top, deps)
 	case card.LayoutBody:
 		drawBody(dc, th, p, selected, x, top, w, bottom-top)
 	default:
-		drawRow(dc, th, p, selected, x, top, w, bottom-top)
+		drawRow(dc, th, p, selected, x, top, w, bottom-top, deps)
 	}
 }
 
@@ -69,9 +70,9 @@ func footerText(p card.Plan) string {
 }
 
 // drawHero paints the app card: a centred visual over a wrapped title.
-func drawHero(dc *gg.Context, th *theme.Theme, p card.Plan, selected bool, x, y, w, h float64) {
+func drawHero(dc *gg.Context, th *theme.Theme, p card.Plan, selected bool, x, y, w, h float64, deps *PainterDeps) {
 	size := math.Max(36, math.Min(52, h*0.40))
-	drawVisual(dc, th, p.Visual, selected, x+(w-size)/2, y+4, size, size)
+	drawVisual(dc, th, p.Visual, selected, x+(w-size)/2, y+4, size, size, deps)
 	face := th.Face(math.Max(12, math.Min(16, h*0.14)))
 	drawLines(dc, th, face, p.Title.Text, selected, x, y+size+10, w, 2, true)
 }
@@ -99,9 +100,9 @@ func drawBody(dc *gg.Context, th *theme.Theme, p card.Plan, selected bool, x, y,
 }
 
 // drawRow paints the standard card: a leading visual beside a text column.
-func drawRow(dc *gg.Context, th *theme.Theme, p card.Plan, selected bool, x, y, w, h float64) {
+func drawRow(dc *gg.Context, th *theme.Theme, p card.Plan, selected bool, x, y, w, h float64, deps *PainterDeps) {
 	const box = 44.0
-	drawVisual(dc, th, p.Visual, selected, x, y+(h-box)/2, box, box)
+	drawVisual(dc, th, p.Visual, selected, x, y+(h-box)/2, box, box, deps)
 
 	colX := x + box + 10
 	colW := w - box - 10
@@ -237,9 +238,10 @@ func chipColours(th *theme.Theme, tone backend.Tone, selected bool) (gg.RGBA, gg
 	return th.SurfaceAlt, th.Muted
 }
 
-// drawVisual paints the leading artwork. Image and preview fall back to a
-// monogram until the icon and capture subsystems exist.
-func drawVisual(dc *gg.Context, th *theme.Theme, p card.Part, selected bool, x, y, w, h float64) {
+// drawVisual paints the leading artwork. Icons resolve through the theme
+// resolver and decode off the frame thread; until the decode lands, and for
+// glyphs and captures, the slot shows a monogram.
+func drawVisual(dc *gg.Context, th *theme.Theme, p card.Part, selected bool, x, y, w, h float64, deps *PainterDeps) {
 	if p.Kind == "" {
 		return
 	}
@@ -248,6 +250,11 @@ func drawVisual(dc *gg.Context, th *theme.Theme, p card.Part, selected bool, x, 
 		dc.SetFont(face)
 		dc.SetColor(inkOrSlab(th, selected))
 		dc.DrawStringAnchored(p.Text, x+w/2, y+h/2, 0.5, 0.5)
+		return
+	}
+
+	if img, ok := visualImage(deps, p, int(w), int(h)); ok {
+		drawVisualImage(dc, img, x, y, w, h)
 		return
 	}
 
@@ -268,6 +275,43 @@ func drawVisual(dc *gg.Context, th *theme.Theme, p card.Part, selected bool, x, 
 	dc.SetFont(face)
 	dc.SetColor(inkOrSlab(th, selected))
 	dc.DrawStringAnchored(monogram(p.Text), x+w/2, y+h/2, 0.5, 0.5)
+}
+
+// visualImage resolves the part's artwork to a decoded image: icon names go
+// through the theme resolver first; image sources are paths already. It
+// reports not-ready while the decode is in flight.
+func visualImage(deps *PainterDeps, p card.Part, w, h int) (image.Image, bool) {
+	if deps == nil || deps.Images == nil || p.Text == "" {
+		return nil, false
+	}
+	path := p.Text
+	switch p.Source {
+	case "icon":
+		if deps.Icons == nil {
+			return nil, false
+		}
+		resolved, ok := deps.Icons.Lookup(path, w)
+		if !ok {
+			return nil, false
+		}
+		path = resolved
+	case "image":
+		// path as-is
+	default:
+		return nil, false
+	}
+	return deps.Images.Get(path, w, h)
+}
+
+// drawVisualImage fits the decoded image into the slot, centred.
+func drawVisualImage(dc *gg.Context, img image.Image, x, y, w, h float64) {
+	b := img.Bounds()
+	if b.Dx() <= 0 || b.Dy() <= 0 {
+		return
+	}
+	s := math.Min(w/float64(b.Dx()), h/float64(b.Dy()))
+	dw, dh := float64(b.Dx())*s, float64(b.Dy())*s
+	dc.DrawImage(gg.ImageBufFromImage(img), x+(w-dw)/2, y+(h-dh)/2)
 }
 
 // monogram is the fallback mark for an icon or artwork source: its first

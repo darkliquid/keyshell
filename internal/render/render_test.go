@@ -3,11 +3,16 @@ package render
 import (
 	"image"
 	"image/color"
+	"image/png"
 	"math"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/darkliquid/keyshell/internal/backend"
 	"github.com/darkliquid/keyshell/internal/config"
+	"github.com/darkliquid/keyshell/internal/icons"
 	"github.com/darkliquid/keyshell/internal/rank"
 	"github.com/darkliquid/keyshell/internal/theme"
 	"github.com/gogpu/gg"
@@ -45,8 +50,17 @@ func TestDrawFrameProducesImage(t *testing.T) {
 }
 
 type fakeView struct {
-	open    bool
-	results []rank.Match
+	open      bool
+	results   []rank.Match
+	query     string
+	mode      string
+	selected  int
+	searching bool
+
+	panelOpen  bool
+	panelRows  []backend.PanelRow
+	panelFocus int
+	panelDirty bool
 }
 
 func (v *fakeView) Results() []rank.Match {
@@ -55,11 +69,176 @@ func (v *fakeView) Results() []rank.Match {
 	}
 	return nil
 }
-func (v *fakeView) Poll()             {}
-func (v *fakeView) Selected() int     { return 0 }
-func (v *fakeView) Query() string     { return "" }
-func (v *fakeView) IsOpen() bool      { return v.open }
-func (v *fakeView) ModeBadge() string { return "SEARCH" }
+func (v *fakeView) Poll() {}
+func (v *fakeView) Selected() int {
+	if v.selected != 0 || v.results == nil {
+		return v.selected
+	}
+	return 0
+}
+func (v *fakeView) Query() string {
+	if v.query != "" {
+		return v.query
+	}
+	return ""
+}
+func (v *fakeView) IsOpen() bool { return v.open }
+func (v *fakeView) Searching() bool {
+	return v.searching
+}
+func (v *fakeView) ModeBadge() string {
+	if v.mode != "" {
+		return v.mode
+	}
+	return "SEARCH"
+}
+func (v *fakeView) PanelOpen() bool        { return v.panelOpen }
+func (v *fakeView) PanelRows() []backend.PanelRow { return v.panelRows }
+func (v *fakeView) PanelFocus() int        { return v.panelFocus }
+func (v *fakeView) PanelDirty() bool       { return v.panelDirty }
+
+// TestDrawFrameSearchingIndicator proves an in-flight query paints the busy
+// strip: pixels just under the search row differ between an idle and a
+// searching frame.
+func TestDrawFrameSearchingIndicator(t *testing.T) {
+	th, err := theme.Load()
+	if err != nil {
+		t.Fatalf("theme.Load = err %v", err)
+	}
+	defer th.Close()
+
+	results := []rank.Match{{Item: backend.Item{Title: "Ghostty", Subtitle: "Terminal"}}}
+	draw := func(searching bool) *image.RGBA {
+		view := &fakeView{open: true, query: "fire", mode: "apps", results: results, searching: searching}
+		dc := gg.NewContext(1600, 900)
+		New().DrawFrame(dc, view, th, config.Default().Reveal)
+		return dc.Image().(*image.RGBA)
+	}
+	idle, busy := draw(false), draw(true)
+
+	// The strip is a 300x4 accent bar centred in the content frame just below
+	// the search row; scan a window around its surface position and require
+	// a solid block of changed pixels, so the blinking cursor (72px, outside
+	// the window) cannot satisfy this.
+	diff := 0
+	for y := 360; y <= 410; y++ {
+		for x := 640; x <= 960; x++ {
+			if idle.RGBAAt(x, y) != busy.RGBAAt(x, y) {
+				diff++
+			}
+		}
+	}
+	if diff < 100 {
+		t.Errorf("strip region diff = %d pixels, want >= 100 (searching indicator missing)", diff)
+	}
+}
+
+// TestDrawFramePanelPaintsRows proves an open panel renders control rows: the
+// frame with PanelOpen differs from the closed frame in the region below the
+// card.
+func TestDrawFramePanelPaintsRows(t *testing.T) {
+	th, err := theme.Load()
+	if err != nil {
+		t.Fatalf("theme.Load = err %v", err)
+	}
+	defer th.Close()
+
+	results := []rank.Match{{Item: backend.Item{
+		ID: "sink", Title: "Speakers", Controls: []backend.Control{
+			{ID: "volume", Kind: backend.ControlRange, Label: "Volume", Value: 0.5, Min: 0, Max: 1, Step: 0.01},
+			{ID: "mute", Kind: backend.ControlToggle, Label: "Mute"},
+		},
+	}}}
+	rows := []backend.PanelRow{
+		{Kind: backend.ControlRange, Label: "Volume", Control: &results[0].Item.Controls[0]},
+		{Kind: backend.ControlToggle, Label: "Mute", Control: &results[0].Item.Controls[1]},
+	}
+	// Reproduce the presenter pipeline: draw the scene (which includes the
+	// panel as a scene node), apply the band mask, then paint the panel
+	// overlay on top so it survives the mask outside the band.
+	draw := func(open bool) *image.RGBA {
+		view := &fakeView{open: true, mode: "audio", results: results, selected: 0,
+			panelOpen: open, panelRows: rows, panelFocus: 0}
+		r := New()
+		dc := gg.NewContext(1600, 900)
+		r.DrawFrame(dc, view, th, config.Default().Reveal)
+		r.MaskFrame(dc.Image().(*image.RGBA))
+		if r.scene != nil {
+			r.scene.DrawPanelOverlay(dc, th)
+		}
+		return dc.Image().(*image.RGBA)
+	}
+	closed, opened := draw(false), draw(true)
+	diff := 0
+	// The panel renders below the band (surface y ~645+), outside the band
+	// trapezoid. Scan that region (reel centre ~800).
+	for y := 650; y <= 800; y++ {
+		for x := 600; x <= 1000; x++ {
+			if closed.RGBAAt(x, y) != opened.RGBAAt(x, y) {
+				diff++
+			}
+		}
+	}
+	if diff < 200 {
+		t.Errorf("panel region diff = %d pixels, want >= 200 (panel rows not painted)", diff)
+	}
+}
+
+// TestDrawFramePaintsResolvedIcon proves a card icon name resolves through
+// the theme resolver and the decoded image reaches the card once the async
+// decode lands.
+func TestDrawFramePaintsResolvedIcon(t *testing.T) {
+	th, err := theme.Load()
+	if err != nil {
+		t.Fatalf("theme.Load = err %v", err)
+	}
+	defer th.Close()
+
+	// A one-theme tree with a pure-red 48px icon.
+	root := t.TempDir()
+	dir := filepath.Join(root, "icons", "themeA", "48x48", "apps")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "icons", "themeA", "index.theme"),
+		[]byte("[Icon Theme]\nName=themeA\nDirectories=48x48/apps\n\n[48x48/apps]\nSize=48\nType=Fixed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	img := image.NewRGBA(image.Rect(0, 0, 48, 48))
+	for y := range 48 {
+		for x := range 48 {
+			img.SetRGBA(x, y, color.RGBA{R: 255, A: 255})
+		}
+	}
+	f, err := os.Create(filepath.Join(dir, "firefox.png"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := png.Encode(f, img); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+
+	r := New()
+	r.icons = icons.NewResolver("themeA", filepath.Join(root, "icons"))
+
+	view := &fakeView{open: true, results: []rank.Match{
+		{Item: backend.Item{Title: "Firefox", Icon: "firefox"}},
+	}}
+	dc := gg.NewContext(1600, 900)
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		r.DrawFrame(dc, view, th, config.Default().Reveal)
+		out := dc.Image().(*image.RGBA)
+		if containsColor(out, 0xFF, 0, 0) {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the resolved icon never reached the card")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
 
 func closeTo(img *image.RGBA, x, y int, r, g, b uint8) bool {
 	px := img.RGBAAt(x, y)

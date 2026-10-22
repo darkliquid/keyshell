@@ -4,9 +4,16 @@
 package input
 
 import (
+	"context"
+	"log/slog"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/darkliquid/keyshell/internal/launcher"
+	"github.com/darkliquid/keyshell/internal/telemetry"
 	"github.com/gogpu/gpucontext"
 )
 
@@ -34,34 +41,101 @@ func New(l *launcher.Launcher, events gpucontext.EventSource) *Adapter {
 	return a
 }
 
-func (a *Adapter) onKeyPress(key gpucontext.Key, _ gpucontext.Modifiers) {
+func (a *Adapter) onKeyPress(key gpucontext.Key, mods gpucontext.Modifiers) {
+	ctx, span := telemetry.StartSpan(context.Background(), "keyshell.input.key",
+		trace.WithAttributes(attribute.String(telemetry.Attrs.Kind, "key"),
+			attribute.String("keyshell.key", key.String())))
+	defer span.End()
+	telemetry.InputEvents().Add(ctx, 1,
+		metric.WithAttributes(attribute.String(telemetry.Attrs.Kind, "key")))
+
+	if a.l.PanelOpen() {
+		a.panelKey(key, mods)
+		return
+	}
+
+	switch key {
+	case gpucontext.KeyEscape:
+		slog.Debug("input key", "key", key, "action", "escape")
+		a.l.Escape()
+	case gpucontext.KeyEnter:
+		slog.Debug("input key", "key", key, "action", "enter")
+		a.l.Enter()
+	case gpucontext.KeyBackspace:
+		slog.Debug("input key", "key", key, "action", "backspace")
+		a.setQuery(ctx, trimLast(a.l.Query()))
+	case gpucontext.KeyTab:
+		slog.Debug("input key", "key", key, "action", "tab")
+		// mode cycling is wired by the host; launcher just changes mode
+	case gpucontext.KeyLeft, gpucontext.KeyUp:
+		slog.Debug("input key", "key", key, "action", "select", "delta", -1)
+		a.l.Select(-1)
+	case gpucontext.KeyRight, gpucontext.KeyDown:
+		slog.Debug("input key", "key", key, "action", "select", "delta", 1)
+		a.l.Select(1)
+	default:
+		slog.Debug("input key", "key", key, "action", "unhandled")
+	}
+}
+
+// panelKey routes a key press while the control panel is open: up/down move
+// between rows, left/right adjust the focused row (coarse with Shift), enter
+// activates it, and escape/backspace/typing edit or close it.
+func (a *Adapter) panelKey(key gpucontext.Key, mods gpucontext.Modifiers) {
+	delta := 1
+	if mods&gpucontext.ModShift != 0 {
+		delta = 5
+	}
 	switch key {
 	case gpucontext.KeyEscape:
 		a.l.Escape()
 	case gpucontext.KeyEnter:
-		a.l.Enter()
+		a.l.PanelActivate()
 	case gpucontext.KeyBackspace:
-		a.setQuery(trimLast(a.l.Query()))
-	case gpucontext.KeyTab:
-		// mode cycling is wired by the host; launcher just changes mode
+		a.l.PanelBackspace()
+	case gpucontext.KeyUp:
+		a.l.PanelNavigate(-1)
+	case gpucontext.KeyDown:
+		a.l.PanelNavigate(1)
 	case gpucontext.KeyLeft:
-		a.l.Select(-1)
+		a.l.PanelAdjust(-delta)
 	case gpucontext.KeyRight:
-		a.l.Select(1)
+		a.l.PanelAdjust(delta)
+	default:
+		slog.Debug("input key", "key", key, "action", "panel-unhandled")
 	}
 }
 
 func (a *Adapter) onTextInput(text string) {
-	a.setQuery(a.l.Query() + text)
+	ctx, span := telemetry.StartSpan(context.Background(), "keyshell.input.text",
+		trace.WithAttributes(attribute.String(telemetry.Attrs.Kind, "text")))
+	defer span.End()
+	telemetry.InputEvents().Add(ctx, 1,
+		metric.WithAttributes(attribute.String(telemetry.Attrs.Kind, "text")))
+	// Log the length, not the text: a query can hold sensitive input.
+	slog.Debug("input text", "chars", len(text))
+	if a.l.PanelOpen() {
+		a.l.PanelType(text)
+		return
+	}
+	a.setQuery(ctx, a.l.Query()+text)
 }
 
-// setQuery shows the text now and searches once typing pauses.
-func (a *Adapter) setQuery(text string) {
+// setQuery shows the text now and searches once typing pauses. The event's
+// trace context rides along, so the query span it triggers is a child of the
+// keystroke span.
+func (a *Adapter) setQuery(ctx context.Context, text string) {
 	a.l.SetQueryInput(text)
 	if a.searchTimer != nil {
 		a.searchTimer.Stop()
 	}
-	a.searchTimer = time.AfterFunc(searchSettle, func() { a.l.SetQuery(text) })
+	a.searchTimer = time.AfterFunc(searchSettle, func() {
+		if ctx != nil {
+			a.l.SetQueryContext(ctx, text)
+			return
+		}
+		a.l.SetQuery(text)
+	})
 }
 
 // OnPress registers a callback for pointer presses in surface coordinates.
@@ -70,6 +144,7 @@ func (a *Adapter) OnPress(fn func(x, y float64)) {
 }
 
 func (a *Adapter) onMousePress(button gpucontext.MouseButton, x, y float64) {
+	slog.Debug("input pointer", "button", button, "x", x, "y", y)
 	if button != gpucontext.MouseButtonLeft || a.onPress == nil {
 		return
 	}

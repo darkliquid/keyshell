@@ -1,0 +1,151 @@
+// keyshell's shipped overlay. This mirrors the legacy hard-coded look
+// inside a rotated content frame: a search row spanning the frame and
+// a centred reel of cards. The active card's control panel renders as a
+// separate overlay below the band; it is painted *after* the band mask,
+// so it may extend beyond the band's trapezoid.
+
+Window {
+    Path { d: $reveal.d, fill: $slab }
+
+    Group#content {
+        x: $reveal.frameX, y: $reveal.frameY
+        width: $reveal.cw, height: $reveal.ch
+        rotate: $reveal.angle
+
+        // Search field: spans up to 1200px (or 80% on small viewports),
+        // horizontally centered at the top like the legacy drawSearchField.
+        Row {
+            x: 0, y: 12
+            width: $reveal.cw, height: 48
+            justify: center
+            Row {
+                width: $reveal.cw * 0.8, maxW: 1200, height: 48
+                gap: 12, align: center
+                Pill { text: $mode, tone: accent }
+                Row { gap: 2, align: center
+                    Text { text: $query, size: 22, uppercase: true, color: $ink }
+                    Cursor { width: 3, height: 24, color: $accent, animation: blink 800ms linear infinite }
+                }
+                Box { grow: 1 }
+                Text { text: $results.len, size: 14, color: $muted }
+            }
+        }
+
+        // Busy strip: an accent bar under the search row, painted only
+        // while a query is in flight.
+        Row {
+            x: 0, y: 60
+            width: $reveal.cw, height: 4
+            justify: center
+            Box#busy { width: 300, height: 4, fill: $accent, radius: 2, when: $searching }
+        }
+
+        // Reel: centred on the selection, sized like the legacy drawCards.
+        List {
+            x: 0, y: 68
+            width: $reveal.cw, height: $reveal.ch - 80
+            items: $results, selected: $selected
+            orientation: horizontal
+            gap: 16
+            scroll: center
+            overflow: cycle
+            template {
+                Group#card { width: 360, height: $reveal.ch - 80, minH: 130
+                    Card { }
+                }
+            }
+            empty {
+                Text { text: "NO RESULTS", size: 12, color: $muted }
+            }
+        }
+    }
+
+    // Control panel: a window-level overlay, so the renderer paints it
+    // after the band mask. It sits under the reel, centred on the band,
+    // and may extend beyond the band's trapezoid.
+    Group#panel {
+        x: $reveal.frameX + ($reveal.cw - 360) / 2
+        y: $reveal.frameY + $reveal.ch + 4
+        width: 360
+        when: $panel.open
+        Column { gap: 6, align: center
+            List {
+                width: 360
+                items: $panel.rows, selected: $panel.focus
+                orientation: vertical
+                gap: 6
+                overflow: clamp
+                template {
+                    Group#prow { width: 360, minH: 40
+                        RowAction   { when: $item.kind == "action" }
+                        RowRange    { when: $item.kind == "range" }
+                        RowToggle   { when: $item.kind == "toggle" }
+                        RowChoice   { when: $item.kind == "choice" }
+                        RowText     { when: $item.kind == "text" }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ---- Control panel rows -----------------------------------------------------
+
+def RowAction {
+    Pill {
+        width: 320, height: 40, radius: 6
+        text: $item.title, tone: accent
+        state selected { fill: $accent }
+    }
+}
+
+def RowRange {
+    Row { width: 320, height: 40, gap: 10, align: center
+        Box { width: 44, height: 40, radius: 4, fill: $surface-alt
+            Text { text: $item.title, size: 10, color: $muted, uppercase: true }
+            state selected { fill: $accent }
+        }
+        Meter { width: 220, height: 8, ratio: $item.ratio, variant: bar }
+        Text { text: $item.ratio * 100, size: 12, color: $muted }
+    }
+}
+
+def RowToggle {
+    Row { width: 320, height: 40, gap: 10, align: center
+        Box { width: 44, height: 40, radius: 4, fill: $surface-alt
+            Text { text: $item.title, size: 10, color: $muted, uppercase: true }
+            state selected { fill: $accent }
+        }
+        Box { width: 40, height: 20, radius: 10, fill: $item.on ? $accent : $surface-alt }
+        Text { text: $item.on ? "ON" : "OFF", size: 12, color: $item.on ? $accent : $muted }
+    }
+}
+
+def RowChoice {
+    Row { width: 320, height: 40, gap: 10, align: center
+        Box { width: 44, height: 40, radius: 4, fill: $surface-alt
+            Text { text: $item.title, size: 10, color: $muted, uppercase: true }
+            state selected { fill: $accent }
+        }
+        Text { text: $item.text, size: 13, color: $ink }
+    }
+}
+
+def RowText {
+    Row { width: 320, height: 40, gap: 10, align: center
+        Box { width: 44, height: 40, radius: 4, fill: $surface-alt
+            Text { text: $item.title, size: 10, color: $muted, uppercase: true }
+            state selected { fill: $accent }
+        }
+        Box { width: 190, height: 32, radius: 4, fill: $surface-alt, border: $muted
+            Row { gap: 2, align: center
+                Text { text: $item.text, size: 13, color: $ink }
+                Cursor { width: 2, height: 18, color: $accent, opacity: $panel.dirty ? 1 : 0, animation: blink 800ms linear infinite }
+            }
+        }
+    }
+}
+
+state open { Group#content { opacity: 1 } }
+transition open { rotate: 250ms ease-out, opacity: 180ms }
+@keyframes blink { 0% { opacity: 1 } 50% { opacity: 0 } 100% { opacity: 1 } }

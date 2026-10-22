@@ -3,6 +3,8 @@ package backend
 import (
 	"context"
 	"fmt"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/darkliquid/keyshell/internal/config"
@@ -46,6 +48,35 @@ func (s *chanStream) Next() (Item, bool, error) {
 
 func (s *chanStream) Close() error { return nil }
 
+// TestInProcGetIsSafeForConcurrentWorkers proves concurrent Get calls build
+// each backend once: the query worker and a host-side prewarm hit the same
+// provider at startup.
+func TestInProcGetIsSafeForConcurrentWorkers(t *testing.T) {
+	var builds int32
+	p := NewInProc(func(_ string, _ config.Config) (Backend, error) {
+		atomic.AddInt32(&builds, 1)
+		return &fakeBackend{info: Info{ID: "apps"}}, nil
+	})
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			b, err := p.Get("apps")
+			if err != nil {
+				t.Errorf("Get = err %v", err)
+			}
+			if b == nil {
+				t.Error("Get = nil backend")
+			}
+		}()
+	}
+	wg.Wait()
+	if n := atomic.LoadInt32(&builds); n != 1 {
+		t.Errorf("factory built %d times, want 1 (memoised)", n)
+	}
+}
+
 // TestBackendSeamIsQueryable proves a Backend behind the seam can be queried
 // and its items consumed though the Stream interface.
 func TestBackendSeamIsQueryable(t *testing.T) {
@@ -72,6 +103,20 @@ func TestBackendSeamIsQueryable(t *testing.T) {
 	}
 	if len(b.queries) != 1 || b.queries[0].Text != "x" {
 		t.Errorf("queries = %+v, want one query for %q", b.queries, "x")
+	}
+}
+
+func TestPanelRowKinds(t *testing.T) {
+	r := PanelRow{Kind: ControlRange, Label: "Volume", Control: &Control{ID: "volume"}}
+	if r.Kind != ControlRange {
+		t.Fatalf("kind = %q, want %q", r.Kind, ControlRange)
+	}
+	if r.Control == nil || r.Control.ID != "volume" {
+		t.Fatalf("control = %+v", r.Control)
+	}
+	a := PanelRow{Kind: "action", Label: "RUN", Action: &Action{Type: "exec"}}
+	if a.Action == nil || a.Action.Type != "exec" {
+		t.Fatalf("action = %+v", a.Action)
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -103,3 +104,65 @@ func TestVerbDispatch(t *testing.T) {
 		t.Error("launcher did not open after toggle verb")
 	}
 }
+
+// itemBackend returns fixed items for the query verb.
+type itemBackend struct {
+	items []backend.Item
+}
+
+func (b *itemBackend) Info() backend.Info { return backend.Info{ID: "apps", Searchable: true} }
+func (b *itemBackend) Query(_ context.Context, _ backend.Query) (backend.Stream, error) {
+	return &nilSliceStream{items: b.items}, nil
+}
+func (b *itemBackend) Control(context.Context, backend.Change) error { return nil }
+func (b *itemBackend) Close() error                                  { return nil }
+
+// TestQueryVerbAnswersJSON proves the query verb answers one JSON document
+// with the ranked rows.
+func TestQueryVerbAnswersJSON(t *testing.T) {
+	items := &itemBackend{items: []backend.Item{{ID: "a", Title: "Ghostty"}}}
+	l := launcher.New(&itemProvider{backend: items}, launcher.Options{RankOpts: rank.Options{}})
+	h := New(l).WithReload(func() error { return nil })
+
+	resp := h.dispatch("query ghost")
+	if strings.Contains(resp, "\"error\"") {
+		t.Fatalf("query verb errored: %s", resp)
+	}
+	if !strings.Contains(resp, "Ghostty") || !strings.Contains(resp, "\"source\":\"apps\"") {
+		t.Fatalf("query verb response missing the row: %s", resp)
+	}
+
+	if resp := h.dispatch("queryMode nope ghost"); !strings.Contains(resp, "\"error\"") {
+		t.Fatalf("queryMode for an unknown backend should error, got: %s", resp)
+	}
+	if resp := h.dispatch("reload"); !strings.Contains(resp, "reloaded") {
+		t.Fatalf("reload verb response = %s", resp)
+	}
+}
+
+// itemProvider serves one backend.
+type itemProvider struct {
+	backend backend.Backend
+}
+
+func (p *itemProvider) Get(id string) (backend.Backend, error) {
+	if id != p.backend.Info().ID {
+		return nil, fmt.Errorf("unknown backend %q", id)
+	}
+	return p.backend, nil
+}
+
+type nilSliceStream struct {
+	items []backend.Item
+	i     int
+}
+
+func (s *nilSliceStream) Next() (backend.Item, bool, error) {
+	if s.i >= len(s.items) {
+		return backend.Item{}, false, nil
+	}
+	it := s.items[s.i]
+	s.i++
+	return it, true, nil
+}
+func (s *nilSliceStream) Close() error { return nil }

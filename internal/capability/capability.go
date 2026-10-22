@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
+	"unicode"
 
 	"github.com/darkliquid/keyshell/internal/backend"
 	"github.com/darkliquid/keyshell/internal/config"
@@ -22,14 +24,21 @@ type Broker struct {
 	focusCmd    func(id string) error
 }
 
-// New builds a broker with the real environment commands.
+// New builds a broker with the real environment commands. [commands] config
+// entries replace the built-in tools; empty entries keep the defaults.
 func New(cfg config.Config) *Broker {
 	return &Broker{
 		cfg: cfg,
 		copyCmd: func(s string) error {
+			if argv := cfg.Commands.Copy; len(argv) > 0 {
+				return runDetached(argv[0], append(argv[1:], s)...)
+			}
 			return exec.Command("wl-copy", s).Run()
 		},
 		openURLCmd: func(url string) error {
+			if argv := cfg.Commands.OpenURL; len(argv) > 0 {
+				return runDetached(argv[0], append(argv[1:], url)...)
+			}
 			return runDetached("xdg-open", url)
 		},
 		execCmd: func(argv []string) error {
@@ -43,9 +52,43 @@ func New(cfg config.Config) *Broker {
 			return runDetached(term, append([]string{"-e"}, argv...)...)
 		},
 		focusCmd: func(id string) error {
-			return runDetached("niri", "msg", "action", "focus-window", id)
+			argv, ok := focusCommand(cfg, id)
+			if !ok {
+				return fmt.Errorf("no window-focus command: unknown compositor, set [commands] focus_window")
+			}
+			return runDetached(argv[0], argv[1:]...)
 		},
 	}
+}
+
+// focusCommand resolves the argv that focuses a window by id: a configured
+// [commands] focus_window template wins (with {id} expanded, or the id
+// appended when the template has no placeholder); otherwise the compositor
+// is detected from the environment (niri, then sway).
+func focusCommand(cfg config.Config, id string) ([]string, bool) {
+	if tmpl := cfg.Commands.FocusWindow; len(tmpl) > 0 {
+		argv := make([]string, 0, len(tmpl)+1)
+		placed := false
+		for _, arg := range tmpl {
+			if strings.Contains(arg, "{id}") {
+				argv = append(argv, strings.ReplaceAll(arg, "{id}", id))
+				placed = true
+			} else {
+				argv = append(argv, arg)
+			}
+		}
+		if !placed {
+			argv = append(argv, id)
+		}
+		return argv, true
+	}
+	if os.Getenv("NIRI_SOCKET") != "" {
+		return []string{"niri", "msg", "action", "focus-window", id}, true
+	}
+	if os.Getenv("SWAYSOCK") != "" {
+		return []string{"swaymsg", "[con_id=" + id + "]", "focus"}, true
+	}
+	return nil, false
 }
 
 // Execute performs one host action.
@@ -56,9 +99,17 @@ func (b *Broker) Execute(a backend.Action) error {
 	case "open-url":
 		return b.openURLCmd(a.Value)
 	case "exec":
-		return b.execCmd([]string{a.Value})
+		argv := splitWords(a.Value)
+		if len(argv) == 0 {
+			return fmt.Errorf("exec action has no command")
+		}
+		return b.execCmd(argv)
 	case "exec-terminal":
-		return b.terminalCmd([]string{a.Value})
+		argv := splitWords(a.Value)
+		if len(argv) == 0 {
+			return fmt.Errorf("exec-terminal action has no command")
+		}
+		return b.terminalCmd(argv)
 	case "focus-window":
 		return b.focusCmd(a.Value)
 	case "set-query":
@@ -66,6 +117,59 @@ func (b *Broker) Execute(a backend.Action) error {
 	default:
 		return fmt.Errorf("unknown host action %q", a.Type)
 	}
+}
+
+// splitWords splits a command line into argv, honouring single quotes,
+// double quotes and backslash escapes. It is the counterpart of the quoting
+// the apps backend applies when it flattens argv into an action value, so an
+// argument containing spaces survives the round trip.
+func splitWords(s string) []string {
+	var (
+		words   []string
+		cur     strings.Builder
+		inWord  bool
+		quote   rune
+		escaped bool
+	)
+	flush := func() {
+		if inWord || cur.Len() > 0 {
+			words = append(words, cur.String())
+			cur.Reset()
+			inWord = false
+		}
+	}
+	for _, r := range s {
+		switch {
+		case escaped:
+			cur.WriteRune(r)
+			escaped = false
+		case quote != 0:
+			switch {
+			case r == quote:
+				quote = 0
+			case quote == '"' && r == '\\':
+				escaped = true
+			default:
+				cur.WriteRune(r)
+			}
+		case r == '\\':
+			escaped = true
+			inWord = true
+		case r == '\'' || r == '"':
+			quote = r
+			inWord = true
+		case unicode.IsSpace(r):
+			flush()
+		default:
+			cur.WriteRune(r)
+			inWord = true
+		}
+	}
+	if escaped {
+		cur.WriteRune('\\')
+	}
+	flush()
+	return words
 }
 
 func runDetached(bin string, args ...string) error {

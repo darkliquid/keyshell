@@ -9,7 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"os/exec"
 	"sync"
@@ -17,8 +17,14 @@ import (
 	"syscall"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/darkliquid/keyshell/internal/backend"
 	"github.com/darkliquid/keyshell/internal/plugin/proto"
+	"github.com/darkliquid/keyshell/internal/telemetry"
 )
 
 // Launch describes how to start an instance.
@@ -31,19 +37,17 @@ type Launch struct {
 // Host is one plugin instance. It is not safe for concurrent Query calls; the
 // Manager serializes access.
 type Host struct {
-	cfg         Launch
-	cmd         *exec.Cmd
-	stdin       io.WriteCloser
-	sc          *bufio.Scanner
-	mu          sync.Mutex
-	hello       proto.Hello
-	nextID      int
-	active      bool
-	lastSeen    atomic.Int64 // unix ms of the last successfully read line
-	restarts    int
-	lastRestart time.Time
-	closeCh     chan struct{}
-	doneCh      chan struct{}
+	cfg      Launch
+	cmd      *exec.Cmd
+	stdin    io.WriteCloser
+	sc       *bufio.Scanner
+	mu       sync.Mutex
+	hello    proto.Hello
+	nextID   int
+	active   bool
+	lastSeen atomic.Int64 // unix ms of the last successfully read line
+	closeCh  chan struct{}
+	doneCh   chan struct{}
 }
 
 const (
@@ -59,9 +63,28 @@ func NewHost(launch Launch) *Host {
 
 // Start spawns the plugin and performs the handshake.
 func (h *Host) Start() error {
+	ctx, span := telemetry.StartSpan(context.Background(), "keyshell.plugin.load",
+		trace.WithAttributes(
+			attribute.String(telemetry.Attrs.Instance, h.cfg.Instance),
+			attribute.StringSlice("keyshell.plugin.command", h.cfg.Command),
+		))
+	defer span.End()
+
+	start := time.Now()
 	h.mu.Lock()
-	defer h.mu.Unlock()
-	return h.startLocked()
+	err := h.startLocked()
+	telemetry.PluginLoadDuration().Record(ctx, time.Since(start).Seconds(),
+		metric.WithAttributes(attribute.String(telemetry.Attrs.Instance, h.cfg.Instance)))
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		h.mu.Unlock()
+		return err
+	}
+	h.mu.Unlock()
+	telemetry.PluginStarts().Add(ctx, 1,
+		metric.WithAttributes(attribute.String(telemetry.Attrs.Instance, h.cfg.Instance)))
+	return nil
 }
 
 func (h *Host) startLocked() error {
@@ -156,6 +179,22 @@ func (h *Host) Alive() bool {
 }
 
 func (h *Host) Query(ctx context.Context, q backend.Query) (backend.Stream, error) {
+	ctx, span := telemetry.StartSpan(ctx, "keyshell.plugin.query",
+		trace.WithAttributes(
+			attribute.String(telemetry.Attrs.Instance, h.cfg.Instance),
+			attribute.String("keyshell.query_text", q.Text),
+		))
+	defer span.End()
+
+	stream, err := h.query(ctx, q)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+	}
+	return stream, err
+}
+
+func (h *Host) query(ctx context.Context, q backend.Query) (backend.Stream, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if !h.active {
@@ -274,7 +313,9 @@ func (h *Host) supervise() {
 				return
 			}
 			if err := proc.Signal(syscall.Signal(0)); err != nil {
-				log.Printf("plugin %s: process is gone (%v), marking dead", h.cfg.Instance, err)
+				slog.Warn("plugin process is gone, marking dead", "instance", h.cfg.Instance, "err", err)
+				telemetry.PluginRestarts().Add(context.Background(), 1,
+					metric.WithAttributes(attribute.String(telemetry.Attrs.Instance, h.cfg.Instance)))
 				h.mu.Lock()
 				h.active = false
 				h.mu.Unlock()

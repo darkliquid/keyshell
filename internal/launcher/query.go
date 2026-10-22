@@ -3,6 +3,7 @@ package launcher
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -136,8 +137,16 @@ func (l *Launcher) apply(res Result) bool {
 	level.Matches = res.matches
 	l.results = res.matches
 	l.searching = false
+	if len(res.matches) == 0 {
+		level.Selected = 0
+	} else if level.Selected >= len(res.matches) {
+		level.Selected = 0
+	}
 	if res.sc.IsValid() {
 		l.lastQuerySC = res.sc
+	}
+	if item, source, ok := l.selectedItemLocked(level); ok {
+		slog.Debug("selection active", "index", level.Selected, "id", item.ID, "title", item.Title, "source", source, "matches", len(res.matches))
 	}
 	return true
 }

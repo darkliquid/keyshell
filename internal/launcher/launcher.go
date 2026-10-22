@@ -74,6 +74,24 @@ type Launcher struct {
 
 	debounce *time.Timer
 	settleMs time.Duration
+
+	// panel is the open control panel, nil when closed.
+	panel *panelState
+
+	// panelDebounce coalesces rapid range adjustments, mirroring debounce.
+	panelDebounce *time.Timer
+}
+
+// panelState is the launcher-owned control panel. rows is the ordered list of
+// interactive rows (action row first when present, then controls, progress
+// excluded); focus indexes into it; edit is the live text buffer of the
+// focused text row while it is being edited.
+type panelState struct {
+	item backend.Item
+	source string
+	rows   []backend.PanelRow
+	focus  int
+	edit   string
 }
 
 // Options is the launcher configuration.
@@ -204,6 +222,9 @@ func (l *Launcher) Query() string {
 func (l *Launcher) SetQuery(text string) {
 	l.mu.Lock()
 	l.query = text
+	if level := l.currentLevelLocked(); level != nil {
+		level.Selected = 0
+	}
 	job := l.jobLocked()
 	l.mu.Unlock()
 	l.changed()
@@ -216,6 +237,9 @@ func (l *Launcher) SetQuery(text string) {
 func (l *Launcher) SetQueryInput(text string) {
 	l.mu.Lock()
 	l.query = text
+	if level := l.currentLevelLocked(); level != nil {
+		level.Selected = 0
+	}
 	l.mu.Unlock()
 	l.changed()
 }
@@ -226,6 +250,9 @@ func (l *Launcher) SetQueryInput(text string) {
 func (l *Launcher) SetQueryContext(ctx context.Context, text string) {
 	l.mu.Lock()
 	l.query = text
+	if level := l.currentLevelLocked(); level != nil {
+		level.Selected = 0
+	}
 	job := l.jobLocked()
 	job.ctx = ctx
 	l.mu.Unlock()
@@ -250,18 +277,75 @@ func (l *Launcher) Selected() int {
 	return l.levels[len(l.levels)-1].Selected
 }
 
-// Select moves the selection by delta.
+// SelectedItem returns the currently selected item, its source backend, and
+// whether a valid item is selected.
+func (l *Launcher) SelectedItem() (backend.Item, string, bool) {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	level := l.currentLevelLocked()
+	return l.selectedItemLocked(level)
+}
+
+func (l *Launcher) countLocked(level *Level) int {
+	if level == nil {
+		return 0
+	}
+	if len(level.Matches) > 0 {
+		return len(level.Matches)
+	}
+	return len(level.Items)
+}
+
+func (l *Launcher) selectedItemLocked(level *Level) (backend.Item, string, bool) {
+	if level == nil {
+		return backend.Item{}, "", false
+	}
+	idx := level.Selected
+	if len(level.Matches) > 0 {
+		if idx < 0 || idx >= len(level.Matches) {
+			return backend.Item{}, "", false
+		}
+		m := level.Matches[idx]
+		source := m.Source
+		if source == "" {
+			source = level.Source
+		}
+		if source == "" {
+			source = l.mode
+		}
+		return m.Item, source, true
+	}
+	if len(level.Items) > 0 {
+		if idx < 0 || idx >= len(level.Items) {
+			return backend.Item{}, "", false
+		}
+		source := level.Source
+		if source == "" {
+			source = l.mode
+		}
+		return level.Items[idx], source, true
+	}
+	return backend.Item{}, "", false
+}
+
+// Select moves the selection by delta within the current level's results.
 func (l *Launcher) Select(delta int) {
 	l.mu.Lock()
 	level := l.currentLevelLocked()
-	if level == nil || len(level.Items) == 0 {
+	n := l.countLocked(level)
+	if n == 0 {
 		l.mu.Unlock()
 		return
 	}
-	n := len(level.Items)
+	prev := level.Selected
 	level.Selected = (level.Selected + delta + n) % n
+	selected := level.Selected
+	item, source, ok := l.selectedItemLocked(level)
 	l.mu.Unlock()
 	l.changed()
+	if ok {
+		slog.Debug("selection changed", "index", selected, "prev", prev, "id", item.ID, "title", item.Title, "source", source)
+	}
 }
 
 func (l *Launcher) searchableIDs() []string {
@@ -288,23 +372,22 @@ func (l *Launcher) Enter() {
 	// lock rather than the read lock.
 	l.mu.Lock()
 	level := l.currentLevelLocked()
-	if level == nil || len(level.Items) == 0 {
-		l.mu.Unlock()
-		return
+	idx := 0
+	if level != nil {
+		idx = level.Selected
 	}
-	idx := level.Selected
-	if idx < 0 || idx >= len(level.Items) {
-		l.mu.Unlock()
-		return
-	}
-	item := level.Items[idx]
-	source := l.mode
-	if level.Source != "" {
-		source = level.Source
-	}
+	item, source, ok := l.selectedItemLocked(level)
 	l.mu.Unlock()
+	if !ok {
+		return
+	}
 
-	slog.Debug("enter", "item", item.ID, "title", item.Title, "source", source, "actions", len(item.Actions))
+	slog.Debug("enter", "index", idx, "id", item.ID, "title", item.Title, "source", source, "actions", len(item.Actions))
+	if hasInteractiveControls(item) {
+		if l.openPanel(item, source) {
+			return
+		}
+	}
 	if len(item.Actions) > 0 {
 		if item.Destructive {
 			// Gating is checked by the input layer; here we route it anyway.
@@ -388,8 +471,16 @@ func (l *Launcher) descend(item backend.Item) {
 	l.submit(job)
 }
 
-// Back pops a level.
+// Back pops a level, or closes the panel first when one is open.
 func (l *Launcher) Back() {
+	l.mu.Lock()
+	if l.panel != nil {
+		l.closePanelLocked()
+		l.mu.Unlock()
+		l.changed()
+		return
+	}
+	l.mu.Unlock()
 	l.mu.RLock()
 	depth := len(l.levels)
 	query := l.query
@@ -409,8 +500,16 @@ func (l *Launcher) Back() {
 	}
 }
 
-// Escape pops a level or dismisses at the root.
+// Escape closes the panel first, then pops a level or dismisses at the root.
 func (l *Launcher) Escape() {
+	l.mu.Lock()
+	if l.panel != nil {
+		l.closePanelLocked()
+		l.mu.Unlock()
+		l.changed()
+		return
+	}
+	l.mu.Unlock()
 	l.mu.RLock()
 	depth := len(l.levels)
 	l.mu.RUnlock()
@@ -454,6 +553,292 @@ func (l *Launcher) DebouncedControl(itemID, controlID string, value float64) {
 		l.Control(itemID, controlID, value)
 	})
 	l.mu.Unlock()
+}
+
+// hasInteractiveControls reports whether an item exposes any editable control
+// (anything but a read-only progress indicator).
+func hasInteractiveControls(item backend.Item) bool {
+	for _, c := range item.Controls {
+		if c.Kind != backend.ControlProgress {
+			return true
+		}
+	}
+	return false
+}
+
+// panelRowsFor builds the ordered panel rows for an item: the action row
+// first when the item has a primary action, then every non-progress control.
+func panelRowsFor(item backend.Item) []backend.PanelRow {
+	var rows []backend.PanelRow
+	if len(item.Actions) > 0 {
+		a := item.Actions[0]
+		rows = append(rows, backend.PanelRow{Kind: backend.ControlKind("action"), Label: actionLabel(a), Action: &a})
+	}
+	for i := range item.Controls {
+		c := item.Controls[i]
+		if c.Kind == backend.ControlProgress {
+			continue
+		}
+		cc := c
+		rows = append(rows, backend.PanelRow{Kind: c.Kind, Label: c.Label, Control: &cc})
+	}
+	return rows
+}
+
+func actionLabel(a backend.Action) string {
+	switch a.Type {
+	case "copy":
+		return "COPY"
+	case "exec", "exec-terminal":
+		return "RUN"
+	case "open-url":
+		return "OPEN"
+	case "focus-window":
+		return "FOCUS"
+	case "plugin":
+		return "ACTIVATE"
+	case "set-query":
+		return "SEARCH"
+	}
+	return "SELECT"
+}
+
+// openPanel opens the control panel for an item. It reports whether a panel
+// opened (the item has interactive rows).
+func (l *Launcher) openPanel(item backend.Item, source string) bool {
+	l.mu.Lock()
+	if l.panel != nil {
+		l.mu.Unlock()
+		return true
+	}
+	rows := panelRowsFor(item)
+	if len(rows) == 0 {
+		l.mu.Unlock()
+		return false
+	}
+	l.panel = &panelState{item: item, source: source, rows: rows}
+	l.mu.Unlock()
+	l.changed()
+	return true
+}
+
+// closePanelLocked clears the panel; callers must hold the write lock and call
+// changed() after unlocking.
+func (l *Launcher) closePanelLocked() {
+	if l.panel == nil {
+		return
+	}
+	l.panel = nil
+	if l.panelDebounce != nil {
+		l.panelDebounce.Stop()
+		l.panelDebounce = nil
+	}
+}
+
+// PanelOpen reports whether the control panel is open.
+func (l *Launcher) PanelOpen() bool {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return l.panel != nil
+}
+
+// PanelRows returns the ordered interactive rows of the open panel.
+func (l *Launcher) PanelRows() []backend.PanelRow {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	if l.panel == nil {
+		return nil
+	}
+	out := make([]backend.PanelRow, len(l.panel.rows))
+	copy(out, l.panel.rows)
+	return out
+}
+
+// PanelFocus returns the focused row index, or 0 when closed.
+func (l *Launcher) PanelFocus() int {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	if l.panel == nil {
+		return 0
+	}
+	return l.panel.focus
+}
+
+// PanelDirty reports whether the focused text row is being edited.
+func (l *Launcher) PanelDirty() bool {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return l.panel != nil && l.panel.edit != ""
+}
+
+// PanelNavigate moves focus by delta within the panel's rows, clamping.
+func (l *Launcher) PanelNavigate(delta int) {
+	l.mu.Lock()
+	p := l.panel
+	if p == nil || len(p.rows) == 0 {
+		l.mu.Unlock()
+		return
+	}
+	p.focus += delta
+	if p.focus < 0 {
+		p.focus = 0
+	}
+	if p.focus >= len(p.rows) {
+		p.focus = len(p.rows) - 1
+	}
+	l.mu.Unlock()
+	l.changed()
+}
+
+// PanelAdjust manipulates the focused control: a range steps its value, a
+// choice cycles its options. Progress/action rows are no-ops.
+func (l *Launcher) PanelAdjust(delta int) {
+	l.mu.Lock()
+	p := l.panel
+	if p == nil || p.focus >= len(p.rows) {
+		l.mu.Unlock()
+		return
+	}
+	row := &p.rows[p.focus]
+	if row.Control == nil {
+		l.mu.Unlock()
+		return
+	}
+	c := row.Control
+	var change backend.Change
+	switch c.Kind {
+	case backend.ControlRange:
+		step := c.Step
+		if step <= 0 {
+			step = 1
+		}
+		v := c.Value + float64(delta)*step
+		if v < c.Min {
+			v = c.Min
+		}
+		if v > c.Max {
+			v = c.Max
+		}
+		c.Value = v
+		change = backend.Change{Item: p.item.ID, Control: c.ID, Value: v}
+	case backend.ControlChoice:
+		if len(c.Options) == 0 {
+			l.mu.Unlock()
+			return
+		}
+		cur := 0
+		for i, o := range c.Options {
+			if o == c.Text {
+				cur = i
+				break
+			}
+		}
+		next := (cur + delta) % len(c.Options)
+		if next < 0 {
+			next += len(c.Options)
+		}
+		c.Text = c.Options[next]
+		change = backend.Change{Item: p.item.ID, Control: c.ID, Text: c.Text}
+	}
+	source := p.source
+	settle := c.Kind == backend.ControlRange
+	l.mu.Unlock()
+	if settle {
+		l.debouncePanelControl(source, change)
+	} else {
+		_ = l.ControlSource(source, change)
+	}
+	l.changed()
+}
+
+func (l *Launcher) debouncePanelControl(source string, change backend.Change) {
+	l.mu.Lock()
+	if l.panelDebounce != nil {
+		l.panelDebounce.Stop()
+	}
+	l.panelDebounce = time.AfterFunc(l.opts.SettleMs, func() {
+		_ = l.ControlSource(source, change)
+	})
+	l.mu.Unlock()
+}
+
+// PanelActivate activates the focused row: runs the action row, flips a
+// toggle, commits a choice, or enters/commits a text field.
+func (l *Launcher) PanelActivate() {
+	l.mu.Lock()
+	p := l.panel
+	if p == nil || p.focus >= len(p.rows) {
+		l.mu.Unlock()
+		return
+	}
+	row := &p.rows[p.focus]
+	if row.Action != nil {
+		a := *row.Action
+		item := p.item
+		source := p.source
+		l.mu.Unlock()
+		l.performAction(a, item, source)
+		return
+	}
+	if row.Control == nil {
+		l.mu.Unlock()
+		return
+	}
+	c := row.Control
+	var change backend.Change
+	switch c.Kind {
+	case backend.ControlToggle:
+		c.Bool = !c.Bool
+		change = backend.Change{Item: p.item.ID, Control: c.ID, Bool: c.Bool}
+	case backend.ControlChoice:
+		change = backend.Change{Item: p.item.ID, Control: c.ID, Text: c.Text}
+	case backend.ControlText:
+		if p.edit == "" {
+			p.edit = c.Text
+			l.mu.Unlock()
+			l.changed()
+			return
+		}
+		change = backend.Change{Item: p.item.ID, Control: c.ID, Text: p.edit}
+		p.edit = ""
+	}
+	source := p.source
+	l.mu.Unlock()
+	if change.Control != "" {
+		_ = l.ControlSource(source, change)
+	}
+	l.changed()
+}
+
+// PanelType appends to the focused text row's edit buffer.
+func (l *Launcher) PanelType(s string) {
+	l.mu.Lock()
+	p := l.panel
+	if p == nil || p.focus >= len(p.rows) || p.rows[p.focus].Control == nil {
+		l.mu.Unlock()
+		return
+	}
+	if p.rows[p.focus].Control.Kind != backend.ControlText {
+		l.mu.Unlock()
+		return
+	}
+	p.edit += s
+	l.mu.Unlock()
+	l.changed()
+}
+
+// PanelBackspace deletes the last rune from the focused text row's buffer.
+func (l *Launcher) PanelBackspace() {
+	l.mu.Lock()
+	p := l.panel
+	if p == nil || p.edit == "" {
+		l.mu.Unlock()
+		return
+	}
+	r := []rune(p.edit)
+	p.edit = string(r[:len(r)-1])
+	l.mu.Unlock()
+	l.changed()
 }
 
 func (l *Launcher) openFocusView(item backend.Item) {

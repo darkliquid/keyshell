@@ -3,6 +3,7 @@ package launcher
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sync"
 	"testing"
 	"time"
@@ -56,6 +57,33 @@ func (b *listBackend) ControlCalls() []backend.Change {
 }
 func (b *listBackend) Close() error { return nil }
 
+type invokingBackend struct {
+	listBackend
+	invocations []backend.Invoke
+}
+
+func (b *invokingBackend) Invoke(_ context.Context, inv backend.Invoke) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.invocations = append(b.invocations, inv)
+	return nil
+}
+
+type testLogHandler struct {
+	mu      sync.Mutex
+	records []slog.Record
+}
+
+func (h *testLogHandler) Enabled(context.Context, slog.Level) bool { return true }
+func (h *testLogHandler) Handle(_ context.Context, r slog.Record) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.records = append(h.records, r)
+	return nil
+}
+func (h *testLogHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
+func (h *testLogHandler) WithGroup(string) slog.Handler      { return h }
+
 type sliceStream struct {
 	items []backend.Item
 	i     int
@@ -90,6 +118,176 @@ func newTestLauncher() (*Launcher, *fakeProvider) {
 	}}
 	l := New(prov, Options{SettleMs: 20 * time.Millisecond, RankOpts: rank.Options{Limit: 10}})
 	return l, prov
+}
+
+func TestEnterOpensPanelForControls(t *testing.T) {
+	audio := &listBackend{id: "audio", items: []backend.Item{{
+		ID: "sink", Title: "Speakers", Controls: []backend.Control{
+			{ID: "volume", Kind: backend.ControlRange, Label: "Volume", Value: 0.5, Min: 0, Max: 1, Step: 0.01},
+			{ID: "mute", Kind: backend.ControlToggle, Label: "Mute"},
+		},
+	}}}
+	l := New(&fakeProvider{backends: map[string]backend.Backend{"audio": audio}},
+		Options{Searchable: []string{"audio"}, RankOpts: rank.Options{Limit: 10}})
+	l.Open()
+	l.SetMode("audio")
+	l.Enter()
+	if !l.PanelOpen() {
+		t.Fatal("PanelOpen = false, want true after Enter on a control card")
+	}
+	if got := len(l.PanelRows()); got != 2 {
+		t.Errorf("PanelRows len = %d, want 2 (volume, mute)", got)
+	}
+	if l.PanelFocus() != 0 {
+		t.Errorf("PanelFocus = %d, want 0", l.PanelFocus())
+	}
+}
+
+func TestEnterOpensPanelWithActionFirst(t *testing.T) {
+	media := &listBackend{id: "media", items: []backend.Item{{
+		ID: "song", Title: "Song", Actions: []backend.Action{{Type: "exec", Value: "play"}},
+		Controls: []backend.Control{{ID: "position", Kind: backend.ControlRange, Label: "Position", Value: 0.2}},
+	}}}
+	l := New(&fakeProvider{backends: map[string]backend.Backend{"media": media}},
+		Options{Searchable: []string{"media"}, RankOpts: rank.Options{Limit: 10}})
+	l.Open()
+	l.SetMode("media")
+	l.Enter()
+	rows := l.PanelRows()
+	if len(rows) != 2 {
+		t.Fatalf("PanelRows len = %d, want 2 (action, position)", len(rows))
+	}
+	if rows[0].Kind != "action" || rows[0].Action == nil {
+		t.Errorf("rows[0] = %+v, want action row first", rows[0])
+	}
+	if rows[1].Kind != backend.ControlRange {
+		t.Errorf("rows[1].Kind = %q, want range", rows[1].Kind)
+	}
+}
+
+func TestEnterWithoutControlsStillLaunches(t *testing.T) {
+	apps := &listBackend{id: "apps", items: []backend.Item{{
+		ID: "app1", Title: "Calculator", Actions: []backend.Action{{Type: "exec", Value: "calc"}},
+	}}}
+	l := New(&fakeProvider{backends: map[string]backend.Backend{"apps": apps}},
+		Options{Searchable: []string{"apps"}, RankOpts: rank.Options{Limit: 10}})
+	l.Open()
+	l.SetMode("apps")
+	l.Enter()
+	if l.PanelOpen() {
+		t.Error("PanelOpen = true, want false (no controls, plain launch)")
+	}
+	if _, ok := l.TakeAction(); !ok {
+		t.Error("TakeAction = none, want the exec action still queued")
+	}
+}
+
+func TestPanelNavigateClamps(t *testing.T) {
+	audio := &listBackend{id: "audio", items: []backend.Item{{
+		ID: "sink", Title: "Speakers", Controls: []backend.Control{
+			{ID: "volume", Kind: backend.ControlRange, Label: "Volume"},
+			{ID: "mute", Kind: backend.ControlToggle, Label: "Mute"},
+		},
+	}}}
+	l := New(&fakeProvider{backends: map[string]backend.Backend{"audio": audio}},
+		Options{Searchable: []string{"audio"}, RankOpts: rank.Options{Limit: 10}})
+	l.Open()
+	l.SetMode("audio")
+	l.Enter()
+	l.PanelNavigate(1)
+	if got := l.PanelFocus(); got != 1 {
+		t.Errorf("PanelFocus = %d, want 1", got)
+	}
+	l.PanelNavigate(5)
+	if got := l.PanelFocus(); got != 1 {
+		t.Errorf("PanelFocus = %d, want 1 (clamped upper)", got)
+	}
+	l.PanelNavigate(-9)
+	if got := l.PanelFocus(); got != 0 {
+		t.Errorf("PanelFocus = %d, want 0 (clamped lower)", got)
+	}
+}
+
+func TestPanelAdjustStepsRange(t *testing.T) {
+	audio := &listBackend{id: "audio", items: []backend.Item{{
+		ID: "sink", Title: "Speakers", Controls: []backend.Control{
+			{ID: "volume", Kind: backend.ControlRange, Label: "Volume", Value: 0.5, Min: 0, Max: 1, Step: 0.1},
+		},
+	}}}
+	l := New(&fakeProvider{backends: map[string]backend.Backend{"audio": audio}},
+		Options{Searchable: []string{"audio"}, RankOpts: rank.Options{Limit: 10}, SettleMs: 20 * time.Millisecond})
+	l.Open()
+	l.SetMode("audio")
+	l.Enter()
+	l.PanelAdjust(-1)
+	time.Sleep(80 * time.Millisecond)
+	calls := audio.ControlCalls()
+	if len(calls) != 1 {
+		t.Fatalf("control calls = %d, want 1", len(calls))
+	}
+	if calls[0].Control != "volume" || calls[0].Value < 0.39 || calls[0].Value > 0.41 {
+		t.Errorf("control = %+v, want volume 0.4", calls[0])
+	}
+}
+
+func TestPanelActivateToggles(t *testing.T) {
+	audio := &listBackend{id: "audio", items: []backend.Item{{
+		ID: "sink", Title: "Speakers", Controls: []backend.Control{
+			{ID: "mute", Kind: backend.ControlToggle, Label: "Mute", Bool: false},
+		},
+	}}}
+	l := New(&fakeProvider{backends: map[string]backend.Backend{"audio": audio}},
+		Options{Searchable: []string{"audio"}, RankOpts: rank.Options{Limit: 10}})
+	l.Open()
+	l.SetMode("audio")
+	l.Enter()
+	l.PanelActivate()
+	calls := audio.ControlCalls()
+	if len(calls) != 1 || calls[0].Control != "mute" || !calls[0].Bool {
+		t.Errorf("control calls = %+v, want mute=true", calls)
+	}
+}
+
+func TestPanelActivateRunsAction(t *testing.T) {
+	media := &listBackend{id: "media", items: []backend.Item{{
+		ID: "song", Title: "Song", Actions: []backend.Action{{Type: "exec", Value: "play"}},
+		Controls: []backend.Control{{ID: "volume", Kind: backend.ControlRange, Label: "Volume"}},
+	}}}
+	l := New(&fakeProvider{backends: map[string]backend.Backend{"media": media}},
+		Options{Searchable: []string{"media"}, RankOpts: rank.Options{Limit: 10}})
+	l.Open()
+	l.SetMode("media")
+	l.Enter()
+	if rows := l.PanelRows(); len(rows) < 2 || rows[0].Kind != "action" {
+		t.Fatalf("rows = %+v, want action row present", rows)
+	}
+	l.PanelActivate()
+	if a, ok := l.TakeAction(); !ok || a.Value != "play" {
+		t.Errorf("TakeAction = %+v, %v; want play action", a, ok)
+	}
+}
+
+func TestEscapeClosesPanelFirst(t *testing.T) {
+	audio := &listBackend{id: "audio", items: []backend.Item{{
+		ID: "sink", Title: "Speakers", Controls: []backend.Control{
+			{ID: "volume", Kind: backend.ControlRange, Label: "Volume"},
+		},
+	}}}
+	l := New(&fakeProvider{backends: map[string]backend.Backend{"audio": audio}},
+		Options{Searchable: []string{"audio"}, RankOpts: rank.Options{Limit: 10}})
+	l.Open()
+	l.SetMode("audio")
+	l.Enter()
+	if !l.PanelOpen() {
+		t.Fatal("panel not open")
+	}
+	l.Escape()
+	if l.PanelOpen() {
+		t.Error("Escape left the panel open, want it closed first")
+	}
+	if !l.IsOpen() {
+		t.Error("Escape dismissed the overlay, want only the panel closed")
+	}
 }
 
 // TestMergedSearchUsesConfiguredSearchable proves the merged fan-out honours
@@ -289,16 +487,178 @@ func TestEnterQueuesHostAction(t *testing.T) {
 	l, _ := newTestLauncher()
 	l.Open()
 	l.SetMode("apps")
+	if len(l.Results()) == 0 {
+		t.Fatal("no results in apps mode")
+	}
+	wantItem := l.Results()[0].Item
 	l.Enter()
 	a, ok := l.TakeAction()
 	if !ok {
 		t.Fatal("TakeAction after Enter = none, want the exec action")
 	}
-	if a.Type != "exec" || a.Value != "ghostty" {
-		t.Errorf("action = %v %q, want exec ghostty", a.Type, a.Value)
+	if a.Type != "exec" || a.Value != wantItem.Actions[0].Value {
+		t.Errorf("action = %v %q, want exec %q", a.Type, a.Value, wantItem.Actions[0].Value)
 	}
 	if _, ok := l.TakeAction(); ok {
 		t.Error("TakeAction drained the same action twice")
+	}
+}
+
+// TestEnterTriggersHighlightedRankedItem proves Enter triggers the action of
+// the highlighted item from the ranked results, NOT the unranked raw items.
+func TestEnterTriggersHighlightedRankedItem(t *testing.T) {
+	apps := &listBackend{id: "apps", items: []backend.Item{
+		{ID: "app1", Title: "Calculator", Actions: []backend.Action{{Type: "exec", Value: "calc"}}},
+		{ID: "app2", Title: "Firefox", Actions: []backend.Action{{Type: "exec", Value: "firefox"}}},
+	}}
+	l := New(&fakeProvider{backends: map[string]backend.Backend{"apps": apps}},
+		Options{Searchable: []string{"apps"}, RankOpts: rank.Options{Limit: 10}})
+	l.Open()
+	l.SetMode("apps")
+	// Search for "fire" so Firefox is ranked #1 (index 0).
+	l.SetQuery("fire")
+	if len(l.Results()) == 0 || l.Results()[0].Item.Title != "Firefox" {
+		t.Fatalf("top result = %+v, want Firefox", l.Results())
+	}
+	l.Enter()
+	a, ok := l.TakeAction()
+	if !ok {
+		t.Fatal("TakeAction after Enter = none")
+	}
+	if a.Value != "firefox" {
+		t.Errorf("action.Value = %q, want firefox (triggered wrong item!)", a.Value)
+	}
+}
+
+// TestEnterTriggersSelectedItemAfterSelect proves that moving the selection
+// with Select(1) triggers the newly selected item, not the first item.
+func TestEnterTriggersSelectedItemAfterSelect(t *testing.T) {
+	apps := &listBackend{id: "apps", items: []backend.Item{
+		{ID: "app1", Title: "Alacritty", Actions: []backend.Action{{Type: "exec", Value: "alacritty"}}},
+		{ID: "app2", Title: "Btop", Actions: []backend.Action{{Type: "exec", Value: "btop"}}},
+	}}
+	l := New(&fakeProvider{backends: map[string]backend.Backend{"apps": apps}},
+		Options{Searchable: []string{"apps"}, RankOpts: rank.Options{Limit: 10}})
+	l.Open()
+	l.SetMode("apps")
+	if len(l.Results()) < 2 {
+		t.Fatalf("results count = %d, want at least 2", len(l.Results()))
+	}
+	secondItem := l.Results()[1].Item
+	l.Select(1)
+	if l.Selected() != 1 {
+		t.Fatalf("l.Selected() = %d, want 1", l.Selected())
+	}
+	l.Enter()
+	a, ok := l.TakeAction()
+	if !ok {
+		t.Fatal("TakeAction after Enter = none")
+	}
+	if a.Value != secondItem.Actions[0].Value {
+		t.Errorf("action.Value = %q, want %q for second item", a.Value, secondItem.Actions[0].Value)
+	}
+}
+
+// TestEnterCarriesMatchSourceInMergedMode proves Enter routes plugin actions
+// to the item's own backend source even when running in merged mode.
+func TestEnterCarriesMatchSourceInMergedMode(t *testing.T) {
+	audio := &invokingBackend{listBackend: listBackend{
+		id: "audio",
+		items: []backend.Item{
+			{ID: "vol", Title: "Volume", Actions: []backend.Action{{Type: "plugin", Value: "mute"}}},
+		},
+	}}
+	prov := &fakeProvider{backends: map[string]backend.Backend{
+		"audio": audio,
+	}}
+	l := New(prov, Options{Searchable: []string{"audio"}, RankOpts: rank.Options{Limit: 10}})
+	l.Open()
+	l.SetMode("") // merged mode
+	if len(l.Results()) == 0 {
+		t.Fatal("no results in merged mode")
+	}
+	l.Enter()
+	if len(audio.invocations) != 1 {
+		t.Fatalf("audio invocations = %d, want 1", len(audio.invocations))
+	}
+	if audio.invocations[0].Action != "mute" {
+		t.Errorf("invocation = %+v, want mute", audio.invocations[0])
+	}
+}
+
+// TestSelectLogsSelectionChange proves selection changes emit a debug log with
+// item details (index, id, title, source).
+func TestSelectLogsSelectionChange(t *testing.T) {
+	th := &testLogHandler{}
+	old := slog.Default()
+	slog.SetDefault(slog.New(th))
+	t.Cleanup(func() { slog.SetDefault(old) })
+
+	apps := &listBackend{id: "apps", items: []backend.Item{
+		{ID: "app1", Title: "Alacritty", Actions: []backend.Action{{Type: "exec", Value: "alacritty"}}},
+		{ID: "app2", Title: "Btop", Actions: []backend.Action{{Type: "exec", Value: "btop"}}},
+	}}
+	l := New(&fakeProvider{backends: map[string]backend.Backend{"apps": apps}},
+		Options{Searchable: []string{"apps"}, RankOpts: rank.Options{Limit: 10}})
+	l.Open()
+	l.SetMode("apps")
+	l.Select(1)
+
+	th.mu.Lock()
+	defer th.mu.Unlock()
+	found := false
+	for _, rec := range th.records {
+		if rec.Message == "selection changed" {
+			found = true
+			var idx int64
+			var title, id string
+			rec.Attrs(func(a slog.Attr) bool {
+				switch a.Key {
+				case "index":
+					idx = a.Value.Int64()
+				case "title":
+					title = a.Value.String()
+				case "id":
+					id = a.Value.String()
+				}
+				return true
+			})
+			if idx != 1 {
+				t.Errorf("logged index = %d, want 1", idx)
+			}
+			wantItem := l.Results()[1].Item
+			if title != wantItem.Title {
+				t.Errorf("logged title = %q, want %q", title, wantItem.Title)
+			}
+			if id != string(wantItem.ID) {
+				t.Errorf("logged id = %q, want %q", id, wantItem.ID)
+			}
+			break
+		}
+	}
+	if !found {
+		t.Error("expected 'selection changed' debug log not found")
+	}
+}
+
+// TestSetQueryResetsSelection proves that typing a new query resets the selection
+// back to index 0 so the top result is highlighted.
+func TestSetQueryResetsSelection(t *testing.T) {
+	apps := &listBackend{id: "apps", items: []backend.Item{
+		{ID: "app1", Title: "Alacritty", Actions: []backend.Action{{Type: "exec", Value: "alacritty"}}},
+		{ID: "app2", Title: "Btop", Actions: []backend.Action{{Type: "exec", Value: "btop"}}},
+	}}
+	l := New(&fakeProvider{backends: map[string]backend.Backend{"apps": apps}},
+		Options{Searchable: []string{"apps"}, RankOpts: rank.Options{Limit: 10}})
+	l.Open()
+	l.SetMode("apps")
+	l.Select(1)
+	if l.Selected() != 1 {
+		t.Fatalf("l.Selected() = %d, want 1", l.Selected())
+	}
+	l.SetQuery("ala")
+	if l.Selected() != 0 {
+		t.Errorf("l.Selected() after SetQuery = %d, want 0", l.Selected())
 	}
 }
 

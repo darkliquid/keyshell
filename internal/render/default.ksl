@@ -50,15 +50,14 @@ Window {
             overflow: cycle
             template {
                 Group#card { width: 360, height: $reveal.ch - 80, minH: 130
-                    Card { }
-                    // Control panel: slides out under the active card, only
-                    // for the selected item while the panel is open.
-                    Group#panel {
-                        x: 0, y: 0
-                        width: 360
-                        when: $panel.open && $active.id == $item.id
-                        Column { x: 0, y: $reveal.ch - 56
-                            width: 360, gap: 6, align: center
+                    // The panel sits in a Stack over the card so it stays inside
+                    // the band: it slides up from the card's bottom edge (the
+                    // reel's cross-axis) instead of extending past the band.
+                    Stack { align: end
+                        Card { }
+                        Column#panel {
+                            width: 360, gap: 6
+                            when: $panel.open && $active.id == $item.id
                             List {
                                 width: 360
                                 items: $panel.rows, selected: $panel.focus

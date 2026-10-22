@@ -162,9 +162,9 @@ func TestDrawFramePanelPaintsRows(t *testing.T) {
 	}
 	closed, opened := draw(false), draw(true)
 	diff := 0
-	// Panel rows hang below the selected card; scan the region under the card
-	// centre (the reel is centred on ~800, the band spans ~y 300-600).
-	for y := 500; y <= 700; y++ {
+	// The panel overlays the lower half of the selected card, which sits in the
+	// band around surface y 440..630 (reel centre ~800). Scan that card region.
+	for y := 440; y <= 630; y++ {
 		for x := 600; x <= 1000; x++ {
 			if closed.RGBAAt(x, y) != opened.RGBAAt(x, y) {
 				diff++

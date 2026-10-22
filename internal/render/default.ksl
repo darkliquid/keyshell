@@ -1,6 +1,7 @@
 // keyshell's shipped overlay. This mirrors the legacy hard-coded look
 // inside a rotated content frame: a search row spanning the frame and
-// a centred reel of cards.
+// a centred reel of cards. The active card can slide out an interactive
+// control panel along the reel's cross-axis (perpendicular to the band).
 
 Window {
     Path { d: $reveal.d, fill: $slab }
@@ -50,10 +51,93 @@ Window {
             template {
                 Group#card { width: 360, height: $reveal.ch - 80, minH: 130
                     Card { }
+                    // Control panel: slides out under the active card, only
+                    // for the selected item while the panel is open.
+                    Group#panel {
+                        x: 0, y: 0
+                        width: 360
+                        when: $panel.open && $active.id == $item.id
+                        Column { x: 0, y: $reveal.ch - 56
+                            width: 360, gap: 6, align: center
+                            List {
+                                width: 360
+                                items: $panel.rows, selected: $panel.focus
+                                orientation: vertical
+                                gap: 6
+                                overflow: clamp
+                                template {
+                                    Group#prow { width: 360, minH: 40
+                                        RowAction   { when: $item.kind == "action" }
+                                        RowRange    { when: $item.kind == "range" }
+                                        RowToggle   { when: $item.kind == "toggle" }
+                                        RowChoice   { when: $item.kind == "choice" }
+                                        RowText     { when: $item.kind == "text" }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
             empty {
                 Text { text: "NO RESULTS", size: 12, color: $muted }
+            }
+        }
+    }
+}
+
+// ---- Control panel rows -----------------------------------------------------
+
+def RowAction {
+    Pill {
+        width: 320, height: 40, radius: 6
+        text: $item.title, tone: accent
+        state selected { fill: $accent }
+    }
+}
+
+def RowRange {
+    Row { width: 320, height: 40, gap: 10, align: center
+        Box { width: 44, height: 40, radius: 4, fill: $surface-alt
+            Text { text: $item.title, size: 10, color: $muted, uppercase: true }
+            state selected { fill: $accent }
+        }
+        Meter { width: 220, height: 8, ratio: $item.ratio, variant: bar }
+        Text { text: $item.ratio * 100, size: 12, color: $muted }
+    }
+}
+
+def RowToggle {
+    Row { width: 320, height: 40, gap: 10, align: center
+        Box { width: 44, height: 40, radius: 4, fill: $surface-alt
+            Text { text: $item.title, size: 10, color: $muted, uppercase: true }
+            state selected { fill: $accent }
+        }
+        Box { width: 40, height: 20, radius: 10, fill: $item.on ? $accent : $surface-alt }
+        Text { text: $item.on ? "ON" : "OFF", size: 12, color: $item.on ? $accent : $muted }
+    }
+}
+
+def RowChoice {
+    Row { width: 320, height: 40, gap: 10, align: center
+        Box { width: 44, height: 40, radius: 4, fill: $surface-alt
+            Text { text: $item.title, size: 10, color: $muted, uppercase: true }
+            state selected { fill: $accent }
+        }
+        Text { text: $item.text, size: 13, color: $ink }
+    }
+}
+
+def RowText {
+    Row { width: 320, height: 40, gap: 10, align: center
+        Box { width: 44, height: 40, radius: 4, fill: $surface-alt
+            Text { text: $item.title, size: 10, color: $muted, uppercase: true }
+            state selected { fill: $accent }
+        }
+        Box { width: 190, height: 32, radius: 4, fill: $surface-alt, border: $muted
+            Row { gap: 2, align: center
+                Text { text: $item.text, size: 13, color: $ink }
+                Cursor { width: 2, height: 18, color: $accent, opacity: $panel.dirty ? 1 : 0, animation: blink 800ms linear infinite }
             }
         }
     }

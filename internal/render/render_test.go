@@ -133,6 +133,49 @@ func TestDrawFrameSearchingIndicator(t *testing.T) {
 	}
 }
 
+// TestDrawFramePanelPaintsRows proves an open panel renders control rows: the
+// frame with PanelOpen differs from the closed frame in the region below the
+// card.
+func TestDrawFramePanelPaintsRows(t *testing.T) {
+	th, err := theme.Load()
+	if err != nil {
+		t.Fatalf("theme.Load = err %v", err)
+	}
+	defer th.Close()
+
+	results := []rank.Match{{Item: backend.Item{
+		ID: "sink", Title: "Speakers", Controls: []backend.Control{
+			{ID: "volume", Kind: backend.ControlRange, Label: "Volume", Value: 0.5, Min: 0, Max: 1, Step: 0.01},
+			{ID: "mute", Kind: backend.ControlToggle, Label: "Mute"},
+		},
+	}}}
+	rows := []backend.PanelRow{
+		{Kind: backend.ControlRange, Label: "Volume", Control: &results[0].Item.Controls[0]},
+		{Kind: backend.ControlToggle, Label: "Mute", Control: &results[0].Item.Controls[1]},
+	}
+	draw := func(open bool) *image.RGBA {
+		view := &fakeView{open: true, mode: "audio", results: results, selected: 0,
+			panelOpen: open, panelRows: rows, panelFocus: 0}
+		dc := gg.NewContext(1600, 900)
+		New().DrawFrame(dc, view, th, config.Default().Reveal)
+		return dc.Image().(*image.RGBA)
+	}
+	closed, opened := draw(false), draw(true)
+	diff := 0
+	// Panel rows hang below the selected card; scan the region under the card
+	// centre (the reel is centred on ~800, the band spans ~y 300-600).
+	for y := 500; y <= 700; y++ {
+		for x := 600; x <= 1000; x++ {
+			if closed.RGBAAt(x, y) != opened.RGBAAt(x, y) {
+				diff++
+			}
+		}
+	}
+	if diff < 200 {
+		t.Errorf("panel region diff = %d pixels, want >= 200 (panel rows not painted)", diff)
+	}
+}
+
 // TestDrawFramePaintsResolvedIcon proves a card icon name resolves through
 // the theme resolver and the decoded image reaches the card once the async
 // decode lands.

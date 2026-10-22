@@ -74,6 +74,9 @@ type Item struct {
 	On      bool
 	Text    string
 	Options []string
+	Min     float64
+	Max     float64
+	Step    float64
 }
 
 // ItemControl is one item control ($item.<control>).
@@ -210,6 +213,26 @@ func (e *Env) member(v Value, name string) (Value, error) {
 			return Str(x.I.Hint), nil
 		case "statusTone":
 			return Str(x.I.StatusTone), nil
+		case "kind":
+			return Str(x.I.Kind), nil
+		case "ratio":
+			return Num(x.I.Ratio), nil
+		case "on":
+			return Bool(x.I.On), nil
+		case "min":
+			return Num(x.I.Min), nil
+		case "max":
+			return Num(x.I.Max), nil
+		case "step":
+			return Num(x.I.Step), nil
+		case "text":
+			return Str(x.I.Text), nil
+		case "options":
+			out := make(Array, len(x.I.Options))
+			for i, o := range x.I.Options {
+				out[i] = Str(o)
+			}
+			return out, nil
 		}
 		for i := range x.I.Controls {
 			if x.I.Controls[i].ID == name {

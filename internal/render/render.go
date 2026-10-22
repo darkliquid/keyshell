@@ -16,6 +16,7 @@ import (
 
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/darkliquid/keyshell/internal/backend"
 	"github.com/darkliquid/keyshell/internal/card"
 	"github.com/darkliquid/keyshell/internal/config"
 	"github.com/darkliquid/keyshell/internal/icons"
@@ -35,6 +36,10 @@ type View interface {
 	IsOpen() bool
 	ModeBadge() string
 	Searching() bool
+	PanelOpen() bool
+	PanelRows() []backend.PanelRow
+	PanelFocus() int
+	PanelDirty() bool
 }
 
 // cursorBlinkPeriodMs is the QML cursor's fade cycle: 400ms out, 400ms in.

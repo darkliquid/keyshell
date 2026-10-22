@@ -70,6 +70,25 @@ func itemFromBackend(b backend.Item) eval.Item {
 	}
 }
 
+// rowFromBackend maps one panel row into the interpreter's row schema. A
+// panel row is materialised as an eval.Item whose Kind/Title and value fields
+// drive the row template. The action row carries the action in Text (the
+// label), control rows carry the control's live value.
+func rowFromBackend(r backend.PanelRow) eval.Item {
+	if r.Action != nil {
+		return eval.Item{Kind: "action", Title: r.Label}
+	}
+	c := r.Control
+	if c == nil {
+		return eval.Item{Kind: string(r.Kind), Title: r.Label}
+	}
+	return eval.Item{
+		Kind: string(r.Kind), Title: r.Label,
+		Ratio: c.Value, Min: c.Min, Max: c.Max, Step: c.Step,
+		On: c.Bool, Text: c.Text, Options: c.Options,
+	}
+}
+
 // themeTokens maps the loaded palette into eval colors.
 func themeTokens(th *theme.Theme) map[string]eval.Color {
 	if th == nil {
@@ -172,11 +191,18 @@ func (sr *SceneRenderer) state(l View, th *theme.Theme, rev Reveal, cfg config.R
 	if sw <= 0 {
 		sw, sh = 1600, 900
 	}
-	mode := l.ModeBadge()
-	if mode == "" {
-		mode = "SEARCH"
+mode := l.ModeBadge()
+if mode == "" {
+	mode = "SEARCH"
+}
+panel := eval.Panel{Open: l.PanelOpen(), Focus: l.PanelFocus(), Dirty: l.PanelDirty()}
+if rows := l.PanelRows(); len(rows) > 0 {
+	panel.Rows = make([]eval.Item, len(rows))
+	for i, r := range rows {
+		panel.Rows[i] = rowFromBackend(r)
 	}
-	return eval.State{
+}
+return eval.State{
 		Name:      "keyshell",
 		Open:      l.IsOpen(),
 		Focused:   true,
@@ -185,6 +211,7 @@ func (sr *SceneRenderer) state(l View, th *theme.Theme, rev Reveal, cfg config.R
 		Selected:  l.Selected(),
 		Results:   items,
 		Searching: l.Searching(),
+		Panel:     panel,
 		Reveal: eval.Reveal{
 			Y: rev.Yc, H: minF(rev.HLeft, rev.HRight),
 			HLeft: rev.HLeft, HRight: rev.HRight,

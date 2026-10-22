@@ -93,6 +93,35 @@ func TestStateFromView(t *testing.T) {
 	}
 }
 
+func TestStateFromViewPanel(t *testing.T) {
+	v := &fakeView{open: true, mode: "audio",
+		panelOpen: true, panelFocus: 1, panelDirty: true,
+		panelRows: []backend.PanelRow{
+			{Kind: "action", Label: "RUN", Action: &backend.Action{Type: "exec"}},
+			{Kind: backend.ControlRange, Label: "Volume", Control: &backend.Control{ID: "volume", Value: 0.5, Min: 0, Max: 1, Step: 0.01}},
+		}}
+	th, err := theme.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer th.Close()
+	sr := NewSceneRenderer(New(), config.Default())
+	rev := Reveal{YLeft: 100, YRight: 120, HLeft: 64, HRight: 80, Angle: 0.02, Shear: -0.25}
+	st := sr.state(v, th, rev, config.Default().Reveal)
+	if !st.Panel.Open || st.Panel.Focus != 1 || !st.Panel.Dirty {
+		t.Errorf("panel = %+v, want open focus=1 dirty", st.Panel)
+	}
+	if len(st.Panel.Rows) != 2 {
+		t.Fatalf("panel rows = %d, want 2", len(st.Panel.Rows))
+	}
+	if st.Panel.Rows[0].Kind != "action" || st.Panel.Rows[0].Title != "RUN" {
+		t.Errorf("row0 = %+v, want action row", st.Panel.Rows[0])
+	}
+	if st.Panel.Rows[1].Kind != string(backend.ControlRange) || st.Panel.Rows[1].Ratio != 0.5 {
+		t.Errorf("row1 = %+v, want range row at 0.5", st.Panel.Rows[1])
+	}
+}
+
 func TestClockDrivesBlink(t *testing.T) {
 	sr := NewSceneRenderer(New(), config.Default())
 	kf := sr.scene.Keyframes()[0]

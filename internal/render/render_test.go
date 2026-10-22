@@ -56,6 +56,11 @@ type fakeView struct {
 	mode      string
 	selected  int
 	searching bool
+
+	panelOpen  bool
+	panelRows  []backend.PanelRow
+	panelFocus int
+	panelDirty bool
 }
 
 func (v *fakeView) Results() []rank.Match {
@@ -87,6 +92,10 @@ func (v *fakeView) ModeBadge() string {
 	}
 	return "SEARCH"
 }
+func (v *fakeView) PanelOpen() bool        { return v.panelOpen }
+func (v *fakeView) PanelRows() []backend.PanelRow { return v.panelRows }
+func (v *fakeView) PanelFocus() int        { return v.panelFocus }
+func (v *fakeView) PanelDirty() bool       { return v.panelDirty }
 
 // TestDrawFrameSearchingIndicator proves an in-flight query paints the busy
 // strip: pixels just under the search row differ between an idle and a

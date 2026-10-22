@@ -74,6 +74,58 @@ func TestRevealMembers(t *testing.T) {
 	}
 }
 
+func TestPanelBindings(t *testing.T) {
+	st := &State{Panel: Panel{Open: true, Focus: 1, Dirty: false, Rows: []Item{
+		{Kind: "action", Title: "RUN"},
+		{Kind: "range", Title: "Volume", Ratio: 0.5},
+	}}}
+	env := NewEnv(st, nil)
+	p, ok := env.lookupRef("panel")
+	if !ok {
+		t.Fatal("$panel missing")
+	}
+	if got, err := env.member(p, "open"); err != nil || got != Bool(true) {
+		t.Errorf("$panel.open = %v, %v; want true", got, err)
+	}
+	if got, err := env.member(p, "focus"); err != nil || got != Num(1) {
+		t.Errorf("$panel.focus = %v, %v; want 1", got, err)
+	}
+	if got, err := env.member(p, "dirty"); err != nil || got != Bool(false) {
+		t.Errorf("$panel.dirty = %v, %v; want false", got, err)
+	}
+	rows, err := env.member(p, "rows")
+	if err != nil {
+		t.Fatalf("$panel.rows = err %v", err)
+	}
+	if got, err := env.member(rows, "len"); err != nil || got != Num(2) {
+		t.Errorf("$panel.rows.len = %v, %v; want 2", got, err)
+	}
+}
+
+func TestOrderedControls(t *testing.T) {
+	st := &State{Results: []Item{{ID: "a", Controls: []ItemControl{
+		{ID: "volume", Kind: "range", Label: "Volume", Ratio: 0.5},
+		{ID: "mute", Kind: "toggle", Label: "Mute", On: true},
+	}}}}
+	env := NewEnv(st, nil)
+	inner := env.ItemScope(&st.Results[0])
+	item := ItemVal{&st.Results[0]}
+	if got, err := env.member(item, "volume"); err != nil {
+		t.Errorf("$item.volume = %v, %v", got, err)
+	} else if cv, ok := got.(ControlVal); !ok || cv.Ratio != 0.5 || cv.Kind != "range" {
+		t.Errorf("$item.volume = %#v", got)
+	}
+	if got, err := env.member(item, "mute"); err != nil {
+		t.Errorf("$item.mute = %v, %v", got, err)
+	} else if cv, ok := got.(ControlVal); !ok || !cv.On {
+		t.Errorf("$item.mute = %#v", got)
+	}
+	if _, err := env.member(item, "nope"); err == nil {
+		t.Error("$item.nope = nil error, want failure")
+	}
+	_ = inner
+}
+
 func TestItemScope(t *testing.T) {
 	st := State{Results: []Item{{ID: "a", Title: "Firefox"}}}
 	env := NewEnv(&st, nil)

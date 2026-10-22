@@ -34,6 +34,17 @@ type State struct {
 	// Window size for layout (%) and scale.
 	Width, Height float64
 	Scale         float64
+
+	// Panel is the interactive control panel state for the selected item.
+	Panel Panel
+}
+
+// Panel is the launcher's control panel state, exposed as $panel.
+type Panel struct {
+	Open  bool
+	Rows  []Item
+	Focus int
+	Dirty bool
 }
 
 // Reveal mirrors the host's per-summon band geometry.
@@ -54,14 +65,29 @@ type Item struct {
 	Glyph, Icon, Image, Preview        string
 	Detail, Hint                       string
 	StatusTone                         string
-	Controls                           map[string]ItemControl
+	Controls                           []ItemControl
+	// Panel-row fields: a panel row is materialised as an Item so a List
+	// template can render it. Kind is the row kind (action/range/toggle/
+	// choice/text); Ratio/On/Text/Options carry the row value.
+	Kind    string
+	Ratio   float64
+	On      bool
+	Text    string
+	Options []string
 }
 
 // ItemControl is one item control ($item.<control>).
 type ItemControl struct {
+	ID    string
+	Kind  string
+	Label string
 	Value string
 	Ratio float64
+	Min   float64
+	Max   float64
+	Step  float64
 	On    bool
+	Options []string
 }
 
 // Env resolves bindings. Parent scopes chain outward: a List template
@@ -101,10 +127,14 @@ type RevealVal struct{ Reveal }
 // ControlVal exposes one item control.
 type ControlVal struct{ ItemControl }
 
+// PanelVal exposes the control panel bindings.
+type PanelVal struct{ Panel }
+
 func (ItemVal) isValue()    {}
 func (ResultsVal) isValue() {}
 func (RevealVal) isValue()  {}
 func (ControlVal) isValue() {}
+func (PanelVal) isValue()   {}
 
 func (e *Env) results() ResultsVal { return ResultsVal{Items: e.st.Results} }
 
@@ -136,6 +166,8 @@ func (e *Env) lookupRef(name string) (Value, bool) {
 		return Bool(false), true
 	case "reveal":
 		return RevealVal{e.st.Reveal}, true
+	case "panel":
+		return PanelVal{e.st.Panel}, true
 	}
 	if c, ok := e.st.Tokens[name]; ok {
 		return c, true
@@ -179,17 +211,40 @@ func (e *Env) member(v Value, name string) (Value, error) {
 		case "statusTone":
 			return Str(x.I.StatusTone), nil
 		}
-		if c, ok := x.I.Controls[name]; ok {
-			return ControlVal{c}, nil
+		for i := range x.I.Controls {
+			if x.I.Controls[i].ID == name {
+				return ControlVal{x.I.Controls[i]}, nil
+			}
 		}
 	case ControlVal:
 		switch name {
+		case "kind":
+			return Str(x.Kind), nil
+		case "label":
+			return Str(x.Label), nil
 		case "value":
 			return Str(x.Value), nil
 		case "ratio":
 			return Num(x.Ratio), nil
 		case "on":
 			return Bool(x.On), nil
+		case "options":
+			out := make(Array, len(x.Options))
+			for i, o := range x.Options {
+				out[i] = Str(o)
+			}
+			return out, nil
+		}
+	case PanelVal:
+		switch name {
+		case "open":
+			return Bool(x.Open), nil
+		case "focus":
+			return Num(x.Focus), nil
+		case "dirty":
+			return Bool(x.Dirty), nil
+		case "rows":
+			return ResultsVal{Items: x.Rows}, nil
 		}
 	case RevealVal:
 		switch name {

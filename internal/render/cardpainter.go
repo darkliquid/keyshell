@@ -40,8 +40,8 @@ func itemToBackend(it *eval.Item) backend.Item {
 		return backend.Item{}
 	}
 	controls := make([]backend.Control, 0, len(it.Controls))
-	for id, c := range it.Controls {
-		controls = append(controls, backend.Control{ID: id, Text: c.Value, Value: c.Ratio, Bool: c.On})
+	for _, c := range it.Controls {
+		controls = append(controls, backend.Control{ID: c.ID, Text: c.Value, Value: c.Ratio, Bool: c.On})
 	}
 	return backend.Item{
 		ID: backend.ResultID(it.ID), Title: it.Title, Subtitle: it.Subtitle,

@@ -54,9 +54,13 @@ func parseScene(name string, src []byte, load ksl.Loader) (*ksl.Scene, error) {
 
 // itemFromBackend maps one backend item into the interpreter's schema.
 func itemFromBackend(b backend.Item) eval.Item {
-	controls := map[string]eval.ItemControl{}
+	controls := make([]eval.ItemControl, 0, len(b.Controls))
 	for _, c := range b.Controls {
-		controls[c.ID] = eval.ItemControl{Value: c.Text, Ratio: c.Value, On: c.Bool}
+		controls = append(controls, eval.ItemControl{
+			ID: c.ID, Kind: string(c.Kind), Label: c.Label,
+			Value: c.Text, Ratio: c.Value, Min: c.Min, Max: c.Max, Step: c.Step,
+			On: c.Bool, Options: c.Options,
+		})
 	}
 	return eval.Item{
 		ID: string(b.ID), Title: b.Title, Subtitle: b.Subtitle,

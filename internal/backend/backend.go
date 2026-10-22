@@ -99,6 +99,17 @@ type Control struct {
 	Primary bool
 }
 
+// PanelRow is one interactive row in an item's control panel. It is either
+// the action row (Action non-nil, Kind "action") or a control row (Control
+// non-nil, Kind is the control's kind). The launcher hands the renderer an
+// ordered panel row list so the scene can render one widget per row.
+type PanelRow struct {
+	Kind    ControlKind
+	Label   string
+	Action  *Action
+	Control *Control
+}
+
 // Item is one selectable result.
 type Item struct {
 	ID          ResultID

@@ -106,6 +106,20 @@ func TestBackendSeamIsQueryable(t *testing.T) {
 	}
 }
 
+func TestPanelRowKinds(t *testing.T) {
+	r := PanelRow{Kind: ControlRange, Label: "Volume", Control: &Control{ID: "volume"}}
+	if r.Kind != ControlRange {
+		t.Fatalf("kind = %q, want %q", r.Kind, ControlRange)
+	}
+	if r.Control == nil || r.Control.ID != "volume" {
+		t.Fatalf("control = %+v", r.Control)
+	}
+	a := PanelRow{Kind: "action", Label: "RUN", Action: &Action{Type: "exec"}}
+	if a.Action == nil || a.Action.Type != "exec" {
+		t.Fatalf("action = %+v", a.Action)
+	}
+}
+
 // TestProviderGetReturnsRegisteredBackend covers the provider contract: a
 // provider returns the backend registered under an id, and an error for an
 // unknown id.

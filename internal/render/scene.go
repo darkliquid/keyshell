@@ -142,6 +142,12 @@ type SceneRenderer struct {
 	stateTokens map[string]eval.Color
 	clock       *anim.Clock
 	prevProps   map[string]map[string]eval.Value
+
+	// lastMu guards the most recently resolved frame, so the presenter can
+	// paint the panel overlay on top of the band mask in a second pass.
+	lastMu   sync.Mutex
+	lastRoot *eval.ResolvedNode
+	lastDeps *PainterDeps
 }
 
 // NewSceneRenderer builds a renderer for the configured scene.
@@ -305,7 +311,39 @@ func (sr *SceneRenderer) DrawFrame(dc *gg.Context, l View, th *theme.Theme, cfg 
 	sr.clock.Tick(now, map[string]bool{"open": st.Open, "closed": !st.Open, "selected": st.Selected >= 0})
 	sr.applyTransitions(scene, frame.Root, now, prev)
 	deps := &PainterDeps{Reveal: rev, CardCfg: cfg, CursorAlpha: cursorAlpha(elapsed), Images: sr.inner.images, Icons: sr.inner.icons}
+	sr.lastMu.Lock()
+	sr.lastRoot = frame.Root
+	sr.lastDeps = deps
+	sr.lastMu.Unlock()
 	painterFor("Window")(dc, th, frame.Root, deps)
+}
+
+// DrawPanelOverlay paints the control-panel subtree of the last resolved
+// frame on top of the current context. The presenter calls this *after* the
+// band mask has been applied, so the panel is not clipped to the band.
+func (sr *SceneRenderer) DrawPanelOverlay(dc *gg.Context, th *theme.Theme) {
+	sr.lastMu.Lock()
+	root, deps := sr.lastRoot, sr.lastDeps
+	sr.lastMu.Unlock()
+	if root == nil || deps == nil {
+		return
+	}
+	if p := findPanelNode(root); p != nil {
+		painterFor(p.Name)(dc, th, p, deps)
+	}
+}
+
+// findPanelNode returns the node (and its subtree) carrying the id "panel".
+func findPanelNode(n *eval.ResolvedNode) *eval.ResolvedNode {
+	if n.ID == "panel" {
+		return n
+	}
+	for _, c := range n.Children {
+		if found := findPanelNode(c); found != nil {
+			return found
+		}
+	}
+	return nil
 }
 
 // applyAnimations walks the resolved frame and samples any `animation`

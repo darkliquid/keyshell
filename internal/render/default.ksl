@@ -1,7 +1,8 @@
 // keyshell's shipped overlay. This mirrors the legacy hard-coded look
 // inside a rotated content frame: a search row spanning the frame and
-// a centred reel of cards. The active card can slide out an interactive
-// control panel along the reel's cross-axis (perpendicular to the band).
+// a centred reel of cards. The active card's control panel renders as a
+// separate overlay below the band; it is painted *after* the band mask,
+// so it may extend beyond the band's trapezoid.
 
 Window {
     Path { d: $reveal.d, fill: $slab }
@@ -50,36 +51,39 @@ Window {
             overflow: cycle
             template {
                 Group#card { width: 360, height: $reveal.ch - 80, minH: 130
-                    // The panel sits in a Stack over the card so it stays inside
-                    // the band: it slides up from the card's bottom edge (the
-                    // reel's cross-axis) instead of extending past the band.
-                    Stack { align: end
-                        Card { }
-                        Column#panel {
-                            width: 360, gap: 6
-                            when: $panel.open && $active.id == $item.id
-                            List {
-                                width: 360
-                                items: $panel.rows, selected: $panel.focus
-                                orientation: vertical
-                                gap: 6
-                                overflow: clamp
-                                template {
-                                    Group#prow { width: 360, minH: 40
-                                        RowAction   { when: $item.kind == "action" }
-                                        RowRange    { when: $item.kind == "range" }
-                                        RowToggle   { when: $item.kind == "toggle" }
-                                        RowChoice   { when: $item.kind == "choice" }
-                                        RowText     { when: $item.kind == "text" }
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    Card { }
                 }
             }
             empty {
                 Text { text: "NO RESULTS", size: 12, color: $muted }
+            }
+        }
+    }
+
+    // Control panel: a window-level overlay, so the renderer paints it
+    // after the band mask. It sits under the reel, centred on the band,
+    // and may extend beyond the band's trapezoid.
+    Group#panel {
+        x: $reveal.frameX + ($reveal.cw - 360) / 2
+        y: $reveal.frameY + $reveal.ch + 4
+        width: 360
+        when: $panel.open
+        Column { gap: 6, align: center
+            List {
+                width: 360
+                items: $panel.rows, selected: $panel.focus
+                orientation: vertical
+                gap: 6
+                overflow: clamp
+                template {
+                    Group#prow { width: 360, minH: 40
+                        RowAction   { when: $item.kind == "action" }
+                        RowRange    { when: $item.kind == "range" }
+                        RowToggle   { when: $item.kind == "toggle" }
+                        RowChoice   { when: $item.kind == "choice" }
+                        RowText     { when: $item.kind == "text" }
+                    }
+                }
             }
         }
     }

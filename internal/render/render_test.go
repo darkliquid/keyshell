@@ -153,18 +153,26 @@ func TestDrawFramePanelPaintsRows(t *testing.T) {
 		{Kind: backend.ControlRange, Label: "Volume", Control: &results[0].Item.Controls[0]},
 		{Kind: backend.ControlToggle, Label: "Mute", Control: &results[0].Item.Controls[1]},
 	}
+	// Reproduce the presenter pipeline: draw the scene (which includes the
+	// panel as a scene node), apply the band mask, then paint the panel
+	// overlay on top so it survives the mask outside the band.
 	draw := func(open bool) *image.RGBA {
 		view := &fakeView{open: true, mode: "audio", results: results, selected: 0,
 			panelOpen: open, panelRows: rows, panelFocus: 0}
+		r := New()
 		dc := gg.NewContext(1600, 900)
-		New().DrawFrame(dc, view, th, config.Default().Reveal)
+		r.DrawFrame(dc, view, th, config.Default().Reveal)
+		r.MaskFrame(dc.Image().(*image.RGBA))
+		if r.scene != nil {
+			r.scene.DrawPanelOverlay(dc, th)
+		}
 		return dc.Image().(*image.RGBA)
 	}
 	closed, opened := draw(false), draw(true)
 	diff := 0
-	// The panel overlays the lower half of the selected card, which sits in the
-	// band around surface y 440..630 (reel centre ~800). Scan that card region.
-	for y := 440; y <= 630; y++ {
+	// The panel renders below the band (surface y ~645+), outside the band
+	// trapezoid. Scan that region (reel centre ~800).
+	for y := 650; y <= 800; y++ {
 		for x := 600; x <= 1000; x++ {
 			if closed.RGBAAt(x, y) != opened.RGBAAt(x, y) {
 				diff++

@@ -42,11 +42,14 @@ keyshell openMode audio   # open directly in a mode
 Configuration is TOML at `$XDG_CONFIG_HOME/keyshell/config.toml`
 (overridable with `KEYSHELL_CONFIG` or `--config`); a missing file is fine,
 defaults apply. Plugin instances are declared per instance with `id`,
-`command`, and `mode` (`auto`, `hot`, `lazy`).
+`command`, and `mode` (`auto`, `hot`, `lazy`). See [Configuration Reference](docs/configuration.md)
+for all options, defaults, and examples.
 
 Theming: point `[ui] scene` at a `.ksl` file, or pass `--scene`. The scene
 resolves against live launcher state (query, results, selection, reveal
-geometry) and supports transitions and keyframes.
+geometry) and supports transitions and keyframes. See [KSL Reference](docs/ksl.md)
+for language syntax, primitives, flex layout, and case studies (including the
+default slanted band and dropdown scenes).
 
 ## Toolchain
 

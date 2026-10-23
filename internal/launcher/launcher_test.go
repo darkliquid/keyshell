@@ -767,3 +767,110 @@ func TestQuerySyncLeavesStateAlone(t *testing.T) {
 		t.Error("unknown backend must error")
 	}
 }
+
+// TestCycleModeWrapsAndKeepsQuery proves Tab cycling walks the configured
+// mode list, wraps at both ends, and preserves the typed query.
+func TestCycleModeWrapsAndKeepsQuery(t *testing.T) {
+	prov := &fakeProvider{backends: map[string]backend.Backend{
+		"apps": &listBackend{id: "apps", items: []backend.Item{{ID: "a", Title: "Ghostty"}}},
+		"calc": &listBackend{id: "calc", items: []backend.Item{{ID: "c", Title: "42"}}},
+	}}
+	l := New(prov, Options{
+		Modes:    []string{MergedMode, "apps", "calc"},
+		SettleMs: 20 * time.Millisecond,
+		RankOpts: rank.Options{Limit: 10},
+	})
+	l.Open()
+	l.SetQuery("ghost")
+
+	if got := l.Mode(); got != MergedMode {
+		t.Fatalf("Mode = %q, want %q", got, MergedMode)
+	}
+	l.CycleMode(1)
+	if got := l.Mode(); got != "apps" {
+		t.Fatalf("CycleMode(+1) from merged: Mode = %q, want apps", got)
+	}
+	l.CycleMode(1)
+	if got := l.Mode(); got != "calc" {
+		t.Fatalf("CycleMode(+1): Mode = %q, want calc", got)
+	}
+	l.CycleMode(1)
+	if got := l.Mode(); got != MergedMode {
+		t.Fatalf("CycleMode past the end: Mode = %q, want %q", got, MergedMode)
+	}
+	if got := l.ModeBadge(); got != "SEARCH" {
+		t.Errorf("ModeBadge = %q, want SEARCH in merged mode", got)
+	}
+	l.CycleMode(-1)
+	if got := l.Mode(); got != "calc" {
+		t.Fatalf("CycleMode(-1) before the start: Mode = %q, want calc", got)
+	}
+	if got := l.Query(); got != "ghost" {
+		t.Errorf("Query = %q after cycling, want %q preserved", got, "ghost")
+	}
+}
+
+// TestModesDefaultsToMergedPlusSearchable pins the fallback cycle list.
+func TestModesDefaultsToMergedPlusSearchable(t *testing.T) {
+	l, _ := newTestLauncher()
+	got := l.Modes()
+	want := []string{MergedMode, "apps", "files", "windows"}
+	if len(got) != len(want) {
+		t.Fatalf("Modes = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("Modes = %v, want %v", got, want)
+		}
+	}
+}
+
+// barrierBackend blocks its Query until the partner backend is inside its own
+// Query, so a sequential merged fan-out would deadlock and trip the deadline.
+type barrierBackend struct {
+	id      string
+	entered chan<- struct{}
+	proceed <-chan struct{}
+}
+
+func (b *barrierBackend) Info() backend.Info {
+	return backend.Info{ID: b.id, Searchable: true, StableIDs: true}
+}
+func (b *barrierBackend) Query(_ context.Context, q backend.Query) (backend.Stream, error) {
+	b.entered <- struct{}{}
+	<-b.proceed
+	return &sliceStream{items: []backend.Item{{ID: backend.ResultID(b.id + "-1"), Title: b.id + " item"}}}, nil
+}
+func (b *barrierBackend) Control(context.Context, backend.Change) error { return nil }
+func (b *barrierBackend) Close() error                                  { return nil }
+
+// TestMergedQueryRunsBackendsConcurrently proves the merged fan-out does not
+// run backends one after another: two mutually-blocking backends must both
+// complete within the deadline.
+func TestMergedQueryRunsBackendsConcurrently(t *testing.T) {
+	aEntered := make(chan struct{}, 1)
+	bEntered := make(chan struct{}, 1)
+	a := &barrierBackend{id: "a", entered: aEntered, proceed: bEntered}
+	b := &barrierBackend{id: "b", entered: bEntered, proceed: aEntered}
+	prov := &fakeProvider{backends: map[string]backend.Backend{"a": a, "b": b}}
+	l := New(prov, Options{
+		Searchable: []string{"a", "b"},
+		SettleMs:   20 * time.Millisecond,
+		RankOpts:   rank.Options{Limit: 10},
+	})
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		l.Open()
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("merged query deadlocked: backends ran sequentially")
+	}
+	// Both backends answered and their groups merged in list order.
+	if got := len(l.Results()); got != 2 {
+		t.Fatalf("Results len = %d, want 2", got)
+	}
+}

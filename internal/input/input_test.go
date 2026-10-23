@@ -125,3 +125,37 @@ func TestClosedRoutingKeepsSelect(t *testing.T) {
 		t.Errorf("Selected after Right = %d, want %d (closed -> select)", got, before+1)
 	}
 }
+
+func TestTabCyclesModes(t *testing.T) {
+	prov := &fakeProvider{backends: map[string]backend.Backend{"audio": &fakeBackend{}}}
+	l := launcher.New(prov, launcher.Options{
+		Searchable: []string{"audio"},
+		RankOpts:   rank.Options{Limit: 10},
+	})
+	l.Open()
+	a := New(l, stubEvents{})
+
+	if got := l.Mode(); got != launcher.MergedMode {
+		t.Fatalf("Mode = %q, want %q", got, launcher.MergedMode)
+	}
+	a.onKeyPress(gpucontext.KeyTab, 0)
+	if got := l.Mode(); got != "audio" {
+		t.Errorf("Mode after Tab = %q, want audio", got)
+	}
+	a.onKeyPress(gpucontext.KeyTab, gpucontext.ModShift)
+	if got := l.Mode(); got != launcher.MergedMode {
+		t.Errorf("Mode after Shift+Tab = %q, want %q", got, launcher.MergedMode)
+	}
+}
+
+func TestTabDoesNotCycleWhilePanelOpen(t *testing.T) {
+	a, l := newPanelAdapter()
+	if !l.PanelOpen() {
+		t.Fatal("panel not open")
+	}
+	before := l.Mode()
+	a.onKeyPress(gpucontext.KeyTab, 0)
+	if got := l.Mode(); got != before {
+		t.Errorf("Mode after Tab with panel open = %q, want %q unchanged", got, before)
+	}
+}

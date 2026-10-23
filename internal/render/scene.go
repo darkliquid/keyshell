@@ -60,6 +60,7 @@ func itemFromBackend(b backend.Item) eval.Item {
 			ID: c.ID, Kind: string(c.Kind), Label: c.Label,
 			Value: c.Text, Ratio: c.Value, Min: c.Min, Max: c.Max, Step: c.Step,
 			On: c.Bool, Options: c.Options,
+			Display: string(c.Display), Primary: c.Primary,
 		})
 	}
 	return eval.Item{

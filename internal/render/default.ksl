@@ -27,17 +27,15 @@ Window {
                     Cursor { width: 3, height: 24, color: $accent, animation: blink 800ms linear infinite }
                 }
                 Box { grow: 1 }
-                Text { text: $results.len, size: 14, color: $muted }
+                // While a query is in flight the count becomes a spinner:
+                // a ring with an orbiting accent dot, driven by @keyframes.
+                Group#spinner { width: 20, height: 20, when: $searching,
+                    animation: spin 900ms linear infinite
+                    Box { width: 20, height: 20, radius: 10, border: $muted }
+                    Box { width: 5, height: 5, radius: 2.5, x: 13, y: 2, fill: $accent }
+                }
+                Text { text: $results.len, size: 14, color: $muted, when: !$searching }
             }
-        }
-
-        // Busy strip: an accent bar under the search row, painted only
-        // while a query is in flight.
-        Row {
-            x: 0, y: 60
-            width: $reveal.cw, height: 4
-            justify: center
-            Box#busy { width: 300, height: 4, fill: $accent, radius: 2, when: $searching }
         }
 
         // Reel: centred on the selection, sized like the legacy drawCards.
@@ -55,34 +53,37 @@ Window {
                 }
             }
             empty {
-                Text { text: "NO RESULTS", size: 12, color: $muted }
+                Text { text: $searching ? "SEARCHING" : "NO RESULTS", size: 12, color: $muted,
+                    width: $reveal.cw, align: center }
             }
         }
     }
 
     // Control panel: a window-level overlay, so the renderer paints it
-    // after the band mask. It sits under the reel, centred on the band,
-    // and may extend beyond the band's trapezoid.
+    // after the band mask. Each row is its own slab pill; the stack is
+    // tilted by the band angle and rides the band's bottom edge, so it
+    // reads as sliding out from under the reel. The explicit height makes
+    // the group's centre the rotation pivot.
     Group#panel {
         x: $reveal.frameX + ($reveal.cw - 360) / 2
-        y: $reveal.frameY + $reveal.ch + 4
+        y: $reveal.y + ($reveal.hLeft + $reveal.hRight) / 4 + 4
         width: 360
+        height: $panel.rows.len * 46 - 6
+        rotate: $reveal.angle
         when: $panel.open
-        Column { gap: 6, align: center
-            List {
-                width: 360
-                items: $panel.rows, selected: $panel.focus
-                orientation: vertical
-                gap: 6
-                overflow: clamp
-                template {
-                    Group#prow { width: 360, minH: 40
-                        RowAction   { when: $item.kind == "action" }
-                        RowRange    { when: $item.kind == "range" }
-                        RowToggle   { when: $item.kind == "toggle" }
-                        RowChoice   { when: $item.kind == "choice" }
-                        RowText     { when: $item.kind == "text" }
-                    }
+        List {
+            width: 360
+            items: $panel.rows, selected: $panel.focus
+            orientation: vertical
+            gap: 6
+            overflow: clamp
+            template {
+                Group#prow { width: 360, height: 40
+                    RowAction   { when: $item.kind == "action" }
+                    RowRange    { when: $item.kind == "range" }
+                    RowToggle   { when: $item.kind == "toggle" }
+                    RowChoice   { when: $item.kind == "choice" }
+                    RowText     { when: $item.kind == "text" }
                 }
             }
         }
@@ -90,57 +91,71 @@ Window {
 }
 
 // ---- Control panel rows -----------------------------------------------------
+// Each row is a slab pill: opaque so it reads over the desktop, muted border
+// for definition, accent border (or fill for the action row) when focused.
 
 def RowAction {
     Pill {
-        width: 320, height: 40, radius: 6
-        text: $item.title, tone: accent
-        state selected { fill: $accent }
+        width: 360, height: 40, radius: 6
+        text: $item.title, fill: $slab, color: $ink
+        state selected { fill: $accent, color: $slab }
     }
 }
 
 def RowRange {
-    Row { width: 320, height: 40, gap: 10, align: center
-        Box { width: 44, height: 40, radius: 4, fill: $surface-alt
-            Text { text: $item.title, size: 10, color: $muted, uppercase: true }
-            state selected { fill: $accent }
+    Box { width: 360, height: 40, radius: 6, fill: $slab, border: $muted
+        state selected { border: $accent }
+        Row { x: 10, width: 340, height: 40, gap: 10, align: center
+            Box { width: 64, height: 24, radius: 4, fill: $surface-alt
+                Text { text: $item.title, size: 10, color: $muted, uppercase: true, align: center }
+            }
+            Meter { width: 174, height: 8, ratio: $item.ratio, variant: bar }
+            Row { gap: 2, align: center
+                Text { text: ($item.ratio * 100).round(), size: 12, color: $muted }
+                Text { text: "%", size: 12, color: $muted }
+            }
         }
-        Meter { width: 220, height: 8, ratio: $item.ratio, variant: bar }
-        Text { text: $item.ratio * 100, size: 12, color: $muted }
     }
 }
 
 def RowToggle {
-    Row { width: 320, height: 40, gap: 10, align: center
-        Box { width: 44, height: 40, radius: 4, fill: $surface-alt
-            Text { text: $item.title, size: 10, color: $muted, uppercase: true }
-            state selected { fill: $accent }
+    Box { width: 360, height: 40, radius: 6, fill: $slab, border: $muted
+        state selected { border: $accent }
+        Row { x: 10, width: 340, height: 40, gap: 10, align: center
+            Box { width: 64, height: 24, radius: 4, fill: $surface-alt
+                Text { text: $item.title, size: 10, color: $muted, uppercase: true, align: center }
+            }
+            Box { width: 40, height: 20, radius: 10, fill: $item.on ? $accent : $surface-alt }
+            Text { text: $item.on ? "ON" : "OFF", size: 12, color: $item.on ? $accent : $muted }
         }
-        Box { width: 40, height: 20, radius: 10, fill: $item.on ? $accent : $surface-alt }
-        Text { text: $item.on ? "ON" : "OFF", size: 12, color: $item.on ? $accent : $muted }
     }
 }
 
 def RowChoice {
-    Row { width: 320, height: 40, gap: 10, align: center
-        Box { width: 44, height: 40, radius: 4, fill: $surface-alt
-            Text { text: $item.title, size: 10, color: $muted, uppercase: true }
-            state selected { fill: $accent }
+    Box { width: 360, height: 40, radius: 6, fill: $slab, border: $muted
+        state selected { border: $accent }
+        Row { x: 10, width: 340, height: 40, gap: 10, align: center
+            Box { width: 64, height: 24, radius: 4, fill: $surface-alt
+                Text { text: $item.title, size: 10, color: $muted, uppercase: true, align: center }
+            }
+            Text { text: $item.text, size: 13, color: $ink }
         }
-        Text { text: $item.text, size: 13, color: $ink }
     }
 }
 
 def RowText {
-    Row { width: 320, height: 40, gap: 10, align: center
-        Box { width: 44, height: 40, radius: 4, fill: $surface-alt
-            Text { text: $item.title, size: 10, color: $muted, uppercase: true }
-            state selected { fill: $accent }
-        }
-        Box { width: 190, height: 32, radius: 4, fill: $surface-alt, border: $muted
-            Row { gap: 2, align: center
-                Text { text: $item.text, size: 13, color: $ink }
-                Cursor { width: 2, height: 18, color: $accent, opacity: $panel.dirty ? 1 : 0, animation: blink 800ms linear infinite }
+    Box { width: 360, height: 40, radius: 6, fill: $slab, border: $muted
+        state selected { border: $accent }
+        Row { x: 10, width: 340, height: 40, gap: 10, align: center
+            Box { width: 64, height: 24, radius: 4, fill: $surface-alt
+                Text { text: $item.title, size: 10, color: $muted, uppercase: true, align: center }
+            }
+            Box { width: 230, height: 28, radius: 4, fill: $surface-alt, border: $muted
+                Row { height: 28, gap: 2, align: center
+                    Box { width: 6 }
+                    Text { text: $item.text, size: 13, color: $ink }
+                    Cursor { width: 2, height: 18, color: $accent, opacity: $panel.dirty ? 1 : 0, animation: blink 800ms linear infinite }
+                }
             }
         }
     }
@@ -149,3 +164,4 @@ def RowText {
 state open { Group#content { opacity: 1 } }
 transition open { rotate: 250ms ease-out, opacity: 180ms }
 @keyframes blink { 0% { opacity: 1 } 50% { opacity: 0 } 100% { opacity: 1 } }
+@keyframes spin { 0% { rotate: 0deg } 100% { rotate: 360deg } }

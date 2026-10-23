@@ -18,10 +18,9 @@ const (
 type Style string
 
 const (
-	StyleHero  Style = "hero"
-	StyleValue Style = "value"
-	StyleLine  Style = "line"
-	StyleWrap  Style = "wrap"
+	StyleHero Style = "hero"
+	StyleLine Style = "line"
+	StyleWrap Style = "wrap"
 )
 
 // Part is one resolved card widget. A zero Kind means the part is absent.
@@ -130,13 +129,12 @@ func launches(item backend.Item) bool {
 	return false
 }
 
-// titleStyle picks the title treatment for the chosen layout.
+// titleStyle picks the title treatment for the chosen layout. Every layout
+// shares the line/wrap treatment so an iconless card reads like any other;
+// only hero launch tiles get the larger display size.
 func titleStyle(item backend.Item, p Plan) Style {
-	switch p.Layout {
-	case LayoutHero:
+	if p.Layout == LayoutHero {
 		return StyleHero
-	case LayoutBody:
-		return StyleValue
 	}
 	if p.Badge.Kind == "" && p.Status.Kind == "" && len(item.Controls) == 0 {
 		return StyleWrap

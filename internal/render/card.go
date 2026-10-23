@@ -77,22 +77,27 @@ func drawHero(dc *gg.Context, th *theme.Theme, p card.Plan, selected bool, x, y,
 	drawLines(dc, th, face, p.Title.Text, selected, x, y+size+10, w, 2, true)
 }
 
-// drawBody paints the iconless card: a large centred value over its detail or
-// subtitle.
+// drawBody paints the iconless card: a centred title over its detail or
+// subtitle. The title uses the same treatment as every other layout, so an
+// iconless card reads like a card, not a billboard.
 func drawBody(dc *gg.Context, th *theme.Theme, p card.Plan, selected bool, x, y, w, h float64) {
-	face := th.Face(24)
-	lines := drawLines(dc, th, face, p.Title.Text, selected, x, y+4, w, 2, true)
-	next := y + 4 + float64(len(lines))*28
+	face := th.Face(titleSize(p.Title.Style))
+	max := maxLines(p.Title.Style)
+	if max < 2 {
+		max = 2 // the body has the width; let the title wrap once
+	}
+	lines := drawLines(dc, th, face, titleText(p.Title), selected, x, y+4, w, max, true)
+	next := y + 4 + float64(len(lines))*face.Metrics().LineHeight()
 
 	if p.Detail.Kind != "" {
 		drawDetail(dc, th, p.Detail.Text, selected, x, next, w, h-(next-y)-4)
 		return
 	}
 	if p.Subtitle.Kind != "" {
-		sub := th.Face(11)
+		sub := th.Face(9)
 		dc.SetFont(sub)
 		dc.SetColor(mutedOrInk(th, selected))
-		dc.DrawStringAnchored(elide(sub, p.Subtitle.Text, w), x+w/2, next+6, 0.5, 0.5)
+		dc.DrawStringAnchored(elide(sub, strings.ToUpper(p.Subtitle.Text), w), x+w/2, next+7, 0.5, 0.5)
 	}
 	if len(p.Accessories) > 0 {
 		drawAccessories(dc, th, p.Accessories, selected, x, y+h-accessoryHeight*float64(len(p.Accessories)), w)
@@ -160,29 +165,24 @@ func drawLines(dc *gg.Context, th *theme.Theme, face text.Face, s string, select
 }
 
 func titleSize(s card.Style) float64 {
-	switch s {
-	case card.StyleHero:
+	if s == card.StyleHero {
 		return 16
-	case card.StyleValue:
-		return 24
-	case card.StyleWrap:
-		return 11
 	}
 	return 13
 }
 
 func titleText(p card.Part) string {
-	if p.Style == card.StyleLine || p.Style == card.StyleValue {
-		return strings.ToUpper(p.Text)
+	if p.Style == card.StyleHero {
+		return p.Text
 	}
-	return p.Text
+	return strings.ToUpper(p.Text)
 }
 
 func maxLines(s card.Style) int {
 	switch s {
 	case card.StyleWrap:
 		return 3
-	case card.StyleHero, card.StyleValue:
+	case card.StyleHero:
 		return 2
 	}
 	return 1
@@ -290,8 +290,10 @@ func visualImage(deps *PainterDeps, p card.Part, w, h int) (image.Image, bool) {
 		if deps.Icons == nil {
 			return nil, false
 		}
-		resolved, ok := deps.Icons.Lookup(path, w)
-		if !ok {
+		// Icon resolution never blocks the frame: a cold name reports
+		// not-ready and resolves in the background for a later frame.
+		resolved, ok, ready := deps.Icons.LookupAsync(path, w)
+		if !ready || !ok {
 			return nil, false
 		}
 		path = resolved

@@ -52,9 +52,15 @@ func resolveProps(n *ksl.Node, env *Env, ctx *CascadeCtx) (map[string]Value, boo
 	}
 
 	// 4. Node-level state blocks (state name or item pseudo): conditional
-	// overrides of the node's own properties.
+	// overrides of the node's own properties. Inside an item scope a name
+	// that is also a pseudo ("selected") means "this item", so the pseudo
+	// decides; otherwise the scene-level state decides.
 	for _, sb := range n.States {
-		if !stateActive(sb.Name, env) && !ctx.Pseudo[sb.Name] {
+		active := stateActive(sb.Name, env)
+		if _, scoped := ctx.Pseudo[sb.Name]; scoped {
+			active = ctx.Pseudo[sb.Name]
+		}
+		if !active {
 			continue
 		}
 		if err := applyProps(props, sb.Props, env); err != nil {

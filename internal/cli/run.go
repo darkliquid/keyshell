@@ -199,10 +199,16 @@ func newLauncherOptions(cfg config.Config) launcher.Options {
 	for _, inst := range cfg.Instances {
 		searchable = append(searchable, inst.ID)
 	}
+	// Tab walks the merged search, then the searchable modes, then the
+	// trigger-only in-process backends (calc, run) so every mode is
+	// reachable from the keyboard.
+	modes := append([]string{launcher.MergedMode}, searchable...)
+	modes = append(modes, "calc", "run")
 	return launcher.Options{
 		SettleMs:   settleDuration(cfg.Overlay.SettleMs),
 		RankOpts:   rank.Options{Limit: cfg.Overlay.MaxResults},
 		Searchable: searchable,
+		Modes:      modes,
 	}
 }
 

@@ -25,9 +25,10 @@ type Resolver struct {
 	theme string
 	bases []string
 
-	mu    sync.Mutex
-	chain []themeDir
-	cache map[string]string
+	mu       sync.Mutex
+	chain    []themeDir
+	cache    map[string]string
+	inflight map[string]bool
 }
 
 // themeDir is one installed theme: its root and the parsed index.theme.
@@ -54,7 +55,7 @@ func NewResolver(theme string, bases ...string) *Resolver {
 	if theme == "" {
 		theme = "hicolor"
 	}
-	return &Resolver{theme: theme, bases: bases, cache: map[string]string{}}
+	return &Resolver{theme: theme, bases: bases, cache: map[string]string{}, inflight: map[string]bool{}}
 }
 
 // DefaultBaseDirs returns the spec's icon search path: ~/.icons, the XDG
@@ -132,6 +133,16 @@ func readGTKIconTheme(path string) string {
 	return ""
 }
 
+// trimExt strips a known image extension from an icon name.
+func trimExt(name string) string {
+	for _, ext := range exts {
+		if before, ok := strings.CutSuffix(name, "."+ext); ok {
+			return before
+		}
+	}
+	return name
+}
+
 // Lookup resolves an icon name at the given pixel size. An absolute path
 // passes through when the file exists, which is how some desktop entries
 // name their icon.
@@ -143,12 +154,7 @@ func (r *Resolver) Lookup(name string, size int) (string, bool) {
 		return "", false
 	}
 
-	for _, ext := range exts {
-		if strings.HasSuffix(name, "."+ext) {
-			name = strings.TrimSuffix(name, "."+ext)
-			break
-		}
-	}
+	name = trimExt(name)
 
 	key := name + "@" + strconv.Itoa(size)
 	r.mu.Lock()
@@ -178,6 +184,37 @@ func (r *Resolver) Lookup(name string, size int) (string, bool) {
 	}
 	r.store(key, "")
 	return "", false
+}
+
+// LookupAsync is Lookup without the wait: a cold name resolves on a
+// background goroutine and reports not-ready until the result is cached, so
+// the frame thread never walks the icon theme synchronously. A cached miss
+// reports ready but not-ok, so the painter stops asking.
+func (r *Resolver) LookupAsync(name string, size int) (path string, ok, ready bool) {
+	if strings.HasPrefix(name, "/") {
+		// An absolute path is one stat: cheap enough to stay synchronous.
+		p, ok := r.Lookup(name, size)
+		return p, ok, true
+	}
+	key := trimExt(name) + "@" + strconv.Itoa(size)
+	r.mu.Lock()
+	if p, hit := r.cache[key]; hit {
+		r.mu.Unlock()
+		return p, p != "", true
+	}
+	if r.inflight[key] {
+		r.mu.Unlock()
+		return "", false, false
+	}
+	r.inflight[key] = true
+	r.mu.Unlock()
+	go func() {
+		_, _ = r.Lookup(name, size) // populates the cache
+		r.mu.Lock()
+		delete(r.inflight, key)
+		r.mu.Unlock()
+	}()
+	return "", false, false
 }
 
 func (r *Resolver) store(key, path string) {

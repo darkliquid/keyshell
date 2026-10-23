@@ -120,16 +120,23 @@ func TestDrawFrameSearchingIndicator(t *testing.T) {
 	// the search row; scan a window around its surface position and require
 	// a solid block of changed pixels, so the blinking cursor (72px, outside
 	// the window) cannot satisfy this.
+	// In an idle frame, the trailing element of the search field is the
+	// results count text. In a searching frame, it is the 20x20 spinner ring
+	// with an orbiting accent dot (around x: 1380..1415, y: 430..460).
 	diff := 0
-	for y := 360; y <= 410; y++ {
-		for x := 640; x <= 960; x++ {
+	for y := 430; y <= 460; y++ {
+		for x := 1380; x <= 1415; x++ {
 			if idle.RGBAAt(x, y) != busy.RGBAAt(x, y) {
 				diff++
 			}
 		}
 	}
-	if diff < 100 {
-		t.Errorf("strip region diff = %d pixels, want >= 100 (searching indicator missing)", diff)
+	if diff < 20 {
+		t.Errorf("spinner region diff = %d pixels, want >= 20 (searching indicator missing)", diff)
+	}
+	// The spinner's accent dot must be painted in the busy frame.
+	if !containsColor(busy, 0xFF, 0x2E, 0x63) {
+		t.Errorf("searching indicator accent dot missing")
 	}
 }
 

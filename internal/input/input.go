@@ -65,8 +65,14 @@ func (a *Adapter) onKeyPress(key gpucontext.Key, mods gpucontext.Modifiers) {
 		slog.Debug("input key", "key", key, "action", "backspace")
 		a.setQuery(ctx, trimLast(a.l.Query()))
 	case gpucontext.KeyTab:
-		slog.Debug("input key", "key", key, "action", "tab")
-		// mode cycling is wired by the host; launcher just changes mode
+		// Tab walks the mode cycle (merged, searchable, then trigger-only);
+		// Shift+Tab walks it backwards.
+		delta := 1
+		if mods&gpucontext.ModShift != 0 {
+			delta = -1
+		}
+		slog.Debug("input key", "key", key, "action", "cycle-mode", "delta", delta)
+		a.l.CycleMode(delta)
 	case gpucontext.KeyLeft, gpucontext.KeyUp:
 		slog.Debug("input key", "key", key, "action", "select", "delta", -1)
 		a.l.Select(-1)

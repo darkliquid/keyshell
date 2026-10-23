@@ -81,16 +81,21 @@ type Item struct {
 
 // ItemControl is one item control ($item.<control>).
 type ItemControl struct {
-	ID    string
-	Kind  string
-	Label string
-	Value string
-	Ratio float64
-	Min   float64
-	Max   float64
-	Step  float64
-	On    bool
+	ID      string
+	Kind    string
+	Label   string
+	Value   string
+	Ratio   float64
+	Min     float64
+	Max     float64
+	Step    float64
+	On      bool
 	Options []string
+	// Display steers card composition ("card" pins, "expanded" hides) and
+	// Primary ranks the control for the accessory budget; both pass through
+	// to the card composer unchanged.
+	Display string
+	Primary bool
 }
 
 // Env resolves bindings. Parent scopes chain outward: a List template
@@ -313,6 +318,10 @@ func (e *Env) call(v Value, name string, args []Value) (Value, error) {
 	case "len":
 		if s, ok := v.(Str); ok {
 			return Num(len(s)), nil
+		}
+	case "round":
+		if n, ok := v.(Num); ok {
+			return Num(math.Round(float64(n))), nil
 		}
 	}
 	return nil, fmt.Errorf("no method %q on %T", name, v)

@@ -130,6 +130,46 @@ func TestSearchingBindingAndState(t *testing.T) {
 	}
 }
 
+// TestPseudoSelectedIsPerItem proves a node-level `state selected` block
+// inside a list item scope fires only for the item the pseudo marks, even
+// while the launcher-level "selected" state is active.
+func TestPseudoSelectedIsPerItem(t *testing.T) {
+	scene, err := ksl.Parse("t.ksl", []byte(`
+		Window { Box#row { fill: #000000, state selected { fill: #FF0000 } } }
+	`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := scene.Nodes()[0].Children[0]
+	// A valid selection exists, so the scene-level "selected" state is active.
+	st := &State{Open: true, Selected: 0, Results: []Item{{ID: "a"}, {ID: "b"}}}
+
+	off, _, err := resolveProps(n, NewEnv(st, nil), &CascadeCtx{Scene: scene, Pseudo: map[string]bool{"selected": false}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if off["fill"] != (Color{0, 0, 0, 0xFF}) {
+		t.Errorf("non-selected item got the selected fill: %v", off["fill"])
+	}
+
+	on, _, err := resolveProps(n, NewEnv(st, nil), &CascadeCtx{Scene: scene, Pseudo: map[string]bool{"selected": true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if on["fill"] != (Color{0xFF, 0, 0, 0xFF}) {
+		t.Errorf("selected item fill = %v", on["fill"])
+	}
+
+	// Outside an item scope the scene-level meaning still applies.
+	outside, _, err := resolveProps(n, NewEnv(st, nil), &CascadeCtx{Scene: scene})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outside["fill"] != (Color{0xFF, 0, 0, 0xFF}) {
+		t.Errorf("scene-level selected state fill = %v", outside["fill"])
+	}
+}
+
 func TestAttributeSelector(t *testing.T) {
 	scene, _ := ksl.Parse("t.ksl", []byte(`
 		Text[mode="media"] { color: #FF0000 }

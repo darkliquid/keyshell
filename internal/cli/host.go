@@ -187,9 +187,18 @@ type hybridProvider struct {
 
 	// Plugin processes are started once and reused: spawning one per query
 	// costs tens of milliseconds of process setup and made every keystroke
-	// block the launcher.
+	// block the launcher. The entry's creator starts the process off the
+	// provider mutex, so one plugin's spawn never stalls another's query.
 	mu    sync.Mutex
-	hosts map[string]*plugin.Host
+	hosts map[string]*hostEntry
+}
+
+// hostEntry is one plugin process slot. ready closes when its Start settles;
+// err carries a spawn failure. Reads of err must follow <-ready.
+type hostEntry struct {
+	host  *plugin.Host
+	ready chan struct{}
+	err   error
 }
 
 func (p *hybridProvider) Get(id string) (backend.Backend, error) {
@@ -197,20 +206,41 @@ func (p *hybridProvider) Get(id string) (backend.Backend, error) {
 	if !ok {
 		return p.inproc.Get(id)
 	}
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if h, ok := p.hosts[id]; ok && h.Alive() {
-		return h, nil
+	for {
+		p.mu.Lock()
+		if p.hosts == nil {
+			p.hosts = make(map[string]*hostEntry, len(p.plugins))
+		}
+		e, ok := p.hosts[id]
+		if !ok {
+			e = &hostEntry{host: plugin.NewHost(launch), ready: make(chan struct{})}
+			p.hosts[id] = e
+			p.mu.Unlock()
+			e.err = e.host.Start()
+			close(e.ready)
+			if e.err != nil {
+				p.mu.Lock()
+				if p.hosts[id] == e {
+					delete(p.hosts, id)
+				}
+				p.mu.Unlock()
+				return nil, e.err
+			}
+			return e.host, nil
+		}
+		p.mu.Unlock()
+		<-e.ready
+		if e.err == nil && e.host.Alive() {
+			return e.host, nil
+		}
+		// Failed to start, or died since: drop the stale entry unless
+		// another goroutine already replaced it, then recreate.
+		p.mu.Lock()
+		if p.hosts[id] == e {
+			delete(p.hosts, id)
+		}
+		p.mu.Unlock()
 	}
-	h := plugin.NewHost(launch)
-	if err := h.Start(); err != nil {
-		return nil, err
-	}
-	if p.hosts == nil {
-		p.hosts = make(map[string]*plugin.Host, len(p.plugins))
-	}
-	p.hosts[id] = h
-	return h, nil
 }
 
 // ActiveCount reports how many plugin subprocesses are currently running,
@@ -218,13 +248,18 @@ func (p *hybridProvider) Get(id string) (backend.Backend, error) {
 func (p *hybridProvider) ActiveCount() int64 {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	n := 0
-	for _, h := range p.hosts {
-		if h.Alive() {
-			n++
+	var n int64
+	for _, e := range p.hosts {
+		select {
+		case <-e.ready:
+			if e.err == nil && e.host.Alive() {
+				n++
+			}
+		default:
+			// still spawning
 		}
 	}
-	return int64(n)
+	return n
 }
 
 // HotStart best-effort starts configured hot plugin instances before the

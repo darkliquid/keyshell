@@ -8,7 +8,9 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 )
 
 // fixture builds an icon tree under one root and returns the base dirs to
@@ -314,5 +316,59 @@ func TestSmokeSystemIcons(t *testing.T) {
 	for _, name := range []string{"btop", "com.mitchellh.ghostty", "google-chrome", "Alacritty"} {
 		p, ok := r.Lookup(name, 48)
 		t.Logf("icon %-22s -> %v (%s)", name, ok, p)
+	}
+}
+
+// awaitReady polls an async lookup until it reports ready or the deadline
+// passes, returning the last result.
+func awaitReady(t *testing.T, r *Resolver, name string, size int) (string, bool) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		path, ok, ready := r.LookupAsync(name, size)
+		if ready {
+			return path, ok
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("LookupAsync(%q) never resolved", name)
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+func TestLookupAsyncResolvesOffTheCaller(t *testing.T) {
+	_, bases := fixture(t)
+	r := NewResolver("themeA", bases...)
+	if _, _, ready := r.LookupAsync("terminal", 48); ready {
+		t.Fatal("cold LookupAsync reported ready; it must not walk the theme inline")
+	}
+	path, ok := awaitReady(t, r, "terminal", 48)
+	if !ok {
+		t.Fatal("LookupAsync miss after resolve")
+	}
+	if !strings.HasSuffix(path, filepath.Join("48x48", "apps", "terminal.png")) {
+		t.Errorf("path = %q, want the 48px terminal icon", path)
+	}
+}
+
+func TestLookupAsyncCachesMisses(t *testing.T) {
+	_, bases := fixture(t)
+	r := NewResolver("themeA", bases...)
+	r.LookupAsync("no-such-icon", 48)
+	path, ok := awaitReady(t, r, "no-such-icon", 48)
+	if ok || path != "" {
+		t.Errorf("miss = %q/%v, want not-ok and empty path", path, ok)
+	}
+	// A cached miss stays ready, so the painter stops re-asking every frame.
+	if _, _, ready := r.LookupAsync("no-such-icon", 48); !ready {
+		t.Error("cached miss reported not-ready")
+	}
+}
+
+func TestLookupAsyncAbsolutePathsStaySync(t *testing.T) {
+	_, bases := fixture(t)
+	r := NewResolver("themeA", bases...)
+	if _, _, ready := r.LookupAsync("/nonexistent/icon.png", 48); !ready {
+		t.Error("absolute path must resolve synchronously")
 	}
 }

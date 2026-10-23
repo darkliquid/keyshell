@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -218,16 +219,32 @@ func (l *Launcher) QuerySync(ctx context.Context, mode, text string, limit int) 
 }
 
 // queryMode runs the query for one mode, merged or scoped, and ranks it.
+// The merged fan-out is concurrent: the merged search is only as slow as the
+// slowest backend, not the sum of them. Group order stays in searchableIDs
+// order so ranking is deterministic.
 func (l *Launcher) queryMode(ctx context.Context, mode, text string, scope []string, limit int) Result {
 	res := Result{}
 	if mode == MergedMode || mode == "" {
-		groups := []rank.Group{}
-		for _, id := range l.searchableIDs() {
-			items, err := l.queryBackend(ctx, id, text, limit, true, nil)
-			if err != nil {
+		ids := l.searchableIDs()
+		items := make([][]backend.Item, len(ids))
+		errs := make([]error, len(ids))
+		var wg sync.WaitGroup
+		for i, id := range ids {
+			wg.Add(1)
+			go func(i int, id string) {
+				defer wg.Done()
+				found, err := l.queryBackend(ctx, id, text, limit, true, nil)
+				items[i] = found
+				errs[i] = err
+			}(i, id)
+		}
+		wg.Wait()
+		groups := make([]rank.Group, 0, len(ids))
+		for i, id := range ids {
+			if errs[i] != nil {
 				continue
 			}
-			groups = append(groups, rank.Group{Source: id, Items: items})
+			groups = append(groups, rank.Group{Source: id, Items: items[i]})
 		}
 		res.items = flattenGroups(groups)
 		res.matches = rank.Rank(text, groups, nil, l.opts.RankOpts)

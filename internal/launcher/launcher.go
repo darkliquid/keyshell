@@ -101,6 +101,9 @@ type Options struct {
 	// Searchable is the set of backend ids that participate in the merged
 	// search. calc/run/clipboard are intentionally absent.
 	Searchable []string
+	// Modes is the Tab cycle list: the merged search first, then every mode
+	// a keypress can enter directly. Empty derives it from Searchable.
+	Modes []string
 }
 
 // New builds a launcher over a backend provider.
@@ -207,6 +210,34 @@ func (l *Launcher) SetMode(id string) {
 	l.mu.Unlock()
 	l.changed()
 	l.submit(job)
+}
+
+// Modes returns the mode ids Tab cycles through, merged search first.
+func (l *Launcher) Modes() []string {
+	if len(l.opts.Modes) > 0 {
+		return l.opts.Modes
+	}
+	return append([]string{MergedMode}, l.searchableIDs()...)
+}
+
+// CycleMode switches to the next (delta 1) or previous (delta -1) mode in the
+// cycle, keeping the typed query, and starts a search in the new mode.
+func (l *Launcher) CycleMode(delta int) {
+	modes := l.Modes()
+	if len(modes) < 2 {
+		return
+	}
+	l.mu.RLock()
+	cur := l.mode
+	l.mu.RUnlock()
+	idx := 0
+	for i, m := range modes {
+		if m == cur {
+			idx = i
+			break
+		}
+	}
+	l.SetMode(modes[(idx+delta+len(modes))%len(modes)])
 }
 
 // Query returns the current query text.

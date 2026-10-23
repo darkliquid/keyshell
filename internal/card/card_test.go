@@ -64,8 +64,10 @@ func TestComposeBodyForACalculator(t *testing.T) {
 	if p.Layout != LayoutBody {
 		t.Fatalf("layout = %q, want %q", p.Layout, LayoutBody)
 	}
-	if p.Title.Style != StyleValue {
-		t.Errorf("title style = %q, want %q", p.Title.Style, StyleValue)
+	// The body title shares the wrap treatment with every other card: no
+	// separate oversized "value" style.
+	if p.Title.Style != StyleWrap {
+		t.Errorf("title style = %q, want %q", p.Title.Style, StyleWrap)
 	}
 	if p.Footer.Text != "ENTER COPY" {
 		t.Errorf("footer = %q, want %q", p.Footer.Text, "ENTER COPY")

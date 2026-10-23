@@ -176,6 +176,10 @@ func (e *Env) lookupRef(name string) (Value, bool) {
 		return RevealVal{e.st.Reveal}, true
 	case "panel":
 		return PanelVal{e.st.Panel}, true
+	case "width":
+		return Num(e.st.Width), true
+	case "height":
+		return Num(e.st.Height), true
 	}
 	if c, ok := e.st.Tokens[name]; ok {
 		return c, true

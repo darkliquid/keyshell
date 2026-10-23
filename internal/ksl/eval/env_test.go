@@ -7,6 +7,7 @@ func TestBindings(t *testing.T) {
 		Open: true, Query: "fire", Mode: "apps",
 		Results: []Item{{ID: "a", Title: "Firefox"}, {ID: "b", Title: "Firejail"}},
 		Tokens:  map[string]Color{"accent": {0xFF, 0x2E, 0x63, 0xFF}},
+		Width:   1920, Height: 1080,
 	}
 	env := NewEnv(&st, nil)
 	for _, tc := range []struct {
@@ -21,6 +22,8 @@ func TestBindings(t *testing.T) {
 		{"typing", Num(0)},
 		{"accent", Color{0xFF, 0x2E, 0x63, 0xFF}},
 		{"active", ItemVal{&st.Results[0]}},
+		{"width", Num(1920)},
+		{"height", Num(1080)},
 	} {
 		got, ok := env.lookupRef(tc.ref)
 		if !ok || got != tc.want {

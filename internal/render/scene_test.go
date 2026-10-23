@@ -342,3 +342,81 @@ func TestDropdownSceneLargeResultVirtualizationAndClipping(t *testing.T) {
 	sr.DrawFrame(dc, view, th, cfg.Reveal)
 	checkLeaks(t, "selected=199")
 }
+
+func TestDropdownSceneControls(t *testing.T) {
+	th, err := theme.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer th.Close()
+
+	cfg := config.Default()
+	cfg.UI.Scene = "../../scenes/dropdown.ksl"
+	s, err := LoadScene(cfg)
+	if err != nil {
+		t.Fatalf("LoadScene(dropdown.ksl): %v", err)
+	}
+
+	sr := NewSceneRenderer(New(), cfg)
+	sr.SetScene(s)
+
+	matches := []rank.Match{{
+		Item: backend.Item{
+			ID:       backend.ResultID("media-player"),
+			Title:    "Music Player",
+			Subtitle: "Now Playing: Track 1",
+			Icon:     "multimedia-audio-player",
+		},
+	}}
+
+	panelRows := []backend.PanelRow{
+		{Kind: "action", Label: "Play / Pause", Action: &backend.Action{Type: "exec"}},
+		{Kind: backend.ControlRange, Label: "Volume", Control: &backend.Control{ID: "vol", Value: 0.75, Min: 0, Max: 1, Step: 0.05}},
+		{Kind: backend.ControlToggle, Label: "Shuffle", Control: &backend.Control{ID: "shuffle", Bool: true}},
+		{Kind: backend.ControlChoice, Label: "Repeat", Control: &backend.Control{ID: "repeat", Text: "All", Options: []string{"Off", "Track", "All"}}},
+		{Kind: backend.ControlText, Label: "Search Track", Control: &backend.Control{ID: "q", Text: "Bohemian Rhapsody"}},
+	}
+
+	view := &fakeView{
+		open:       true,
+		query:      "music",
+		results:    matches,
+		selected:   0,
+		panelOpen:  true,
+		panelFocus: 1,
+		panelDirty: false,
+		panelRows:  panelRows,
+	}
+
+	dc, img := testContext(t, 1920, 1080)
+	sr.DrawFrame(dc, view, th, cfg.Reveal)
+
+	// Verify no pixels leak outside the 640x460 dropdown bounds centered at (1920-640)/2=640, y=120
+	outsideLeaks := 0
+	for y := 0; y < 1080; y += 15 {
+		for x := 0; x < 1920; x += 15 {
+			if x >= 640 && x <= 1280 && y >= 120 && y <= 580 {
+				continue
+			}
+			if img.RGBAAt(x, y).A != 0 {
+				outsideLeaks++
+			}
+		}
+	}
+	if outsideLeaks > 0 {
+		t.Errorf("found %d painted pixels outside dropdown bounds", outsideLeaks)
+	}
+
+	// Verify that inside the dropdown box, items are actively rendered
+	insidePainted := 0
+	for y := 125; y < 575; y += 10 {
+		for x := 645; x < 1275; x += 10 {
+			if img.RGBAAt(x, y).A != 0 {
+				insidePainted++
+			}
+		}
+	}
+	if insidePainted < 50 {
+		t.Errorf("dropdown control rows did not paint sufficient pixels inside bounds (insidePainted=%d)", insidePainted)
+	}
+}

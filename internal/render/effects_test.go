@@ -67,3 +67,51 @@ func TestPaintImageResolvesNamedIcons(t *testing.T) {
 		t.Errorf("named icon did not paint fallback mark")
 	}
 }
+
+func TestPaintImageGlyph(t *testing.T) {
+	th, err := theme.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer th.Close()
+	dc, img := testContext(t, 60, 60)
+	dc.ClearWithColor(gg.RGBA{})
+
+	n := &eval.ResolvedNode{
+		Name: "Icon",
+		Rect: eval.RectF{X: 10, Y: 10, W: 40, H: 40},
+		Props: map[string]eval.Value{
+			"glyph": eval.Str("▶"),
+			"size":  eval.Num(20),
+			"color": eval.Color{R: 0xFF, G: 0, B: 0, A: 0xFF},
+		},
+	}
+	painterFor("Icon")(dc, th, n, &PainterDeps{})
+	totalNonZero := 0
+	for y := 0; y < 60; y++ {
+		for x := 0; x < 60; x++ {
+			if img.RGBAAt(x, y).A != 0 {
+				totalNonZero++
+			}
+		}
+	}
+	if totalNonZero == 0 {
+		t.Errorf("glyph did not paint any pixels (totalNonZero=0)")
+	}
+
+	// Test text glyph
+	n.Props["glyph"] = eval.Str("A")
+	dc.ClearWithColor(gg.RGBA{})
+	painterFor("Icon")(dc, th, n, &PainterDeps{})
+	totalNonZero = 0
+	for y := 0; y < 60; y++ {
+		for x := 0; x < 60; x++ {
+			if img.RGBAAt(x, y).A != 0 {
+				totalNonZero++
+			}
+		}
+	}
+	if totalNonZero == 0 {
+		t.Errorf("glyph 'A' did not paint any pixels")
+	}
+}

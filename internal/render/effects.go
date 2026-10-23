@@ -10,7 +10,7 @@ import (
 	"github.com/gogpu/gg"
 )
 
-// paintImage draws the Image or Icon node: the cached bitmap or fallback mark,
+// paintImage draws the Image or Icon node: the cached bitmap, glyph, or fallback mark,
 // fitted per `fit` and tinted per `tint`. Named icons resolve through the icon theme.
 func paintImage(dc *gg.Context, th *theme.Theme, n *eval.ResolvedNode, deps *PainterDeps) {
 	r := n.Rect
@@ -27,10 +27,27 @@ func paintImage(dc *gg.Context, th *theme.Theme, n *eval.ResolvedNode, deps *Pai
 	if !ok {
 		srcRaw, ok = n.Props["name"].(eval.Str)
 	}
-	if !ok || string(srcRaw) == "" {
+	if !ok {
+		srcRaw, ok = n.Props["icon"].(eval.Str)
+	}
+	path := ""
+	if ok {
+		path = string(srcRaw)
+	}
+
+	glyphRaw, hasGlyph := n.Props["glyph"].(eval.Str)
+	glyph := ""
+	if hasGlyph {
+		glyph = string(glyphRaw)
+	}
+
+	if path == "" && glyph != "" {
+		drawGlyph(dc, th, n, glyph)
 		return
 	}
-	path := string(srcRaw)
+	if path == "" && glyph == "" {
+		return
+	}
 
 	// If source is not an absolute file path and an icon resolver exists, resolve icon name.
 	if deps != nil && deps.Icons != nil && !strings.HasPrefix(path, "/") {
@@ -38,18 +55,30 @@ func paintImage(dc *gg.Context, th *theme.Theme, n *eval.ResolvedNode, deps *Pai
 		if ready && ok {
 			path = resolved
 		} else if !ready || !ok {
-			drawFallbackMark(dc, th, n, path)
+			if glyph != "" {
+				drawGlyph(dc, th, n, glyph)
+			} else {
+				drawFallbackMark(dc, th, n, path)
+			}
 			return
 		}
 	}
 
 	if deps == nil || deps.Images == nil {
-		drawFallbackMark(dc, th, n, path)
+		if glyph != "" {
+			drawGlyph(dc, th, n, glyph)
+		} else {
+			drawFallbackMark(dc, th, n, path)
+		}
 		return
 	}
 	img, ready := deps.Images.Get(path, int(r.W), int(r.H))
 	if !ready {
-		drawFallbackMark(dc, th, n, path)
+		if glyph != "" {
+			drawGlyph(dc, th, n, glyph)
+		} else {
+			drawFallbackMark(dc, th, n, path)
+		}
 		return
 	}
 	fit := kwVal(n.Props["fit"])
@@ -114,6 +143,55 @@ func drawFallbackMark(dc *gg.Context, th *theme.Theme, n *eval.ResolvedNode, tex
 	dc.SetFont(face)
 	dc.SetColor(inkOrSlab(th, selected))
 	dc.DrawStringAnchored(monogram(text), r.X+r.W/2, r.Y+r.H/2, 0.5, 0.5)
+}
+
+func drawGlyph(dc *gg.Context, th *theme.Theme, n *eval.ResolvedNode, glyph string) {
+	r := n.Rect
+	if r.W <= 0 || r.H <= 0 {
+		return
+	}
+	if v, ok := n.Props["fill"]; ok {
+		fill := evalColorToGG(v, th.Slab)
+		radius := 0.0
+		if rv, ok := n.Props["radius"].(eval.Num); ok {
+			radius = float64(rv)
+		}
+		dc.SetColor(fill)
+		if radius > 0 {
+			dc.DrawRoundedRectangle(r.X, r.Y, r.W, r.H, radius)
+		} else {
+			dc.DrawRectangle(r.X, r.Y, r.W, r.H)
+		}
+		_ = dc.Fill()
+	}
+	size := math.Min(r.W, r.H)
+	if sv, ok := n.Props["size"].(eval.Num); ok && sv > 0 {
+		size = float64(sv)
+	}
+	selected := n.Selected || selectedProp(n)
+	col := inkOrSlab(th, selected)
+	if cv, ok := n.Props["color"]; ok {
+		col = evalColorToGG(cv, col)
+	}
+	dc.SetColor(col)
+
+	if glyph == "▶" {
+		triW := size * 0.65
+		triH := size * 0.75
+		x0 := r.X + (r.W-triW)/2
+		y0 := r.Y + (r.H-triH)/2
+		dc.NewSubPath()
+		dc.MoveTo(x0, y0)
+		dc.LineTo(x0+triW, y0+triH/2)
+		dc.LineTo(x0, y0+triH)
+		dc.ClosePath()
+		_ = dc.Fill()
+		return
+	}
+
+	face := th.Face(size)
+	dc.SetFont(face)
+	dc.DrawStringAnchored(glyph, r.X+r.W/2, r.Y+r.H/2, 0.5, 0.5)
 }
 
 // tintRect applies a tint colour over the region.

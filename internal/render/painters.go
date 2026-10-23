@@ -333,12 +333,18 @@ func paintPill(dc *gg.Context, th *theme.Theme, n *eval.ResolvedNode, deps *Pain
 }
 
 func paintMeter(dc *gg.Context, th *theme.Theme, n *eval.ResolvedNode, deps *PainterDeps) {
+	r := n.Rect
+	if deps != nil && deps.ClipRect != nil {
+		cr := deps.ClipRect
+		if r.X+r.W <= cr.X || r.X >= cr.X+cr.W || r.Y+r.H <= cr.Y || r.Y >= cr.Y+cr.H {
+			return
+		}
+	}
 	ratio := 0.0
 	if v, ok := n.Props["ratio"].(eval.Num); ok {
 		ratio = float64(v)
 	}
 	variant := kwVal(n.Props["variant"])
-	r := n.Rect
 	selected := false
 	switch variant {
 	case "ticks":

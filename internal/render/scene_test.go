@@ -215,8 +215,22 @@ func TestDropdownSceneRenders(t *testing.T) {
 	dc, img := testContext(t, 1920, 1080)
 	sr.DrawFrame(dc, view, th, cfg.Reveal)
 
+	if sr.UsesBandMask() {
+		t.Error("dropdown scene must not use the band mask")
+	}
+
 	if !anyColor(img) {
 		t.Fatal("dropdown scene did not paint any pixels")
+	}
+
+	// Verify hit testing: inside dropdown box (640..1280, 120..580) vs outside
+	rdr := NewConfigured(cfg)
+	rdr.scene = sr
+	if !rdr.BandContains(960, 300) {
+		t.Error("BandContains(960, 300) = false, want true for dropdown window")
+	}
+	if rdr.BandContains(100, 100) {
+		t.Error("BandContains(100, 100) = true, want false outside dropdown window")
 	}
 
 	// Verify pixels inside the dropdown box (x centered: (1920-640)/2 = 640..1280, y: 120..580)
@@ -231,5 +245,21 @@ func TestDropdownSceneRenders(t *testing.T) {
 	}
 	if !insideColor {
 		t.Error("no pixels painted inside dropdown window region")
+	}
+
+	// Verify NO content leaked outside the dropdown bounds (e.g. at screen edge x=16 or y=0)
+	outsideLeaks := 0
+	for y := 0; y < 1080; y += 20 {
+		for x := 0; x < 1920; x += 20 {
+			if x >= 640 && x <= 1280 && y >= 120 && y <= 580 {
+				continue // inside dropdown box
+			}
+			if img.RGBAAt(x, y).A != 0 {
+				outsideLeaks++
+			}
+		}
+	}
+	if outsideLeaks > 0 {
+		t.Errorf("found %d sampled painted pixels outside dropdown bounds [640..1280, 120..580]", outsideLeaks)
 	}
 }

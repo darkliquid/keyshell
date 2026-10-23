@@ -114,10 +114,10 @@ func (r *resolver) nodeRect(n *ksl.Node, props map[string]Value, bounds RectF) R
 // leaf primitives size to their content when unconstrained, and constraints clamp.
 func (r *resolver) refineRect(n *ksl.Node, props map[string]Value, rect RectF) RectF {
 	if v, ok := props["x"]; ok {
-		rect.X = resolveLength(v, r.st, true)
+		rect.X += resolveLength(v, r.st, true)
 	}
 	if v, ok := props["y"]; ok {
-		rect.Y = resolveLength(v, r.st, false)
+		rect.Y += resolveLength(v, r.st, false)
 	}
 	_, hasW := props["width"]
 	_, hasH := props["height"]
@@ -167,13 +167,17 @@ func (r *resolver) flexChildSize(n *ksl.Node, props map[string]Value, parentHori
 	if !hasH && ih > 0 {
 		h = ih
 	}
-	// A nested Row inside a Row (or Column inside a Column) without an explicit
-	// main size or grow takes the sum of its children's main sizes + gaps.
+	// Nested containers take the intrinsic sizes of their children when not explicitly sized.
 	if numProp(props, "grow") == 0 {
-		if parentHorizontal && n.Name == "Row" && !hasW {
+		if n.Name == "Row" && !hasW {
 			w = r.containerIntrinsicMain(n, props, true)
-		} else if !parentHorizontal && n.Name == "Column" && !hasH {
+		} else if n.Name == "Column" && !hasW {
+			w = r.containerIntrinsicCross(n, props, false)
+		}
+		if n.Name == "Column" && !hasH {
 			h = r.containerIntrinsicMain(n, props, false)
+		} else if n.Name == "Row" && !hasH {
+			h = r.containerIntrinsicCross(n, props, true)
 		}
 	}
 	constrained := applyConstraints(RectF{W: w, H: h}, props, r.st)
@@ -206,6 +210,21 @@ func (r *resolver) containerIntrinsicMain(n *ksl.Node, props map[string]Value, h
 		total += gap * float64(count-1)
 	}
 	return total
+}
+
+func (r *resolver) containerIntrinsicCross(n *ksl.Node, props map[string]Value, horizontal bool) float64 {
+	maxCross := 0.0
+	for _, c := range r.children(n) {
+		cp, ok, err := resolveProps(c, r.env, r.ctx)
+		if err != nil || !ok {
+			continue
+		}
+		_, cross := r.flexChildSize(c, cp, horizontal)
+		if cross > maxCross {
+			maxCross = cross
+		}
+	}
+	return maxCross
 }
 
 func applyConstraints(rect RectF, props map[string]Value, st *State) RectF {
@@ -426,12 +445,6 @@ func (r *resolver) layoutStack(parent *ResolvedNode, n *ksl.Node) error {
 		case "end":
 			x += parent.Rect.W - w
 			y += parent.Rect.H - h
-		}
-		if v, ok := cp["x"]; ok {
-			x = resolveLength(v, r.st, true)
-		}
-		if v, ok := cp["y"]; ok {
-			y = resolveLength(v, r.st, false)
 		}
 		rn, err := r.resolveNodeRect(c, RectF{X: x, Y: y, W: w, H: h})
 		if err != nil {

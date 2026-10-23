@@ -213,9 +213,21 @@ func bandSpan(topL, topR, botL, botR, w, y float64, width int) (int, int) {
 	return xa, xb
 }
 
-// BandContains reports whether a surface point lies inside the band, which is
-// what separates a click on the overlay from one on the dismiss scrim.
+// UsesBandMask reports whether the renderer applies the slanted band mask.
+func (r *Renderer) UsesBandMask() bool {
+	if r.scene == nil {
+		return true
+	}
+	return r.scene.UsesBandMask()
+}
+
+// BandContains reports whether a surface point lies inside the band or the
+// active scene's top-level content, which is what separates a click on the
+// overlay from one on the dismiss scrim.
 func (r *Renderer) BandContains(x, y float64) bool {
+	if r.scene != nil && !r.UsesBandMask() {
+		return r.scene.Contains(x, y)
+	}
 	r.mu.Lock()
 	rev, w, h := r.reveal, r.surfaceW, r.surfaceH
 	r.mu.Unlock()

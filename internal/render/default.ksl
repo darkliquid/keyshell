@@ -5,6 +5,7 @@
 // so it may extend beyond the band's trapezoid.
 
 Window {
+    mask: band
     Path { d: $reveal.d, fill: $slab }
 
     Group#content {

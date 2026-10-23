@@ -15,13 +15,17 @@ Window {
             Row {
                 width: 640, height: 52
                 gap: 12, align: center
-                x: 16
 
+                Box { width: 4 }
                 Pill { text: $mode, tone: accent }
-                Text { text: $query, size: 18, color: $ink }
-                Cursor { width: 2, height: 20, color: $accent, animation: blink 800ms linear infinite }
+                Row {
+                    gap: 4, align: center
+                    Text { text: $query, size: 18, color: $ink }
+                    Cursor { width: 2, height: 20, color: $accent, animation: blink 800ms linear infinite }
+                }
                 Box { grow: 1 }
                 Text { text: $results.len, size: 12, color: $muted, when: !$searching }
+                Box { width: 4 }
             }
 
             // Divider
@@ -42,26 +46,28 @@ Window {
                         state selected { fill: $surface-alt }
 
                         Row {
-                            width: 608, height: 44, gap: 12, align: center
-                            x: 16
+                            width: 640, height: 44, gap: 12, align: center
 
+                            Box { width: 4 }
                             Image { source: $item.icon, width: 24, height: 24 }
                             Column {
                                 gap: 2
+                                justify: center
                                 Text { text: $item.title, size: 14, color: $ink }
                                 Text { text: $item.subtitle, size: 11, color: $muted, when: $item.subtitle != "" }
                             }
                             Box { grow: 1 }
                             Pill { text: $item.status, when: $item.status != "", tone: $item.statusTone }
                             Pill { text: $item.badge, when: $item.badge != "", tone: neutral }
+                            Box { width: 4 }
                         }
                     }
                 }
 
                 empty {
                     Box {
-                        width: 640, height: 200, align: center
-                        Text { text: $searching ? "SEARCHING..." : "NO RESULTS", size: 13, color: $muted }
+                        width: 640, height: 200
+                        Text { text: $searching ? "SEARCHING..." : "NO RESULTS", size: 13, color: $muted, width: 640, height: 200, align: center }
                     }
                 }
             }

@@ -334,6 +334,66 @@ func (sr *SceneRenderer) DrawPanelOverlay(dc *gg.Context, th *theme.Theme) {
 	}
 }
 
+// UsesBandMask reports whether the active scene requires the slanted band mask.
+// The default scene uses it to clip content bleeding outside its trapezoid;
+// custom scenes (e.g. dropdown) omit mask: band and render unmasked.
+func (sr *SceneRenderer) UsesBandMask() bool {
+	sr.lastMu.Lock()
+	root := sr.lastRoot
+	sr.lastMu.Unlock()
+	if root != nil {
+		if m, ok := root.Props["mask"]; ok {
+			switch v := m.(type) {
+			case eval.Kw:
+				return string(v) == "band"
+			case eval.Str:
+				return string(v) == "band"
+			default:
+				return false
+			}
+		}
+	}
+	sr.sceneMu.Lock()
+	s := sr.scene
+	sr.sceneMu.Unlock()
+	if s == nil || s.Name == "default.ksl" {
+		return true
+	}
+	for _, it := range s.Items {
+		if n, ok := it.(*ksl.Node); ok && n.Name == "Window" {
+			for _, p := range n.Props {
+				if p.Key == "mask" {
+					if kw, ok := p.Val.(*ksl.Keyword); ok && kw.Name == "band" {
+						return true
+					}
+					if lit, ok := p.Val.(*ksl.StringVal); ok && lit.S == "band" {
+						return true
+					}
+				}
+			}
+			return false
+		}
+	}
+	return false
+}
+
+// Contains reports whether (x, y) is inside any top-level node's bounding rectangle.
+func (sr *SceneRenderer) Contains(x, y float64) bool {
+	sr.lastMu.Lock()
+	root := sr.lastRoot
+	sr.lastMu.Unlock()
+	if root == nil {
+		return false
+	}
+	for _, c := range root.Children {
+		r := c.Rect
+		if r.W > 0 && r.H > 0 && x >= r.X && x <= r.X+r.W && y >= r.Y && y <= r.Y+r.H {
+			return true
+		}
+	}
+	return false
+}
+
 // findPanelNode returns the node (and its subtree) carrying the id "panel".
 func findPanelNode(n *eval.ResolvedNode) *eval.ResolvedNode {
 	if n.ID == "panel" {

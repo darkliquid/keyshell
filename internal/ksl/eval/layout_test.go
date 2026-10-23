@@ -170,6 +170,53 @@ func TestGridLayout(t *testing.T) {
 	}
 }
 
+func TestNestedContainerIntrinsicSizingAndRelativeOffsets(t *testing.T) {
+	// Nested Box inside Box with x and y offset
+	scene := mustScene(t, `Window {
+		Box { x: 50, y: 40, width: 200, height: 100
+			Box { x: 10, y: 15, width: 80, height: 30 }
+		}
+	}`)
+	st := &State{Width: 500, Height: 500, Scale: 1}
+	f, err := Resolve(scene, *st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parent := f.Root.Children[0]
+	child := parent.Children[0]
+	if parent.Rect.X != 50 || parent.Rect.Y != 40 {
+		t.Errorf("parent = %+v, want X=50 Y=40", parent.Rect)
+	}
+	if child.Rect.X != 60 || child.Rect.Y != 55 {
+		t.Errorf("child = %+v, want X=60 Y=55 (relative to parent)", child.Rect)
+	}
+
+	// Column inside Row: Column takes max width of children and sum of heights
+	sceneColInRow := mustScene(t, `Window {
+		Row { height: 60, align: center
+			Column { gap: 4
+				Text { text: "Title", size: 14 }
+				Text { text: "Longer Subtitle", size: 10 }
+			}
+		}
+	}`)
+	fCol, err := Resolve(sceneColInRow, *st, WithMeasurer(fakeMeasurer{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := fCol.Root.Children[0]
+	col := row.Children[0]
+	// fakeMeasurer: "Title" at 14px = 5*14 = 70. "Longer Subtitle" at 10px = 15*10 = 150.
+	// Max width = 150.
+	if col.Rect.W != 150 {
+		t.Errorf("column width = %v, want 150", col.Rect.W)
+	}
+	// Heights: 14 + 10 + 4 gap = 28. Centered in 60 -> (60 - 28)/2 = 16.
+	if col.Rect.H != 28 || col.Rect.Y != 16 {
+		t.Errorf("column height = %v y = %v, want H=28 Y=16", col.Rect.H, col.Rect.Y)
+	}
+}
+
 type fakeMeasurer struct{}
 
 func (fakeMeasurer) TextSize(s string, size float64, _ string) (float64, float64) {

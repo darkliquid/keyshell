@@ -45,9 +45,37 @@ func painterFor(name string) Painter {
 		return paintCursor
 	case "Card":
 		return paintCard
+	case "List":
+		return paintList
 	default:
 		return paintThrough
 	}
+}
+
+// paintList paints a List container. When overflow is "clamp" or "hidden" (or
+// clip is explicitly true), it clips its viewport so overflowing items never
+// paint outside the list container.
+func paintList(dc *gg.Context, th *theme.Theme, n *eval.ResolvedNode, deps *PainterDeps) {
+	r := n.Rect
+	shouldClip := false
+	if v, ok := n.Props["clip"].(eval.Bool); ok {
+		shouldClip = bool(v)
+	} else {
+		flow := kwVal(n.Props["overflow"])
+		if flow == "clamp" || flow == "hidden" {
+			shouldClip = true
+		}
+	}
+
+	if shouldClip && r.W > 0 && r.H > 0 {
+		dc.Push()
+		dc.DrawRectangle(r.X, r.Y, r.W, r.H)
+		dc.Clip()
+		paintChildren(dc, th, n, deps)
+		dc.Pop()
+		return
+	}
+	paintChildren(dc, th, n, deps)
 }
 
 // paintThrough paints children in declaration order (the painter sorts

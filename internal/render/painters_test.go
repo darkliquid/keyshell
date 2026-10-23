@@ -79,6 +79,41 @@ func TestPaintMeterTicks(t *testing.T) {
 	}
 }
 
+func TestPaintListClipsChildrenToViewport(t *testing.T) {
+	th, err := theme.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer th.Close()
+	dc, img := testContext(t, 200, 200)
+	dc.ClearWithColor(gg.RGBA{})
+
+	// List at (20, 20, 50, 50). Child Box spans (0, 0, 200, 200) with solid red fill.
+	child := &eval.ResolvedNode{
+		Name: "Box", Rect: eval.RectF{X: 0, Y: 0, W: 200, H: 200},
+		Props: map[string]eval.Value{"fill": eval.Color{R: 0xFF, G: 0, B: 0, A: 0xFF}},
+	}
+	list := &eval.ResolvedNode{
+		Name: "List", Rect: eval.RectF{X: 20, Y: 20, W: 50, H: 50},
+		Props:    map[string]eval.Value{"overflow": eval.Kw("clamp")},
+		Children: []*eval.ResolvedNode{child},
+	}
+
+	painterFor("List")(dc, th, list, &PainterDeps{})
+
+	// Pixel at (10, 10) is outside the List. It MUST be transparent.
+	pxOutside := img.RGBAAt(10, 10)
+	if pxOutside.A != 0 || pxOutside.R != 0 {
+		t.Errorf("pixel outside List viewport was painted: %+v, want transparent", pxOutside)
+	}
+
+	// Pixel at (30, 30) is inside the List. It MUST be red.
+	pxInside := img.RGBAAt(30, 30)
+	if pxInside.R != 0xFF || pxInside.A != 0xFF {
+		t.Errorf("pixel inside List viewport was not painted: %+v, want red", pxInside)
+	}
+}
+
 func anyColor(img *image.RGBA) bool {
 	for y := 4; y < img.Bounds().Dy(); y += 4 {
 		for x := 4; x < img.Bounds().Dx(); x += 4 {

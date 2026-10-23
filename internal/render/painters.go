@@ -18,12 +18,13 @@ type Painter func(dc *gg.Context, th *theme.Theme, n *eval.ResolvedNode, deps *P
 
 // PainterDeps carries per-frame host state painters need.
 type PainterDeps struct {
-	Reveal      Reveal
-	CursorAlpha float64
-	CardCfg     config.Reveal
-	Images      *ImageCache
-	Icons       *icons.Resolver
-	ClipRect    *eval.RectF
+	Reveal           Reveal
+	CursorAlpha      float64
+	CardCfg          config.Reveal
+	Images           *ImageCache
+	Icons            *icons.Resolver
+	ClipRect         *eval.RectF
+	SkipPanelOverlay bool
 }
 
 func painterFor(name string) Painter {
@@ -70,7 +71,12 @@ func paintList(dc *gg.Context, th *theme.Theme, n *eval.ResolvedNode, deps *Pain
 
 	if shouldClip && r.W > 0 && r.H > 0 {
 		dc.Push()
-		dc.ClipRect(r.X, r.Y, r.W, r.H)
+		// Only invoke hardware/scissor clipping when the current transform is axis-aligned.
+		// Rotated transforms cause software polygon clipping in gg which degrades performance significantly.
+		m := dc.GetTransform()
+		if (m.B == 0 && m.D == 0) || (m.A == 0 && m.E == 0) {
+			dc.ClipRect(r.X, r.Y, r.W, r.H)
+		}
 		childDeps := *deps
 		childDeps.ClipRect = &eval.RectF{X: r.X, Y: r.Y, W: r.W, H: r.H}
 		paintChildren(dc, th, n, &childDeps)
@@ -83,6 +89,9 @@ func paintList(dc *gg.Context, th *theme.Theme, n *eval.ResolvedNode, deps *Pain
 // paintThrough paints children in declaration order (the painter sorts
 // by z within siblings; z is carried on each node).
 func paintThrough(dc *gg.Context, th *theme.Theme, n *eval.ResolvedNode, deps *PainterDeps) {
+	if deps != nil && deps.SkipPanelOverlay && n.ID == "panel" {
+		return
+	}
 	if n.Name == "Group" {
 		dc.Push()
 		r := n.Rect

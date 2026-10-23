@@ -168,10 +168,15 @@ func TestDrawFramePanelPaintsRows(t *testing.T) {
 			panelOpen: open, panelRows: rows, panelFocus: 0}
 		r := New()
 		dc := gg.NewContext(1600, 900)
+		t0 := time.Now()
 		r.DrawFrame(dc, view, th, config.Default().Reveal)
 		r.MaskFrame(dc.Image().(*image.RGBA))
 		if r.scene != nil {
 			r.scene.DrawPanelOverlay(dc, th)
+		}
+		dur := time.Since(t0)
+		if dur > 40*time.Millisecond {
+			t.Errorf("frame took %v, want < 40ms", dur)
 		}
 		return dc.Image().(*image.RGBA)
 	}

@@ -311,7 +311,8 @@ func (sr *SceneRenderer) DrawFrame(dc *gg.Context, l View, th *theme.Theme, cfg 
 	sr.applyAnimations(frame.Root, now, scene)
 	sr.clock.Tick(now, map[string]bool{"open": st.Open, "closed": !st.Open, "selected": st.Selected >= 0})
 	sr.applyTransitions(scene, frame.Root, now, prev)
-	deps := &PainterDeps{Reveal: rev, CardCfg: cfg, CursorAlpha: cursorAlpha(elapsed), Images: sr.inner.images, Icons: sr.inner.icons}
+	skipPanel := sr.UsesBandMask()
+	deps := &PainterDeps{Reveal: rev, CardCfg: cfg, CursorAlpha: cursorAlpha(elapsed), Images: sr.inner.images, Icons: sr.inner.icons, SkipPanelOverlay: skipPanel}
 	sr.lastMu.Lock()
 	sr.lastRoot = frame.Root
 	sr.lastDeps = deps
@@ -330,7 +331,9 @@ func (sr *SceneRenderer) DrawPanelOverlay(dc *gg.Context, th *theme.Theme) {
 		return
 	}
 	if p := findPanelNode(root); p != nil {
-		painterFor(p.Name)(dc, th, p, deps)
+		overlayDeps := *deps
+		overlayDeps.SkipPanelOverlay = false
+		painterFor(p.Name)(dc, th, p, &overlayDeps)
 	}
 }
 

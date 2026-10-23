@@ -4,6 +4,7 @@ import (
 	"image"
 	"math"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/darkliquid/keyshell/internal/backend"
 	"github.com/darkliquid/keyshell/internal/card"
@@ -22,11 +23,23 @@ func drawCardContent(dc *gg.Context, th *theme.Theme, p card.Plan, selected bool
 
 	top := y
 	if p.Badge.Kind != "" || p.Status.Kind != "" {
-		if p.Badge.Kind != "" {
-			drawChip(dc, th, x, top, w/2, p.Badge.Text, p.Badge.Tone, selected)
-		}
-		if p.Status.Kind != "" {
-			drawChip(dc, th, x+w/2, top, w/2, p.Status.Text, p.Status.Tone, selected)
+		face := th.Face(9)
+		const gap = 6.0
+		switch {
+		case p.Badge.Kind != "" && p.Status.Kind != "":
+			maxEach := (w - gap) / 2
+			bW := chipWidth(face, p.Badge.Text, maxEach)
+			sW := chipWidth(face, p.Status.Text, maxEach)
+			total := bW + gap + sW
+			bX := x + w - total
+			drawChip(dc, th, bX, top, maxEach, p.Badge.Text, p.Badge.Tone, selected)
+			drawChip(dc, th, bX+bW+gap, top, maxEach, p.Status.Text, p.Status.Tone, selected)
+		case p.Badge.Kind != "":
+			bW := chipWidth(face, p.Badge.Text, w)
+			drawChip(dc, th, x+w-bW, top, w, p.Badge.Text, p.Badge.Tone, selected)
+		case p.Status.Kind != "":
+			sW := chipWidth(face, p.Status.Text, w)
+			drawChip(dc, th, x+w-sW, top, w, p.Status.Text, p.Status.Tone, selected)
 		}
 		top += 18 + 6
 	}
@@ -202,6 +215,11 @@ func mutedOrInk(th *theme.Theme, selected bool) gg.RGBA {
 	return th.Muted
 }
 
+func chipWidth(face text.Face, s string, maxW float64) float64 {
+	label := elide(face, strings.ToUpper(s), maxW-10)
+	return math.Min(face.Advance(label)+10, maxW)
+}
+
 // drawChip paints a small rounded chip and returns its width.
 func drawChip(dc *gg.Context, th *theme.Theme, x, y, maxW float64, s string, tone backend.Tone, selected bool) float64 {
 	face := th.Face(9)
@@ -246,10 +264,16 @@ func drawVisual(dc *gg.Context, th *theme.Theme, p card.Part, selected bool, x, 
 		return
 	}
 	if p.Source == "glyph" {
-		face := th.Face(math.Min(28, h*0.6))
-		dc.SetFont(face)
-		dc.SetColor(inkOrSlab(th, selected))
-		dc.DrawStringAnchored(p.Text, x+w/2, y+h/2, 0.5, 0.5)
+		text := p.Text
+		if text == "tray" {
+			text = "⚙"
+		}
+		if utf8.RuneCountInString(text) <= 2 {
+			face := th.Face(math.Min(28, h*0.6))
+			dc.SetFont(face)
+			dc.SetColor(inkOrSlab(th, selected))
+			dc.DrawStringAnchored(text, x+w/2, y+h/2, 0.5, 0.5)
+		}
 		return
 	}
 
@@ -332,13 +356,13 @@ func elide(face text.Face, s string, width float64) string {
 	if width <= 0 {
 		return ""
 	}
-	if face.Advance(s) <= width {
+	if face.Advance(s) <= width+1e-4 {
 		return s
 	}
 	r := []rune(s)
 	for len(r) > 1 {
 		r = r[:len(r)-1]
-		if face.Advance(string(r)+".") <= width {
+		if face.Advance(string(r)+".") <= width+1e-4 {
 			return string(r) + "."
 		}
 	}
@@ -394,7 +418,7 @@ func drawTicks(dc *gg.Context, th *theme.Theme, ratio float64, n int, selected b
 	filled := math.Round(ratio * float64(n))
 	on, off := th.Accent, th.SurfaceAlt
 	if selected {
-		on, off = th.Slab, th.SurfaceAlt
+		on, off = th.AccentAlt, th.Slab
 	}
 	for i := 0; i < n; i++ {
 		tx := x + float64(i)*(tickW+gap)

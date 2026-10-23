@@ -82,10 +82,13 @@ func TestQueryListsConnectionsAndWifi(t *testing.T) {
 	if wired == nil || wired.Status != "OPEN" || wired.StatusTone != "neutral" {
 		t.Errorf("inactive connection = %+v, want OPEN/neutral", wired)
 	}
+	if wired != nil && wired.Icon != "network-wired" {
+		t.Errorf("wired icon = %q, want network-wired", wired.Icon)
+	}
 
 	// The wifi choice item exists last.
 	last := items[len(items)-1]
-	if last.ID != "wifi" || len(last.Controls) != 1 || last.Controls[0].Kind != "choice" {
+	if last.ID != "wifi" || len(last.Controls) != 1 || last.Controls[0].Kind != "choice" || last.Icon != "network-wireless" {
 		t.Errorf("wifi item = %+v", last)
 	}
 	if len(last.Controls[0].Options) != 2 {

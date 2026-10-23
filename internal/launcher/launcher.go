@@ -7,6 +7,7 @@ package launcher
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -69,8 +70,9 @@ type Launcher struct {
 	listeners []func()
 
 	// query worker, nil until Start
-	jobs      chan Job
-	resultsCh chan Result
+	jobs        chan Job
+	resultsCh   chan Result
+	cancelQuery context.CancelFunc
 
 	debounce *time.Timer
 	settleMs time.Duration
@@ -151,6 +153,10 @@ func (l *Launcher) Open() {
 func (l *Launcher) Close() {
 	l.mu.Lock()
 	l.open = false
+	if l.cancelQuery != nil {
+		l.cancelQuery()
+		l.cancelQuery = nil
+	}
 	l.mu.Unlock()
 	l.changed()
 }
@@ -252,6 +258,9 @@ func (l *Launcher) Query() string {
 // worker it returns immediately and Poll publishes the results.
 func (l *Launcher) SetQuery(text string) {
 	l.mu.Lock()
+	if _, rem, ok := l.tryTriggerLocked(text); ok {
+		text = rem
+	}
 	l.query = text
 	if level := l.currentLevelLocked(); level != nil {
 		level.Selected = 0
@@ -267,6 +276,9 @@ func (l *Launcher) SetQuery(text string) {
 // the keys settle.
 func (l *Launcher) SetQueryInput(text string) {
 	l.mu.Lock()
+	if _, rem, ok := l.tryTriggerLocked(text); ok {
+		text = rem
+	}
 	l.query = text
 	if level := l.currentLevelLocked(); level != nil {
 		level.Selected = 0
@@ -280,15 +292,61 @@ func (l *Launcher) SetQueryInput(text string) {
 // and the plugin that answers it.
 func (l *Launcher) SetQueryContext(ctx context.Context, text string) {
 	l.mu.Lock()
+	if _, rem, ok := l.tryTriggerLocked(text); ok {
+		text = rem
+	}
 	l.query = text
 	if level := l.currentLevelLocked(); level != nil {
 		level.Selected = 0
 	}
 	job := l.jobLocked()
-	job.ctx = ctx
+	if ctx != nil {
+		cctx, cancel := context.WithCancel(ctx)
+		l.cancelQuery = cancel
+		job.ctx = cctx
+	}
 	l.mu.Unlock()
 	l.changed()
 	l.submit(job)
+}
+
+func (l *Launcher) tryTriggerLocked(text string) (newMode string, query string, matched bool) {
+	if len(l.levels) > 1 {
+		return "", text, false
+	}
+	var bestTrigger, bestID, bestBadge string
+	for _, m := range l.Modes() {
+		if m == MergedMode || m == "" {
+			continue
+		}
+		b, err := l.provider.Get(m)
+		if err != nil {
+			continue
+		}
+		info := b.Info()
+		trig := info.Trigger
+		if trig != "" && strings.HasPrefix(text, trig) {
+			if len(trig) > len(bestTrigger) {
+				bestTrigger = trig
+				bestID = info.ID
+				bestBadge = info.Badge
+			}
+		}
+	}
+	if bestTrigger != "" {
+		rem := strings.TrimPrefix(text, bestTrigger)
+		rem = strings.TrimLeft(rem, " ")
+		if bestID != l.mode {
+			l.mode = bestID
+			if bestBadge == "" {
+				bestBadge = strings.ToUpper(bestID)
+			}
+			l.badge = bestBadge
+			l.resetToRootLocked()
+		}
+		return bestID, rem, true
+	}
+	return "", text, false
 }
 
 // Results returns the current ranked results.
@@ -321,10 +379,7 @@ func (l *Launcher) countLocked(level *Level) int {
 	if level == nil {
 		return 0
 	}
-	if len(level.Matches) > 0 {
-		return len(level.Matches)
-	}
-	return len(level.Items)
+	return len(level.Matches)
 }
 
 func (l *Launcher) selectedItemLocked(level *Level) (backend.Item, string, bool) {
@@ -332,31 +387,18 @@ func (l *Launcher) selectedItemLocked(level *Level) (backend.Item, string, bool)
 		return backend.Item{}, "", false
 	}
 	idx := level.Selected
-	if len(level.Matches) > 0 {
-		if idx < 0 || idx >= len(level.Matches) {
-			return backend.Item{}, "", false
-		}
-		m := level.Matches[idx]
-		source := m.Source
-		if source == "" {
-			source = level.Source
-		}
-		if source == "" {
-			source = l.mode
-		}
-		return m.Item, source, true
+	if len(level.Matches) == 0 || idx < 0 || idx >= len(level.Matches) {
+		return backend.Item{}, "", false
 	}
-	if len(level.Items) > 0 {
-		if idx < 0 || idx >= len(level.Items) {
-			return backend.Item{}, "", false
-		}
-		source := level.Source
-		if source == "" {
-			source = l.mode
-		}
-		return level.Items[idx], source, true
+	m := level.Matches[idx]
+	source := m.Source
+	if source == "" {
+		source = level.Source
 	}
-	return backend.Item{}, "", false
+	if source == "" {
+		source = l.mode
+	}
+	return m.Item, source, true
 }
 
 // Select moves the selection by delta within the current level's results.
@@ -419,6 +461,10 @@ func (l *Launcher) Enter() {
 			return
 		}
 	}
+	if item.HasChildren {
+		l.descend(item)
+		return
+	}
 	if len(item.Actions) > 0 {
 		if item.Destructive {
 			// Gating is checked by the input layer; here we route it anyway.
@@ -432,9 +478,6 @@ func (l *Launcher) Enter() {
 	if item.Expandable {
 		l.openFocusView(item)
 		return
-	}
-	if item.HasChildren {
-		l.descend(item)
 	}
 }
 
@@ -563,15 +606,22 @@ func (l *Launcher) ControlSource(source string, c backend.Change) error {
 
 // Control delivers a settled value change to the current item's backend.
 func (l *Launcher) Control(itemID string, controlID string, value float64) {
-	b, err := l.provider.Get(l.Mode())
-	if err != nil {
-		return
-	}
-	_ = b.Control(context.Background(), backend.Change{
+	ch := backend.Change{
 		Item:    backend.ResultID(itemID),
 		Control: controlID,
 		Value:   value,
-	})
+	}
+	l.mu.Lock()
+	l.updateControlInPlaceLocked(backend.ResultID(itemID), ch)
+	mode := l.mode
+	l.mu.Unlock()
+	l.changed()
+
+	b, err := l.provider.Get(mode)
+	if err != nil {
+		return
+	}
+	_ = b.Control(context.Background(), ch)
 }
 
 // DebouncedControl coalesces rapid control changes using the settle window.
@@ -771,6 +821,9 @@ func (l *Launcher) PanelAdjust(delta int) {
 		c.Text = c.Options[next]
 		change = backend.Change{Item: p.item.ID, Control: c.ID, Text: c.Text}
 	}
+	if change.Control != "" {
+		l.updateControlInPlaceLocked(p.item.ID, change)
+	}
 	source := p.source
 	settle := c.Kind == backend.ControlRange
 	l.mu.Unlock()
@@ -830,8 +883,12 @@ func (l *Launcher) PanelActivate() {
 			l.changed()
 			return
 		}
+		c.Text = p.edit
 		change = backend.Change{Item: p.item.ID, Control: c.ID, Text: p.edit}
 		p.edit = ""
+	}
+	if change.Control != "" {
+		l.updateControlInPlaceLocked(p.item.ID, change)
 	}
 	source := p.source
 	l.mu.Unlock()
@@ -839,6 +896,59 @@ func (l *Launcher) PanelActivate() {
 		_ = l.ControlSource(source, change)
 	}
 	l.changed()
+}
+
+func (l *Launcher) updateControlInPlaceLocked(itemID backend.ResultID, change backend.Change) {
+	if itemID == "" || change.Control == "" {
+		return
+	}
+	if l.panel != nil && l.panel.item.ID == itemID {
+		for i := range l.panel.item.Controls {
+			if l.panel.item.Controls[i].ID == change.Control {
+				applyControlChange(&l.panel.item.Controls[i], change)
+			}
+		}
+	}
+	for i := range l.results {
+		if l.results[i].Item.ID == itemID {
+			for j := range l.results[i].Item.Controls {
+				if l.results[i].Item.Controls[j].ID == change.Control {
+					applyControlChange(&l.results[i].Item.Controls[j], change)
+				}
+			}
+		}
+	}
+	for _, lvl := range l.levels {
+		for i := range lvl.Matches {
+			if lvl.Matches[i].Item.ID == itemID {
+				for j := range lvl.Matches[i].Item.Controls {
+					if lvl.Matches[i].Item.Controls[j].ID == change.Control {
+						applyControlChange(&lvl.Matches[i].Item.Controls[j], change)
+					}
+				}
+			}
+		}
+		for i := range lvl.Items {
+			if lvl.Items[i].ID == itemID {
+				for j := range lvl.Items[i].Controls {
+					if lvl.Items[i].Controls[j].ID == change.Control {
+						applyControlChange(&lvl.Items[i].Controls[j], change)
+					}
+				}
+			}
+		}
+	}
+}
+
+func applyControlChange(c *backend.Control, change backend.Change) {
+	switch c.Kind {
+	case backend.ControlRange, backend.ControlProgress:
+		c.Value = change.Value
+	case backend.ControlToggle:
+		c.Bool = change.Bool
+	case backend.ControlChoice, backend.ControlText:
+		c.Text = change.Text
+	}
 }
 
 // PanelType appends to the focused text row's edit buffer.

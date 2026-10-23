@@ -4,6 +4,7 @@ package calc
 
 import (
 	"context"
+	"strings"
 
 	"github.com/darkliquid/keyshell/internal/backend"
 	"github.com/darkliquid/keyshell/internal/calc"
@@ -35,7 +36,9 @@ func (b *Backend) Info() backend.Info {
 // Query evaluates the query text. A valid expression produces one item whose
 // action copies the result; anything unparsable yields no results.
 func (b *Backend) Query(_ context.Context, q backend.Query) (backend.Stream, error) {
-	result, ok := calc.Eval(q.Text)
+	text := strings.TrimPrefix(strings.TrimSpace(q.Text), "=")
+	text = strings.TrimSpace(text)
+	result, ok := calc.Eval(text)
 	if !ok {
 		return &sliceStream{}, nil
 	}

@@ -74,8 +74,12 @@ func (b *Backend) Query(_ context.Context, q sdk.Query) (sdk.Stream, error) {
 		if lower != "" && !strings.Contains(strings.ToLower(c.name), lower) {
 			continue
 		}
+		icon := "network-wired"
+		if strings.Contains(strings.ToLower(c.typ), "wireless") || strings.Contains(strings.ToLower(c.typ), "wifi") {
+			icon = "network-wireless"
+		}
 		item := sdk.Item{
-			ID: c.name, Title: c.name, Subtitle: c.subtitle(), Glyph: "network",
+			ID: c.name, Title: c.name, Subtitle: c.subtitle(), Icon: icon,
 			Status: "OPEN", StatusTone: "neutral",
 			Controls: []sdk.Control{
 				{ID: "connect", Kind: "toggle", Label: "Connected", Bool: c.active},
@@ -91,7 +95,7 @@ func (b *Backend) Query(_ context.Context, q sdk.Query) (sdk.Stream, error) {
 	if ssids := b.wifiNetworks(); len(ssids) > 0 {
 		items = append(items, sdk.Item{
 			ID: "wifi", Title: "Wi-Fi", Subtitle: "Select a network",
-			Glyph: "wifi",
+			Icon: "network-wireless",
 			Controls: []sdk.Control{
 				{ID: "wifi", Kind: "choice", Label: "Network", Options: ssids},
 			},
@@ -102,7 +106,7 @@ func (b *Backend) Query(_ context.Context, q sdk.Query) (sdk.Stream, error) {
 	if b.wantsPSK() {
 		items = append(items, sdk.Item{
 			ID: "passphrase", Title: "Enter Wi-Fi passphrase",
-			Subtitle: "Required by NetworkManager", Glyph: "key",
+			Subtitle: "Required by NetworkManager", Icon: "dialog-password",
 			Controls: []sdk.Control{
 				{ID: "passphrase", Kind: "text", Label: "Passphrase"},
 			},

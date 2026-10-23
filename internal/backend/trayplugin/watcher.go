@@ -4,6 +4,7 @@
 package trayplugin
 
 import (
+	"strings"
 	"sync"
 
 	"github.com/godbus/dbus/v5"
@@ -16,8 +17,9 @@ const watcherPath = "/StatusNotifierWatcher"
 type Watcher struct {
 	conn *dbus.Conn
 
-	mu    sync.Mutex
-	items []string
+	mu        sync.Mutex
+	items     []string
+	isWatcher bool
 }
 
 // NewWatcher binds on the given session connection.
@@ -25,40 +27,173 @@ func NewWatcher(conn *dbus.Conn) *Watcher {
 	return &Watcher{conn: conn}
 }
 
-// Serve requests the watcher name, exports the object, and starts listening for
-// item (un)registration. It is best-effort: any failure leaves an empty tray.
+// Serve claims the watcher role or binds as a host if another watcher exists.
 func (w *Watcher) Serve() error {
-	if _, err := w.conn.RequestName("org.kde.StatusNotifierWatcher", dbus.NameFlagDoNotQueue); err != nil {
-		return err
+	reply, err := w.conn.RequestName("org.kde.StatusNotifierWatcher", dbus.NameFlagDoNotQueue)
+	if err == nil && reply == dbus.RequestNameReplyPrimaryOwner {
+		w.isWatcher = true
+		// We are the Watcher.
+		if err := w.conn.Export(w, dbus.ObjectPath(watcherPath), "org.kde.StatusNotifierWatcher"); err != nil {
+			return err
+		}
+		props := &watcherProperties{w: w}
+		if err := w.conn.Export(props, dbus.ObjectPath(watcherPath), "org.freedesktop.DBus.Properties"); err != nil {
+			return err
+		}
+
+		w.setupSignalListeners()
+		w.scanBusForApplets()
+
+		_ = w.conn.Emit(dbus.ObjectPath(watcherPath), "org.kde.StatusNotifierWatcher.StatusNotifierHostRegistered")
+		return nil
 	}
-	if err := w.conn.Export(w, dbus.ObjectPath(watcherPath), "org.kde.StatusNotifierWatcher"); err != nil {
-		return err
+
+	// Another watcher is already running. We act as a StatusNotifierHost.
+	w.setupSignalListeners()
+	w.Refresh()
+	return nil
+}
+
+// Refresh re-checks the existing watcher and scans the bus for applets.
+func (w *Watcher) Refresh() {
+	if w.conn == nil {
+		return
 	}
-	if err := w.conn.AddMatchSignal(
-		dbus.WithMatchInterface("org.kde.StatusNotifierWatcher"),
-	); err != nil {
-		return err
+	hostObj := w.conn.Object("org.kde.StatusNotifierWatcher", dbus.ObjectPath(watcherPath))
+
+	// Register ourselves as a host (best-effort).
+	names := w.conn.Names()
+	if len(names) > 0 {
+		_ = hostObj.Call("org.kde.StatusNotifierWatcher.RegisterStatusNotifierHost", 0, names[0]).Err
 	}
-	ch := make(chan *dbus.Signal, 16)
+
+	// Fetch existing registered items from the watcher.
+	registered := getRegisteredItems(hostObj)
+	for _, item := range registered {
+		w.add(item)
+	}
+
+	// Only scan session bus directly if no items were returned from the watcher (or we are the watcher).
+	if len(registered) == 0 || w.isWatcher {
+		w.scanBusForApplets()
+	}
+}
+
+func getRegisteredItems(hostObj dbus.BusObject) []string {
+	var variant dbus.Variant
+	// Official KDE property
+	if err := hostObj.Call("org.freedesktop.DBus.Properties.Get", 0, "org.kde.StatusNotifierWatcher", "RegisteredStatusNotifierItems").Store(&variant); err == nil {
+		if list := toStringSlice(variant.Value()); len(list) > 0 {
+			return list
+		}
+	}
+	// Ayatana property
+	if err := hostObj.Call("org.freedesktop.DBus.Properties.Get", 0, "org.ayatana.StatusNotifierWatcher", "RegisteredStatusNotifierItems").Store(&variant); err == nil {
+		if list := toStringSlice(variant.Value()); len(list) > 0 {
+			return list
+		}
+	}
+	// Freedesktop property
+	if err := hostObj.Call("org.freedesktop.DBus.Properties.Get", 0, "org.freedesktop.StatusNotifierWatcher", "RegisteredStatusNotifierItems").Store(&variant); err == nil {
+		if list := toStringSlice(variant.Value()); len(list) > 0 {
+			return list
+		}
+	}
+	// Fallback method call
+	var methodList []string
+	if err := hostObj.Call("org.kde.StatusNotifierWatcher.GetRegisteredStatusNotifierItems", 0).Store(&methodList); err == nil {
+		return methodList
+	}
+	return nil
+}
+
+func toStringSlice(val interface{}) []string {
+	if val == nil {
+		return nil
+	}
+	switch s := val.(type) {
+	case []string:
+		return s
+	case []interface{}:
+		res := make([]string, 0, len(s))
+		for _, v := range s {
+			if str, ok := v.(string); ok {
+				res = append(res, str)
+			}
+		}
+		return res
+	}
+	return nil
+}
+
+func (w *Watcher) scanBusForApplets() {
+	if w.conn == nil {
+		return
+	}
+	dbusObj := w.conn.Object("org.freedesktop.DBus", "/org/freedesktop/DBus")
+	var names []string
+	if err := dbusObj.Call("org.freedesktop.DBus.ListNames", 0).Store(&names); err == nil {
+		for _, name := range names {
+			if isSNIService(name) {
+				w.add(name)
+			}
+		}
+	}
+}
+
+func isSNIService(name string) bool {
+	return strings.HasPrefix(name, "org.kde.StatusNotifierItem-") ||
+		strings.HasPrefix(name, "org.ayatana.NotificationItem-") ||
+		strings.HasPrefix(name, "org.freedesktop.StatusNotifierItem-")
+}
+
+func (w *Watcher) setupSignalListeners() {
+	_ = w.conn.AddMatchSignal(dbus.WithMatchInterface("org.kde.StatusNotifierWatcher"))
+	_ = w.conn.AddMatchSignal(dbus.WithMatchInterface("org.ayatana.StatusNotifierWatcher"))
+	_ = w.conn.AddMatchSignal(dbus.WithMatchInterface("org.freedesktop.StatusNotifierWatcher"))
+	_ = w.conn.AddMatchSignal(
+		dbus.WithMatchInterface("org.freedesktop.DBus"),
+		dbus.WithMatchMember("NameOwnerChanged"),
+	)
+	ch := make(chan *dbus.Signal, 32)
 	w.conn.Signal(ch)
 	go w.listen(ch)
-	return nil
 }
 
 func (w *Watcher) listen(ch <-chan *dbus.Signal) {
 	for sig := range ch {
-		if len(sig.Body) == 0 {
-			continue
-		}
-		service, ok := sig.Body[0].(string)
-		if !ok {
-			continue
-		}
-		switch sig.Name {
-		case "org.kde.StatusNotifierWatcher.StatusNotifierItemRegistered":
-			w.add(service)
-		case "org.kde.StatusNotifierWatcher.StatusNotifierItemUnregistered":
-			w.remove(service)
+		switch {
+		case strings.HasSuffix(sig.Name, ".StatusNotifierItemRegistered"):
+			if len(sig.Body) > 0 {
+				if service, ok := sig.Body[0].(string); ok {
+					if strings.HasPrefix(service, "/") && sig.Sender != "" {
+						service = sig.Sender + service
+					}
+					w.add(service)
+				}
+			}
+		case strings.HasSuffix(sig.Name, ".StatusNotifierItemUnregistered"):
+			if len(sig.Body) > 0 {
+				if service, ok := sig.Body[0].(string); ok {
+					if strings.HasPrefix(service, "/") && sig.Sender != "" {
+						service = sig.Sender + service
+					}
+					w.remove(service)
+				}
+			}
+		case sig.Name == "org.freedesktop.DBus.NameOwnerChanged":
+			if len(sig.Body) >= 3 {
+				name, ok1 := sig.Body[0].(string)
+				oldOwner, ok2 := sig.Body[1].(string)
+				newOwner, ok3 := sig.Body[2].(string)
+				if ok1 && ok2 && ok3 && isSNIService(name) {
+					if newOwner != "" && oldOwner == "" {
+						w.add(name)
+					} else if newOwner == "" {
+						w.remove(name)
+					}
+				}
+			}
 		}
 	}
 }
@@ -113,14 +248,54 @@ func (w *Watcher) ProtocolVersion() (int32, *dbus.Error) {
 }
 
 // RegisterStatusNotifierItem is called by applets to register.
-func (w *Watcher) RegisterStatusNotifierItem(service string) *dbus.Error {
-	w.add(service)
-	if err := emitRegistered(w.conn, service); err != nil {
+func (w *Watcher) RegisterStatusNotifierItem(service string, sender dbus.Sender) *dbus.Error {
+	item := service
+	if strings.HasPrefix(item, "/") {
+		item = string(sender) + item
+	}
+	w.add(item)
+	if err := emitRegistered(w.conn, item); err != nil {
 		return &dbus.Error{Name: "org.freedesktop.DBus.Error.Failed", Body: []interface{}{err.Error()}}
+	}
+	return nil
+}
+
+// RegisterStatusNotifierHost is called by hosts to register with the watcher.
+func (w *Watcher) RegisterStatusNotifierHost(service string) *dbus.Error {
+	if w.conn != nil {
+		_ = w.conn.Emit(dbus.ObjectPath(watcherPath), "org.kde.StatusNotifierWatcher.StatusNotifierHostRegistered")
 	}
 	return nil
 }
 
 func emitRegistered(conn *dbus.Conn, service string) error {
 	return conn.Emit(dbus.ObjectPath(watcherPath), "org.kde.StatusNotifierWatcher.StatusNotifierItemRegistered", service)
+}
+
+type watcherProperties struct {
+	w *Watcher
+}
+
+func (p *watcherProperties) Get(iface, prop string) (dbus.Variant, *dbus.Error) {
+	switch prop {
+	case "RegisteredStatusNotifierItems":
+		return dbus.MakeVariant(p.w.Items()), nil
+	case "IsStatusNotifierHostRegistered":
+		return dbus.MakeVariant(true), nil
+	case "ProtocolVersion":
+		return dbus.MakeVariant(int32(0)), nil
+	}
+	return dbus.Variant{}, dbus.NewError("org.freedesktop.DBus.Error.UnknownProperty", []interface{}{prop})
+}
+
+func (p *watcherProperties) GetAll(iface string) (map[string]dbus.Variant, *dbus.Error) {
+	return map[string]dbus.Variant{
+		"RegisteredStatusNotifierItems":  dbus.MakeVariant(p.w.Items()),
+		"IsStatusNotifierHostRegistered": dbus.MakeVariant(true),
+		"ProtocolVersion":                dbus.MakeVariant(int32(0)),
+	}, nil
+}
+
+func (p *watcherProperties) Set(iface, prop string, val dbus.Variant) *dbus.Error {
+	return dbus.NewError("org.freedesktop.DBus.Error.PropertyReadOnly", []interface{}{prop})
 }

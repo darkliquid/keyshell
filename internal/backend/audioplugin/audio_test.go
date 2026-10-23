@@ -53,6 +53,12 @@ func TestQueryListsSinks(t *testing.T) {
 	if !items[1].Controls[1].Bool {
 		t.Errorf("item1 mute = false, want true")
 	}
+	if items[0].Icon != "audio-speakers" {
+		t.Errorf("item0 icon = %q, want audio-speakers", items[0].Icon)
+	}
+	if items[1].Icon != "audio-headphones" {
+		t.Errorf("item1 icon = %q, want audio-headphones", items[1].Icon)
+	}
 }
 
 // TestQueryFiltersByTitle checks filtering.

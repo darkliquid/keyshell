@@ -61,13 +61,16 @@ func runServe(t *testing.T, input string, backend Backend) string {
 		_ = w.Close()
 	}()
 
+	readDone := make(chan struct{})
 	// Copy stdout pipe into out while Serve writes.
 	go func() {
 		_, _ = out.ReadFrom(or)
+		close(readDone)
 	}()
 
 	<-done
 	_ = ow.Close()
+	<-readDone
 	_ = or.Close()
 	os.Stdout = stdout
 	return out.String()

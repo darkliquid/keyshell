@@ -36,6 +36,24 @@ func TestQueryEvaluatesExpression(t *testing.T) {
 	}
 }
 
+// TestQueryEvaluatesExpressionWithLeadingEquals verifies leading trigger '=' is trimmed.
+func TestQueryEvaluatesExpressionWithLeadingEquals(t *testing.T) {
+	b, _ := New(config.Default())
+	stream, err := b.Query(context.Background(), backend.Query{Text: "= 2 + 2"})
+	if err != nil {
+		t.Fatalf("Query = err %v", err)
+	}
+	defer stream.Close()
+
+	it, more, err := stream.Next()
+	if err != nil || !more {
+		t.Fatalf("Next = more=%v err=%v, want more", more, err)
+	}
+	if it.Title != "4" {
+		t.Errorf("Title = %q, want 4", it.Title)
+	}
+}
+
 // TestQueryIgnoresInvalidExpression ensures a non-expression yields nothing.
 func TestQueryIgnoresInvalidExpression(t *testing.T) {
 	b, _ := New(config.Default())

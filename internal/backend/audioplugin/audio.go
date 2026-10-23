@@ -66,8 +66,15 @@ func (b *Backend) Query(_ context.Context, q sdk.Query) (sdk.Stream, error) {
 			continue
 		}
 		volume := s.VolumePercent()
+		icon := "audio-speakers"
+		descLower := strings.ToLower(title + " " + s.Name)
+		if strings.Contains(descLower, "headphone") {
+			icon = "audio-headphones"
+		} else if strings.Contains(descLower, "headset") {
+			icon = "audio-headset"
+		}
 		item := sdk.Item{
-			ID: s.Name, Title: title, Subtitle: s.Name, Glyph: "audio",
+			ID: s.Name, Title: title, Subtitle: s.Name, Icon: icon,
 			Badge: "OUTPUT", StatusTone: "info",
 			Controls: []sdk.Control{
 				{ID: "volume", Kind: "range", Label: "Volume", Value: volume, Min: 0, Max: 1, Step: 0.01,

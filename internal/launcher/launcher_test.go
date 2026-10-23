@@ -26,15 +26,17 @@ func (p *fakeProvider) Get(id string) (backend.Backend, error) {
 
 // listBackend returns fixed items.
 type listBackend struct {
-	mu      sync.Mutex
-	id      string
-	items   []backend.Item
-	query   backend.Query
-	control []backend.Change
+	mu            sync.Mutex
+	id            string
+	trigger       string
+	nonSearchable bool
+	items         []backend.Item
+	query         backend.Query
+	control       []backend.Change
 }
 
 func (b *listBackend) Info() backend.Info {
-	return backend.Info{ID: b.id, Searchable: true, StableIDs: true}
+	return backend.Info{ID: b.id, Trigger: b.trigger, Searchable: !b.nonSearchable, StableIDs: true}
 }
 func (b *listBackend) Query(_ context.Context, q backend.Query) (backend.Stream, error) {
 	b.mu.Lock()
@@ -143,6 +145,28 @@ func TestEnterOpensPanelForControls(t *testing.T) {
 	}
 }
 
+func TestEnterWhenNoResultsDoesNothing(t *testing.T) {
+	audio := &listBackend{id: "audio", items: []backend.Item{{
+		ID: "sink", Title: "Speakers", Controls: []backend.Control{
+			{ID: "volume", Kind: backend.ControlRange, Label: "Volume", Value: 0.5, Min: 0, Max: 1, Step: 0.01},
+			{ID: "mute", Kind: backend.ControlToggle, Label: "Mute"},
+		},
+	}}}
+	l := New(&fakeProvider{backends: map[string]backend.Backend{"audio": audio}},
+		Options{Searchable: []string{"audio"}, RankOpts: rank.Options{Limit: 10}})
+	l.Open()
+	l.SetMode("audio")
+	// Search for something with no matches
+	l.SetQuery("nonexistent")
+	if len(l.Results()) != 0 {
+		t.Fatalf("Results len = %d, want 0", len(l.Results()))
+	}
+	l.Enter()
+	if l.PanelOpen() {
+		t.Fatal("PanelOpen = true, want false when pressing Enter with no results")
+	}
+}
+
 func TestEnterOpensPanelWithActionFirst(t *testing.T) {
 	media := &listBackend{id: "media", items: []backend.Item{{
 		ID: "song", Title: "Song", Actions: []backend.Action{{Type: "exec", Value: "play"}},
@@ -228,6 +252,14 @@ func TestPanelAdjustStepsRange(t *testing.T) {
 	if calls[0].Control != "volume" || calls[0].Value < 0.39 || calls[0].Value > 0.41 {
 		t.Errorf("control = %+v, want volume 0.4", calls[0])
 	}
+	// Verify in-place update of card control in launcher results.
+	results := l.Results()
+	if len(results) == 0 || len(results[0].Item.Controls) == 0 {
+		t.Fatalf("results missing controls: %+v", results)
+	}
+	if v := results[0].Item.Controls[0].Value; v < 0.39 || v > 0.41 {
+		t.Errorf("card results[0] volume = %v, want 0.4", v)
+	}
 }
 
 func TestPanelActivateToggles(t *testing.T) {
@@ -245,6 +277,14 @@ func TestPanelActivateToggles(t *testing.T) {
 	calls := audio.ControlCalls()
 	if len(calls) != 1 || calls[0].Control != "mute" || !calls[0].Bool {
 		t.Errorf("control calls = %+v, want mute=true", calls)
+	}
+	// Verify in-place update of toggle in launcher results.
+	results := l.Results()
+	if len(results) == 0 || len(results[0].Item.Controls) == 0 {
+		t.Fatalf("results missing controls: %+v", results)
+	}
+	if !results[0].Item.Controls[0].Bool {
+		t.Errorf("card results[0] mute = %v, want true", results[0].Item.Controls[0].Bool)
 	}
 }
 
@@ -392,6 +432,47 @@ func TestDebouncedControlCoalesces(t *testing.T) {
 	}
 	if len(calls) > 0 && calls[0].Value != 4 {
 		t.Errorf("value = %v, want 4 (last settled)", calls[0].Value)
+	}
+}
+
+func TestEnterDescendsWhenItemHasChildren(t *testing.T) {
+	tray := &listBackend{id: "tray", items: []backend.Item{{
+		ID: "applet-1", Title: "Applet", HasChildren: true,
+		Actions: []backend.Action{{Type: "plugin", Value: "activate"}},
+	}}}
+	prov := &fakeProvider{backends: map[string]backend.Backend{"tray": tray}}
+	l := New(prov, Options{Searchable: []string{"tray"}, RankOpts: rank.Options{Limit: 10}})
+	l.Open()
+	l.SetMode("tray")
+
+	if len(l.Results()) != 1 {
+		t.Fatalf("results len = %d, want 1", len(l.Results()))
+	}
+	l.Enter()
+
+	// l.levels should now have depth 2 with scope containing applet-1
+	if depth := len(l.levels); depth != 2 {
+		t.Fatalf("levels depth = %d, want 2 (descended into child level)", depth)
+	}
+	if scope := l.levels[1].Scope; len(scope) != 1 || scope[0] != "applet-1" {
+		t.Errorf("scope = %v, want [applet-1]", scope)
+	}
+}
+
+func TestEnterActivatesWhenItemHasNoChildren(t *testing.T) {
+	tray := &listBackend{id: "tray", items: []backend.Item{{
+		ID: "applet-1", Title: "Applet", HasChildren: false,
+		Actions: []backend.Action{{Type: "exec", Value: "echo hello"}},
+	}}}
+	prov := &fakeProvider{backends: map[string]backend.Backend{"tray": tray}}
+	l := New(prov, Options{Searchable: []string{"tray"}, RankOpts: rank.Options{Limit: 10}})
+	l.Open()
+	l.SetMode("tray")
+
+	l.Enter()
+	action, ok := l.TakeAction()
+	if !ok || action.Value != "echo hello" {
+		t.Errorf("action = (%+v, %v), want echo hello", action, ok)
 	}
 }
 
@@ -768,6 +849,59 @@ func TestQuerySyncLeavesStateAlone(t *testing.T) {
 	}
 }
 
+func TestCalcModeDisplaysComputedResult(t *testing.T) {
+	calcB := &listBackend{
+		id:            "calc",
+		nonSearchable: true,
+		items:         []backend.Item{{ID: "result", Title: "4", Subtitle: "Calculator"}},
+	}
+	prov := &fakeProvider{backends: map[string]backend.Backend{
+		"calc": calcB,
+	}}
+	l := New(prov, Options{
+		Modes:    []string{MergedMode, "calc"},
+		RankOpts: rank.Options{Limit: 10},
+	})
+	l.Open()
+	l.SetMode("calc")
+	l.SetQuery("2 + 2")
+	results := l.Results()
+	if len(results) != 1 {
+		t.Fatalf("Results len = %d, want 1", len(results))
+	}
+	if results[0].Item.Title != "4" {
+		t.Errorf("Title = %q, want 4", results[0].Item.Title)
+	}
+}
+
+// TestTriggerPrefixSwitchesMode proves typing a registered prefix trigger like "=" switches mode.
+func TestTriggerPrefixSwitchesMode(t *testing.T) {
+	calcB := &listBackend{
+		id:            "calc",
+		trigger:       "=",
+		nonSearchable: true,
+		items:         []backend.Item{{ID: "result", Title: "4", Subtitle: "Calculator"}},
+	}
+	prov := &fakeProvider{backends: map[string]backend.Backend{
+		"calc": calcB,
+	}}
+	l := New(prov, Options{
+		Modes:    []string{MergedMode, "calc"},
+		RankOpts: rank.Options{Limit: 10},
+	})
+	l.Open()
+	if l.Mode() != MergedMode {
+		t.Fatalf("initial mode = %q, want %q", l.Mode(), MergedMode)
+	}
+	l.SetQuery("= 2 + 2")
+	if l.Mode() != "calc" {
+		t.Errorf("Mode after trigger = %q, want calc", l.Mode())
+	}
+	if l.Query() != "2 + 2" {
+		t.Errorf("Query after trigger = %q, want 2 + 2", l.Query())
+	}
+}
+
 // TestCycleModeWrapsAndKeepsQuery proves Tab cycling walks the configured
 // mode list, wraps at both ends, and preserves the typed query.
 func TestCycleModeWrapsAndKeepsQuery(t *testing.T) {
@@ -872,5 +1006,70 @@ func TestMergedQueryRunsBackendsConcurrently(t *testing.T) {
 	// Both backends answered and their groups merged in list order.
 	if got := len(l.Results()); got != 2 {
 		t.Fatalf("Results len = %d, want 2", got)
+	}
+}
+
+func TestMergedQueryStreamsProgressiveResults(t *testing.T) {
+	fast := &listBackend{id: "fast", items: []backend.Item{{ID: "fast-1", Title: "Fast Result"}}}
+	slowProceed := make(chan struct{})
+	slowEntered := make(chan struct{}, 1)
+	slow := &barrierBackend{id: "slow", entered: slowEntered, proceed: slowProceed}
+
+	prov := &fakeProvider{backends: map[string]backend.Backend{"fast": fast, "slow": slow}}
+	l := New(prov, Options{
+		Searchable: []string{"fast", "slow"},
+		SettleMs:   20 * time.Millisecond,
+		RankOpts:   rank.Options{Limit: 10},
+	})
+	l.Start()
+	l.Open()
+
+	// Wait until slow backend enters Query
+	select {
+	case <-slowEntered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("slow backend never entered query")
+	}
+
+	// Poll launcher: fast results should already be published while slow backend is blocked
+	deadline := time.Now().Add(1 * time.Second)
+	foundFast := false
+	for time.Now().Before(deadline) {
+		l.Poll()
+		res := l.Results()
+		if len(res) == 1 && res[0].Item.ID == "fast-1" {
+			foundFast = true
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if !foundFast {
+		t.Fatalf("fast backend results were not streamed while slow backend was blocked: got %+v", l.Results())
+	}
+	if !l.Searching() {
+		t.Error("Searching = false while slow backend is still in flight")
+	}
+
+	// Release slow backend
+	close(slowProceed)
+
+	// Wait for slow backend to complete and land in Poll
+	foundBoth := false
+	deadline = time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		l.Poll()
+		if len(l.Results()) == 2 && !l.Searching() {
+			foundBoth = true
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if !foundBoth {
+		t.Fatalf("results never completed with both backends: got %d results, searching=%v", len(l.Results()), l.Searching())
+	}
+	// Verify selection stayed on fast-1
+	selectedItem, _, ok := l.SelectedItem()
+	if !ok || selectedItem.ID != "fast-1" {
+		t.Errorf("SelectedItem = %+v, want fast-1 preserved after progressive update", selectedItem)
 	}
 }

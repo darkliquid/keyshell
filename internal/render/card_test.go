@@ -37,6 +37,89 @@ func TestDrawCardPaintsChipsAndTitle(t *testing.T) {
 	}
 }
 
+// TestDrawCardTrayGlyph verifies that an item with Glyph "tray" renders
+// the gear icon without leaving the visual area empty.
+func TestDrawCardTrayGlyph(t *testing.T) {
+	th, err := theme.Load()
+	if err != nil {
+		t.Fatalf("theme.Load = err %v", err)
+	}
+	defer th.Close()
+
+	plan := card.Compose(backend.Item{Title: "Applet", Glyph: "tray"})
+	dc := gg.NewContext(400, 260)
+	drawCard(dc, th, &PainterDeps{Reveal: Reveal{}, CardCfg: config.Default().Reveal}, 10, 10, 340, 220, plan, false)
+	img := dc.Image().(*image.RGBA)
+
+	// In the visual box region (approx x: 20..70, y: 80..150), verify ink pixels were drawn
+	hasInk := false
+	for y := 80; y < 150; y++ {
+		for x := 20; x < 70; x++ {
+			px := img.RGBAAt(x, y)
+			if px.R != 0 || px.G != 0 || px.B != 0 {
+				hasInk = true
+				break
+			}
+		}
+	}
+	if !hasInk {
+		t.Error("tray glyph visual box was completely empty")
+	}
+}
+// of the card rather than starting at the left.
+func TestDrawCardPillsAlignTopRight(t *testing.T) {
+	th, err := theme.Load()
+	if err != nil {
+		t.Fatalf("theme.Load = err %v", err)
+	}
+	defer th.Close()
+
+	plan := card.Compose(backend.Item{
+		Title: "Speakers", Subtitle: "hdmi", Icon: "audio",
+		Badge: "OUTPUT", Status: "DEFAULT", StatusTone: backend.TonePositive,
+	})
+	dc := gg.NewContext(400, 260)
+	drawCard(dc, th, &PainterDeps{Reveal: Reveal{}, CardCfg: config.Default().Reveal}, 10, 10, 340, 220, plan, false)
+	img := dc.Image().(*image.RGBA)
+
+	// In the chip header region (y between 15 and 35), any cyan pixels (from TonePositive/AccentAlt)
+	// must be in the right half of the card content (x > 180).
+	foundLeft := false
+	for y := 15; y < 40; y++ {
+		for x := 10; x < 150; x++ {
+			px := img.RGBAAt(x, y)
+			if px.R == 0x08 && px.G == 0xF7 && px.B == 0xFE {
+				foundLeft = true
+				break
+			}
+		}
+	}
+	if foundLeft {
+		t.Error("found pill pixels on the left side of the card, want top-right alignment")
+	}
+}
+
+// TestDrawCardPillDoesNotTruncate verifies that pills like CONNECTED and OPEN
+// are not truncated to CONNECTE. or OPE.
+func TestDrawCardPillDoesNotTruncate(t *testing.T) {
+	th, err := theme.Load()
+	if err != nil {
+		t.Fatalf("theme.Load = err %v", err)
+	}
+	defer th.Close()
+
+	for _, text := range []string{"CONNECTED", "OPEN"} {
+		face := th.Face(9)
+		w := 340.0
+		sW := chipWidth(face, text, w)
+		// When drawChip was called with maxW=sW, it was doing elide(face, text, sW-10)
+		label := elide(face, text, sW-10)
+		if label != text {
+			t.Errorf("text %q was truncated to %q", text, label)
+		}
+	}
+}
+
 // TestDrawCardSelectedUsesSlabText checks the slide-to-accent state does not
 // paint ink on the accent fill.
 func TestDrawCardSelectedUsesSlabText(t *testing.T) {
@@ -116,6 +199,27 @@ func TestDrawCardMeterFillsTicks(t *testing.T) {
 
 	if !containsColor(img, 0xFF, 0x2E, 0x63) {
 		t.Error("accent meter pixels missing")
+	}
+}
+
+// TestDrawCardSelectedMeterFillsTicks checks a ratio meter on a selected card
+// paints cyan accent ticks so the filled portion is visible on the accent fill.
+func TestDrawCardSelectedMeterFillsTicks(t *testing.T) {
+	th, err := theme.Load()
+	if err != nil {
+		t.Fatalf("theme.Load = err %v", err)
+	}
+	defer th.Close()
+
+	plan := card.Compose(backend.Item{Title: "Speakers", Icon: "audio", Controls: []backend.Control{
+		{ID: "volume", Kind: backend.ControlRange, Value: 0.5, Min: 0, Max: 1, Primary: true},
+	}})
+	dc := gg.NewContext(400, 260)
+	drawCard(dc, th, &PainterDeps{Reveal: Reveal{}, CardCfg: config.Default().Reveal}, 10, 10, 340, 220, plan, true)
+	img := dc.Image().(*image.RGBA)
+
+	if !containsColor(img, 0x08, 0xF7, 0xFE) {
+		t.Error("cyan accent meter pixels missing on selected card")
 	}
 }
 

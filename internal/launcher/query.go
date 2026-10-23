@@ -39,6 +39,7 @@ type Result struct {
 	items   []backend.Item
 	matches []rank.Match
 	sc      trace.SpanContext
+	partial bool
 }
 
 // Start launches the query worker. Until it is called the launcher runs
@@ -50,7 +51,7 @@ func (l *Launcher) Start() {
 		return
 	}
 	l.jobs = make(chan Job, 1)
-	l.resultsCh = make(chan Result, 1)
+	l.resultsCh = make(chan Result, 128)
 	go l.work(l.jobs, l.resultsCh)
 }
 
@@ -60,19 +61,20 @@ func (l *Launcher) Start() {
 // the field.
 func (l *Launcher) work(jobs <-chan Job, out chan Result) {
 	for job := range jobs {
-		res := l.run(job)
-		select {
-		case out <- res:
-		default:
-			select {
-			case <-out:
-			default:
-			}
+		l.run(job, func(res Result) {
 			select {
 			case out <- res:
 			default:
+				select {
+				case <-out:
+				default:
+				}
+				select {
+				case out <- res:
+				default:
+				}
 			}
-		}
+		})
 	}
 }
 
@@ -104,9 +106,11 @@ func (l *Launcher) submit(job Job) {
 	jobs := l.jobs
 	l.mu.RUnlock()
 	if jobs == nil {
-		if l.apply(l.run(job)) {
-			l.changed()
-		}
+		l.run(job, func(r Result) {
+			if l.apply(r) {
+				l.changed()
+			}
+		})
 		return
 	}
 	l.mu.Lock()
@@ -134,14 +138,39 @@ func (l *Launcher) apply(res Result) bool {
 		return false
 	}
 	level := l.levels[len(l.levels)-1]
+
+	var selectedID backend.ResultID
+	if level.Selected >= 0 && level.Selected < len(level.Matches) {
+		selectedID = level.Matches[level.Selected].Item.ID
+	}
+
 	level.Items = res.items
 	level.Matches = res.matches
 	l.results = res.matches
-	l.searching = false
+	if !res.partial {
+		l.searching = false
+	}
 	if len(res.matches) == 0 {
 		level.Selected = 0
-	} else if level.Selected >= len(res.matches) {
-		level.Selected = 0
+		if l.panel != nil && !res.partial {
+			l.closePanelLocked()
+		}
+	} else {
+		found := false
+		if selectedID != "" {
+			for idx, m := range res.matches {
+				if m.Item.ID == selectedID {
+					level.Selected = idx
+					found = true
+					break
+				}
+			}
+		}
+		if !found {
+			if level.Selected >= len(res.matches) {
+				level.Selected = 0
+			}
+		}
 	}
 	if res.sc.IsValid() {
 		l.lastQuerySC = res.sc
@@ -164,11 +193,18 @@ func (l *Launcher) LastQuerySpanContext() trace.SpanContext {
 // jobLocked snapshots the state one query needs and bumps the generation.
 func (l *Launcher) jobLocked() Job {
 	l.gen++
+	if l.cancelQuery != nil {
+		l.cancelQuery()
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	l.cancelQuery = cancel
+
 	var scope []string
 	if level := l.currentLevelLocked(); level != nil {
 		scope = append([]string(nil), level.Scope...)
 	}
 	return Job{
+		ctx:   ctx,
 		gen:   l.gen,
 		query: l.query,
 		mode:  l.mode,
@@ -179,7 +215,7 @@ func (l *Launcher) jobLocked() Job {
 
 // run executes one query against the provider. It touches no launcher state, so
 // it is safe off the UI thread.
-func (l *Launcher) run(job Job) Result {
+func (l *Launcher) run(job Job, emit func(Result)) Result {
 	ctx := job.ctx
 	if ctx == nil {
 		ctx = context.Background()
@@ -193,14 +229,23 @@ func (l *Launcher) run(job Job) Result {
 	defer span.End()
 
 	start := time.Now()
-	res := l.queryMode(ctx, job.mode, job.query, job.scope, l.opts.RankOpts.Limit)
+	wrappedEmit := func(r Result) {
+		r.gen = job.gen
+		r.depth = job.depth
+		r.sc = span.SpanContext()
+		if emit != nil {
+			emit(r)
+		}
+	}
+
+	res := l.queryMode(ctx, job.mode, job.query, job.scope, l.opts.RankOpts.Limit, wrappedEmit)
 	res.gen = job.gen
 	res.depth = job.depth
+	res.sc = span.SpanContext()
 	elapsed := time.Since(start).Seconds()
 	modeAttr := metric.WithAttributes(attribute.String(telemetry.Attrs.Mode, job.mode))
 	telemetry.QueryDuration().Record(ctx, elapsed, modeAttr)
 	telemetry.QueryResults().Record(ctx, int64(len(res.matches)), modeAttr)
-	res.sc = span.SpanContext()
 	return res
 }
 
@@ -215,48 +260,100 @@ func (l *Launcher) QuerySync(ctx context.Context, mode, text string, limit int) 
 	if limit <= 0 {
 		limit = l.opts.RankOpts.Limit
 	}
-	return l.queryMode(ctx, mode, text, nil, limit).matches, nil
+	return l.queryMode(ctx, mode, text, nil, limit, nil).matches, nil
 }
 
 // queryMode runs the query for one mode, merged or scoped, and ranks it.
-// The merged fan-out is concurrent: the merged search is only as slow as the
-// slowest backend, not the sum of them. Group order stays in searchableIDs
-// order so ranking is deterministic.
-func (l *Launcher) queryMode(ctx context.Context, mode, text string, scope []string, limit int) Result {
+func (l *Launcher) queryMode(ctx context.Context, mode, text string, scope []string, limit int, emit func(Result)) Result {
 	res := Result{}
 	if mode == MergedMode || mode == "" {
-		ids := l.searchableIDs()
-		items := make([][]backend.Item, len(ids))
-		errs := make([]error, len(ids))
-		var wg sync.WaitGroup
-		for i, id := range ids {
-			wg.Add(1)
-			go func(i int, id string) {
-				defer wg.Done()
-				found, err := l.queryBackend(ctx, id, text, limit, true, nil)
-				items[i] = found
-				errs[i] = err
-			}(i, id)
-		}
-		wg.Wait()
-		groups := make([]rank.Group, 0, len(ids))
-		for i, id := range ids {
-			if errs[i] != nil {
-				continue
-			}
-			groups = append(groups, rank.Group{Source: id, Items: items[i]})
-		}
-		res.items = flattenGroups(groups)
-		res.matches = rank.Rank(text, groups, nil, l.opts.RankOpts)
-		return res
+		return l.queryMerged(ctx, text, limit, emit)
 	}
 	items, err := l.queryBackend(ctx, mode, text, limit, false, scope)
 	if err != nil {
+		if emit != nil {
+			emit(res)
+		}
 		return res
 	}
 	res.items = items
+	if b, bErr := l.provider.Get(mode); bErr == nil && !b.Info().Searchable {
+		matches := make([]rank.Match, len(items))
+		for i, it := range items {
+			matches[i] = rank.Match{Item: it, Source: mode, Tier: 0}
+		}
+		res.matches = matches
+		if emit != nil {
+			emit(res)
+		}
+		return res
+	}
 	res.matches = rank.RankOne(text, mode, items, nil, l.opts.RankOpts)
+	if emit != nil {
+		emit(res)
+	}
 	return res
+}
+
+// queryMerged streams results progressively as individual backends answer.
+func (l *Launcher) queryMerged(ctx context.Context, text string, limit int, emit func(Result)) Result {
+	ids := l.searchableIDs()
+	if len(ids) == 0 {
+		res := Result{}
+		if emit != nil {
+			emit(res)
+		}
+		return res
+	}
+
+	items := make([][]backend.Item, len(ids))
+	errs := make([]error, len(ids))
+	done := make([]bool, len(ids))
+	var mu sync.Mutex
+
+	var wg sync.WaitGroup
+	var lastResult Result
+
+	for i, id := range ids {
+		wg.Add(1)
+		go func(i int, id string) {
+			defer wg.Done()
+			found, err := l.queryBackend(ctx, id, text, limit, true, nil)
+
+			mu.Lock()
+			items[i] = found
+			errs[i] = err
+			done[i] = true
+
+			groups := make([]rank.Group, 0, len(ids))
+			completed := 0
+			for j, jid := range ids {
+				if done[j] {
+					completed++
+					if errs[j] == nil && len(items[j]) > 0 {
+						groups = append(groups, rank.Group{Source: jid, Items: items[j]})
+					}
+				}
+			}
+			isFinal := (completed == len(ids))
+			matches := rank.Rank(text, groups, nil, l.opts.RankOpts)
+			res := Result{
+				items:   flattenGroups(groups),
+				matches: matches,
+				partial: !isFinal,
+			}
+			lastResult = res
+			mu.Unlock()
+
+			if ctx.Err() == nil && emit != nil {
+				if len(matches) > 0 || isFinal {
+					emit(res)
+				}
+			}
+		}(i, id)
+	}
+	wg.Wait()
+	return lastResult
 }
 
 // queryBackend queries one backend with its own span and duration metric.

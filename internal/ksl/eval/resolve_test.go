@@ -149,6 +149,50 @@ func TestListCycleScrollCenterFillsViewportEdgeToEdge(t *testing.T) {
 	}
 }
 
+func TestListScrollRevealVertical(t *testing.T) {
+	scene := mustScene(t, `Window { List {
+	    x: 0, y: 10, width: 200, height: 100
+	    items: $results, selected: $selected, gap: 0
+	    orientation: vertical, scroll: reveal, overflow: clamp
+	    template { Box { width: 200, height: 20 } }
+	} }`)
+	// 10 items, 20px each = 200px total content in a 100px high viewport at y=10.
+	items := make([]Item, 10)
+	for i := range items {
+		items[i] = Item{ID: string(rune('a' + i))}
+	}
+
+	// Case 1: selected = 0 (top). First item should be at y=10.
+	st := State{Width: 200, Height: 200, Scale: 1, Results: items, Selected: 0}
+	f, err := Resolve(scene, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	list := f.Root.Children[0]
+	if len(list.Children) != 10 {
+		t.Fatalf("children len = %d, want 10", len(list.Children))
+	}
+	if list.Children[0].Rect.Y != 10 {
+		t.Errorf("item 0 Y = %v, want 10", list.Children[0].Rect.Y)
+	}
+
+	// Case 2: selected = 5 (item at [100, 120] relative to list Y=10, so unshifted is [110, 130]).
+	// Viewport is [10, 110]. To reveal item 5, its bottom must align with viewport bottom (110).
+	st.Selected = 5
+	f, err = Resolve(scene, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	list = f.Root.Children[0]
+	selNode := list.Children[5]
+	if selNode.Rect.Y < 10 || selNode.Rect.Y+selNode.Rect.H > 110 {
+		t.Errorf("item 5 Rect = %+v, not within viewport [10, 110]", selNode.Rect)
+	}
+	if selNode.Rect.Y+selNode.Rect.H != 110 {
+		t.Errorf("item 5 bottom = %v, want 110", selNode.Rect.Y+selNode.Rect.H)
+	}
+}
+
 func TestRandInSceneIsSummonScoped(t *testing.T) {
 	scene := mustScene(t, `Window { Group#band { rotate: rand(-4, 4) * 1deg } }`)
 	st := State{Width: 100, Height: 100, Scale: 1, Summon: 1, Seed: 42, RandCache: &RandCache{}}

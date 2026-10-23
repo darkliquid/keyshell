@@ -375,9 +375,10 @@ func (r *resolver) resolveList(n *ksl.Node, bounds RectF) (*ResolvedNode, error)
 		}
 	}
 
-	// scroll: center keeps the selected item centred in the viewport,
-	// like the legacy reel. Other scroll modes are no-ops for now.
-	if kwProp(props, "scroll") == "center" && len(rn.Children) > 0 {
+	// scroll: center keeps the selected item centred in the viewport;
+	// scroll: reveal ensures the selected item is completely visible in the viewport.
+	scrollMode := kwProp(props, "scroll")
+	if (scrollMode == "center" || scrollMode == "reveal") && len(rn.Children) > 0 {
 		sel := selected
 		if sel < 0 {
 			sel = 0
@@ -397,21 +398,41 @@ func (r *resolver) resolveList(n *ksl.Node, bounds RectF) (*ResolvedNode, error)
 		}
 		selNode := rn.Children[sel]
 		var selCenter, viewCenter, contentLen float64
-		var viewportLen float64
+		var viewportLen, viewStart, viewEnd, itemStart, itemEnd float64
 		if horizontal {
 			selCenter = selNode.Rect.X + selNode.Rect.W/2
 			viewCenter = rn.Rect.X + rn.Rect.W/2
+			viewStart = rn.Rect.X
+			viewEnd = rn.Rect.X + rn.Rect.W
+			itemStart = selNode.Rect.X
+			itemEnd = selNode.Rect.X + selNode.Rect.W
 			contentLen = contentEnd - contentStart
 			viewportLen = rn.Rect.W
 		} else {
 			selCenter = selNode.Rect.Y + selNode.Rect.H/2
 			viewCenter = rn.Rect.Y + rn.Rect.H/2
+			viewStart = rn.Rect.Y
+			viewEnd = rn.Rect.Y + rn.Rect.H
+			itemStart = selNode.Rect.Y
+			itemEnd = selNode.Rect.Y + selNode.Rect.H
 			contentLen = contentEnd - contentStart
 			viewportLen = rn.Rect.H
 		}
-		shift := viewCenter - selCenter
-		// clamp so the selected item stays in view and the reel bounds
-		if contentLen > viewportLen {
+
+		shift := 0.0
+		switch scrollMode {
+		case "center":
+			shift = viewCenter - selCenter
+		case "reveal":
+			if itemStart < viewStart {
+				shift = viewStart - itemStart
+			} else if itemEnd > viewEnd {
+				shift = viewEnd - itemEnd
+			}
+		}
+
+		// clamp so the selected item stays in view and content doesn't overscroll
+		if contentLen > viewportLen && shift != 0 {
 			if shift > 0 {
 				shift = 0
 			}

@@ -184,3 +184,52 @@ func mustParseScene(t *testing.T, src string) *ksl.Scene {
 	}
 	return s
 }
+
+func TestDropdownSceneRenders(t *testing.T) {
+	th, err := theme.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer th.Close()
+
+	cfg := config.Default()
+	cfg.UI.Scene = "../../scenes/dropdown.ksl"
+	s, err := LoadScene(cfg)
+	if err != nil {
+		t.Fatalf("LoadScene(dropdown.ksl): %v", err)
+	}
+
+	sr := NewSceneRenderer(New(), cfg)
+	sr.SetScene(s)
+
+	view := &fakeView{
+		open:  true,
+		query: "term",
+		results: []rank.Match{
+			{Item: backend.Item{ID: "app1", Title: "Alacritty", Subtitle: "Terminal Emulator", Icon: "terminal", Badge: "APP", Status: "OPEN"}},
+			{Item: backend.Item{ID: "app2", Title: "Firefox", Subtitle: "Web Browser", Icon: "firefox", Badge: "APP"}},
+		},
+		selected: 0,
+	}
+
+	dc, img := testContext(t, 1920, 1080)
+	sr.DrawFrame(dc, view, th, cfg.Reveal)
+
+	if !anyColor(img) {
+		t.Fatal("dropdown scene did not paint any pixels")
+	}
+
+	// Verify pixels inside the dropdown box (x centered: (1920-640)/2 = 640..1280, y: 120..580)
+	insideColor := false
+	for y := 130; y < 200; y += 10 {
+		for x := 650; x < 800; x += 10 {
+			if img.RGBAAt(x, y).A != 0 {
+				insideColor = true
+				break
+			}
+		}
+	}
+	if !insideColor {
+		t.Error("no pixels painted inside dropdown window region")
+	}
+}

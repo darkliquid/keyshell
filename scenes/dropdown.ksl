@@ -1,0 +1,72 @@
+// Dropdown theme: a classic centered popup launcher (Raycast / Spotlight style)
+// featuring a top search row, divider, and vertical scrollable item list.
+
+Window {
+    Box {
+        width: 640, height: 460
+        x: ($width - 640) / 2, y: 120
+        fill: $slab, radius: 8, border: $muted
+
+        Column {
+            width: 640, height: 460
+            gap: 0
+
+            // Search Header
+            Row {
+                width: 640, height: 52
+                gap: 12, align: center
+                x: 16
+
+                Pill { text: $mode, tone: accent }
+                Text { text: $query, size: 18, color: $ink }
+                Cursor { width: 2, height: 20, color: $accent, animation: blink 800ms linear infinite }
+                Box { grow: 1 }
+                Text { text: $results.len, size: 12, color: $muted, when: !$searching }
+            }
+
+            // Divider
+            Box { width: 640, height: 1, fill: $surface-alt }
+
+            // Vertical Result List
+            List {
+                width: 640, height: 407
+                items: $results, selected: $selected
+                orientation: vertical
+                scroll: reveal
+                overflow: clamp
+                gap: 2
+
+                template {
+                    Box {
+                        width: 640, height: 44, radius: 4
+                        state selected { fill: $surface-alt }
+
+                        Row {
+                            width: 608, height: 44, gap: 12, align: center
+                            x: 16
+
+                            Image { source: $item.icon, width: 24, height: 24 }
+                            Column {
+                                gap: 2
+                                Text { text: $item.title, size: 14, color: $ink }
+                                Text { text: $item.subtitle, size: 11, color: $muted, when: $item.subtitle != "" }
+                            }
+                            Box { grow: 1 }
+                            Pill { text: $item.status, when: $item.status != "", tone: $item.statusTone }
+                            Pill { text: $item.badge, when: $item.badge != "", tone: neutral }
+                        }
+                    }
+                }
+
+                empty {
+                    Box {
+                        width: 640, height: 200, align: center
+                        Text { text: $searching ? "SEARCHING..." : "NO RESULTS", size: 13, color: $muted }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@keyframes blink { 0% { opacity: 1 } 50% { opacity: 0 } 100% { opacity: 1 } }

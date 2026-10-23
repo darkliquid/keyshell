@@ -5,6 +5,7 @@ import (
 
 	"github.com/darkliquid/keyshell/internal/ksl/eval"
 	"github.com/darkliquid/keyshell/internal/theme"
+	"github.com/gogpu/gg"
 )
 
 func TestImagePainterPlaceholder(t *testing.T) {
@@ -42,5 +43,27 @@ func TestGradientFill(t *testing.T) {
 	bot := img.Pix[9*img.Stride+5*4]
 	if top == bot {
 		t.Errorf("gradient painted flat: top=%v bot=%v", top, bot)
+	}
+}
+
+func TestPaintImageResolvesNamedIcons(t *testing.T) {
+	th, err := theme.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer th.Close()
+	dc, img := testContext(t, 60, 60)
+	dc.ClearWithColor(gg.RGBA{})
+
+	n := &eval.ResolvedNode{
+		Name: "Image",
+		Rect: eval.RectF{X: 10, Y: 10, W: 40, H: 40},
+		Props: map[string]eval.Value{
+			"source": eval.Str("terminal"),
+		},
+	}
+	painterFor("Image")(dc, th, n, &PainterDeps{})
+	if !anyColor(img) {
+		t.Errorf("named icon did not paint fallback mark")
 	}
 }

@@ -2,29 +2,49 @@ package render
 
 import (
 	"image"
+	"math"
+	"strings"
 
 	"github.com/darkliquid/keyshell/internal/ksl/eval"
 	"github.com/darkliquid/keyshell/internal/theme"
 	"github.com/gogpu/gg"
 )
 
-// paintImage draws the Image node: the cached bitmap or the placeholder,
-// fitted per `fit` and tinted per `tint`.
+// paintImage draws the Image or Icon node: the cached bitmap or fallback mark,
+// fitted per `fit` and tinted per `tint`. Named icons resolve through the icon theme.
 func paintImage(dc *gg.Context, th *theme.Theme, n *eval.ResolvedNode, deps *PainterDeps) {
 	r := n.Rect
 	if r.W <= 0 || r.H <= 0 {
 		return
 	}
-	src, ok := n.Props["source"].(eval.Str)
+	srcRaw, ok := n.Props["source"].(eval.Str)
 	if !ok {
+		srcRaw, ok = n.Props["name"].(eval.Str)
+	}
+	if !ok || string(srcRaw) == "" {
 		return
 	}
-	if deps.Images == nil {
+	path := string(srcRaw)
+
+	// If source is not an absolute file path and an icon resolver exists, resolve icon name.
+	if deps != nil && deps.Icons != nil && !strings.HasPrefix(path, "/") {
+		resolved, ok, ready := deps.Icons.LookupAsync(path, int(r.W))
+		if ready && ok {
+			path = resolved
+		} else if !ready || !ok {
+			drawFallbackMark(dc, th, n, path)
+			return
+		}
+	}
+
+	if deps == nil || deps.Images == nil {
+		drawFallbackMark(dc, th, n, path)
 		return
 	}
-	img, ready := deps.Images.Get(string(src), int(r.W), int(r.H))
+	img, ready := deps.Images.Get(path, int(r.W), int(r.H))
 	if !ready {
-		img = deps.Images.Placeholder()
+		drawFallbackMark(dc, th, n, path)
+		return
 	}
 	fit := kwVal(n.Props["fit"])
 	var dx, dy, dw, dh float64
@@ -48,6 +68,46 @@ func paintImage(dc *gg.Context, th *theme.Theme, n *eval.ResolvedNode, deps *Pai
 	if tint, ok := n.Props["tint"].(eval.Color); ok {
 		tintRect(dc, image.Rect(int(dx), int(dy), int(dx+dw), int(dy+dh)), tint)
 	}
+}
+
+func drawFallbackMark(dc *gg.Context, th *theme.Theme, n *eval.ResolvedNode, text string) {
+	r := n.Rect
+	if r.W <= 0 || r.H <= 0 {
+		return
+	}
+	radius := 4.0
+	if v, ok := n.Props["radius"].(eval.Num); ok {
+		radius = float64(v)
+	}
+	selected := n.Selected || selectedProp(n)
+	fill, border := th.SurfaceAlt, th.AccentAlt
+	if selected {
+		fill, border = th.Slab, th.Slab
+	}
+	if v, ok := n.Props["fill"]; ok {
+		fill = evalColorToGG(v, fill)
+	}
+	dc.SetColor(fill)
+	if radius > 0 {
+		dc.DrawRoundedRectangle(r.X, r.Y, r.W, r.H, radius)
+	} else {
+		dc.DrawRectangle(r.X, r.Y, r.W, r.H)
+	}
+	_ = dc.Fill()
+	dc.NewSubPath()
+	dc.SetColor(border)
+	dc.SetLineWidth(1.5)
+	if radius > 0 {
+		dc.DrawRoundedRectangle(r.X, r.Y, r.W, r.H, radius)
+	} else {
+		dc.DrawRectangle(r.X, r.Y, r.W, r.H)
+	}
+	_ = dc.Stroke()
+
+	face := th.Face(math.Min(22, math.Max(8, r.H*0.5)))
+	dc.SetFont(face)
+	dc.SetColor(inkOrSlab(th, selected))
+	dc.DrawStringAnchored(monogram(text), r.X+r.W/2, r.Y+r.H/2, 0.5, 0.5)
 }
 
 // tintRect applies a tint colour over the region.

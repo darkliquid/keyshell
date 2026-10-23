@@ -35,7 +35,7 @@ func painterFor(name string) Painter {
 		return paintText
 	case "Path":
 		return paintPath
-	case "Image":
+	case "Image", "Icon":
 		return paintImage
 	case "Pill":
 		return paintPill

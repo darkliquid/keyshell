@@ -115,3 +115,32 @@ func TestPaintImageGlyph(t *testing.T) {
 		t.Errorf("glyph 'A' did not paint any pixels")
 	}
 }
+
+func TestPaintImageWordGlyphDoesNotOverflow(t *testing.T) {
+	th, err := theme.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer th.Close()
+	dc, img := testContext(t, 100, 40)
+	dc.ClearWithColor(gg.RGBA{})
+
+	// Node constrained to width 24, height 24 at X=10, Y=10.
+	n := &eval.ResolvedNode{
+		Name: "Icon",
+		Rect: eval.RectF{X: 10, Y: 10, W: 24, H: 24},
+		Props: map[string]eval.Value{
+			"glyph": eval.Str("command"),
+		},
+	}
+	painterFor("Icon")(dc, th, n, &PainterDeps{})
+
+	// Check that no pixels were painted outside the 24x24 box (X > 36)
+	for y := 0; y < 40; y++ {
+		for x := 36; x < 100; x++ {
+			if img.RGBAAt(x, y).A != 0 {
+				t.Fatalf("word glyph overflowed 24px icon box at (%d, %d): %+v", x, y, img.RGBAAt(x, y))
+			}
+		}
+	}
+}

@@ -129,9 +129,17 @@ func (r *resolver) refineRect(n *ksl.Node, props map[string]Value, rect RectF) R
 	}
 	iw, ih := r.leafIntrinsicSize(n, props)
 	if !hasW && iw > 0 {
-		rect.W = iw
+		if rect.W > 0 {
+			rect.W = math.Min(rect.W, iw)
+		} else {
+			rect.W = iw
+		}
 	} else if !hasW && n.Name == "Text" {
-		rect.W = iw
+		if rect.W > 0 {
+			rect.W = math.Min(rect.W, iw)
+		} else {
+			rect.W = iw
+		}
 	}
 	if !hasH && ih > 0 {
 		rect.H = ih
@@ -344,6 +352,9 @@ func (r *resolver) layoutFlex(parent *ResolvedNode, n *ksl.Node, horizontal bool
 		if crossOut == 0 {
 			crossOut = crossSize // stretch
 		} else {
+			if crossSize > 0 && crossOut > crossSize {
+				crossOut = crossSize
+			}
 			switch crossAlign {
 			case "center":
 				crossOffset = (crossSize - crossOut) / 2

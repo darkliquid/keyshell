@@ -134,8 +134,14 @@ func paintBox(dc *gg.Context, th *theme.Theme, n *eval.ResolvedNode, deps *Paint
 	r := n.Rect
 	if deps != nil && deps.ClipRect != nil {
 		cr := deps.ClipRect
-		if r.X+r.W <= cr.X || r.X >= cr.X+cr.W || r.Y+r.H <= cr.Y || r.Y >= cr.Y+cr.H {
+		if r.X >= cr.X+cr.W || r.X+r.W <= cr.X || r.Y >= cr.Y+cr.H || r.Y+r.H <= cr.Y {
 			return
+		}
+		if r.X+r.W > cr.X+cr.W {
+			r.W = cr.X + cr.W - r.X
+		}
+		if r.Y+r.H > cr.Y+cr.H {
+			r.H = cr.Y + cr.H - r.Y
 		}
 	}
 	fill, hasFill := n.Props["fill"]
@@ -216,6 +222,35 @@ func paintText(dc *gg.Context, th *theme.Theme, n *eval.ResolvedNode, deps *Pain
 		cr := deps.ClipRect
 		if r.X+r.W <= cr.X || r.X >= cr.X+cr.W || r.Y+r.H <= cr.Y || r.Y >= cr.Y+cr.H {
 			return
+		}
+	}
+	if r.W > 0 {
+		tw, _ := dc.MeasureString(rawTxt)
+		if tw > r.W {
+			dots := "…"
+			dw, _ := dc.MeasureString(dots)
+			if dw == 0 {
+				dots = "..."
+				dw, _ = dc.MeasureString(dots)
+			}
+			runes := []rune(rawTxt)
+			truncated := false
+			for len(runes) > 0 {
+				runes = runes[:len(runes)-1]
+				curW, _ := dc.MeasureString(string(runes))
+				if curW+dw <= r.W {
+					rawTxt = string(runes) + dots
+					truncated = true
+					break
+				}
+			}
+			if !truncated && len(runes) == 0 {
+				if dw <= r.W {
+					rawTxt = dots
+				} else {
+					rawTxt = ""
+				}
+			}
 		}
 	}
 	ax := 0.0
@@ -314,13 +349,47 @@ func paintPill(dc *gg.Context, th *theme.Theme, n *eval.ResolvedNode, deps *Pain
 	r := n.Rect
 	if deps != nil && deps.ClipRect != nil {
 		cr := deps.ClipRect
-		if r.X+r.W <= cr.X || r.X >= cr.X+cr.W || r.Y+r.H <= cr.Y || r.Y >= cr.Y+cr.H {
+		if r.X >= cr.X+cr.W || r.X+r.W <= cr.X || r.Y >= cr.Y+cr.H || r.Y+r.H <= cr.Y {
 			return
 		}
+		if r.X+r.W > cr.X+cr.W {
+			r.W = cr.X + cr.W - r.X
+		}
+		if r.Y+r.H > cr.Y+cr.H {
+			r.H = cr.Y + cr.H - r.Y
+		}
+	}
+	if r.W <= 0 || r.H <= 0 {
+		return
 	}
 	face := th.Face(size)
 	dc.SetFont(face)
 	label := strings.ToUpper(rawTxt)
+	if r.W > 0 {
+		tw, _ := dc.MeasureString(label)
+		if tw > r.W-8 {
+			dots := "…"
+			dw, _ := dc.MeasureString(dots)
+			if dw == 0 {
+				dots = "..."
+				dw, _ = dc.MeasureString(dots)
+			}
+			runes := []rune(label)
+			truncated := false
+			for len(runes) > 0 {
+				runes = runes[:len(runes)-1]
+				curW, _ := dc.MeasureString(string(runes))
+				if curW+dw <= r.W-8 {
+					label = string(runes) + dots
+					truncated = true
+					break
+				}
+			}
+			if !truncated {
+				label = ""
+			}
+		}
+	}
 	dc.SetColor(fill)
 	if radius > 0 {
 		dc.DrawRoundedRectangle(r.X, r.Y, r.W, r.H, radius)

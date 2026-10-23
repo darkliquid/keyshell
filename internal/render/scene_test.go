@@ -2,6 +2,7 @@ package render
 
 import (
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -418,5 +419,117 @@ func TestDropdownSceneControls(t *testing.T) {
 	}
 	if insidePainted < 50 {
 		t.Errorf("dropdown control rows did not paint sufficient pixels inside bounds (insidePainted=%d)", insidePainted)
+	}
+}
+
+func TestDropdownSceneSelectionHighlightInset(t *testing.T) {
+	th, err := theme.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer th.Close()
+
+	cfg := config.Default()
+	cfg.UI.Scene = "../../scenes/dropdown.ksl"
+	s, err := LoadScene(cfg)
+	if err != nil {
+		t.Fatalf("LoadScene(dropdown.ksl): %v", err)
+	}
+
+	sr := NewSceneRenderer(New(), cfg)
+	sr.SetScene(s)
+
+	matches := []rank.Match{{
+		Item: backend.Item{
+			ID:       backend.ResultID("item1"),
+			Title:    "Test Item",
+			Subtitle: "Subtitle",
+			Icon:     "application-x-executable",
+		},
+	}}
+
+	view := &fakeView{
+		open:     true,
+		query:    "test",
+		results:  matches,
+		selected: 0,
+	}
+
+	dc, img := testContext(t, 1920, 1080)
+	sr.DrawFrame(dc, view, th, cfg.Reveal)
+
+	// Window is at X=640..1280.
+	// In the item list region (y ~ 200), verify that the margin at X=644
+	// is painted with $slab rather than the selection fill $surface-alt.
+	marginPx := img.RGBAAt(644, 200)
+	selectedPx := img.RGBAAt(650, 200)
+
+	// $surface-alt and $slab have different color values
+	if marginPx == selectedPx {
+		t.Errorf("selection highlight is not inset from left border: margin=%+v selected=%+v", marginPx, selectedPx)
+	}
+
+	// Right margin at X=1276 should also match $slab rather than $surface-alt
+	rightMarginPx := img.RGBAAt(1276, 200)
+	if rightMarginPx == selectedPx {
+		t.Errorf("selection highlight is not inset from right border: rightMargin=%+v selected=%+v", rightMarginPx, selectedPx)
+	}
+}
+
+func TestDropdownSceneLongItemNoOverflow(t *testing.T) {
+	th, err := theme.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer th.Close()
+
+	cfg := config.Default()
+	cfg.UI.Scene = "../../scenes/dropdown.ksl"
+	s, err := LoadScene(cfg)
+	if err != nil {
+		t.Fatalf("LoadScene(dropdown.ksl): %v", err)
+	}
+
+	sr := NewSceneRenderer(New(), cfg)
+	sr.SetScene(s)
+
+	longTitle := strings.Repeat("ExtremelyLongTitleWithoutSpacesOrWithSpacesThatExceedsTheWindowWidthByALot ", 10)
+	longSub := strings.Repeat("ExtremelyLongSubtitlePath/home/darkliquid/Projects/deeply/nested/directory/structure/file.txt ", 10)
+
+	matches := []rank.Match{{
+		Item: backend.Item{
+			ID:       backend.ResultID("overflow-test"),
+			Title:    longTitle,
+			Subtitle: longSub,
+			Icon:     "application-x-executable",
+			Badge:    "VERY-LONG-BADGE",
+			Status:   "ACTIVE",
+		},
+	}}
+
+	view := &fakeView{
+		open:     true,
+		query:    "overflow",
+		results:  matches,
+		selected: 0,
+	}
+
+	dc, img := testContext(t, 1920, 1080)
+	sr.DrawFrame(dc, view, th, cfg.Reveal)
+
+	// Verify no pixels leak outside the 640x460 dropdown bounds [640..1280, 120..580]
+	outsideLeaks := 0
+	for y := 0; y < 1080; y += 10 {
+		for x := 0; x < 1920; x += 10 {
+			if x >= 640 && x <= 1280 && y >= 120 && y <= 580 {
+				continue
+			}
+			if img.RGBAAt(x, y).A != 0 {
+				outsideLeaks++
+			}
+		}
+	}
+	if outsideLeaks > 0 {
+		t.Errorf("long item caused %d painted pixels outside dropdown bounds", outsideLeaks)
 	}
 }

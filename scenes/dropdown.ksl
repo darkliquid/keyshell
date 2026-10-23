@@ -9,18 +9,18 @@ Window {
 
         Column {
             width: 640, height: 460
-            gap: 0
+            gap: 0, align: center
 
             // Search Header
             Row {
-                width: 640, height: 52
+                width: 624, height: 52
                 gap: 12, align: center
 
                 Box { width: 4 }
                 Pill { text: $panel.open ? "CONTROLS" : $mode, tone: accent }
                 Row {
                     gap: 4, align: center
-                    Text { text: $panel.open ? ($active ? $active.title : "Controls") : $query, size: 18, color: $ink }
+                    Text { text: $panel.open ? ($active ? $active.title : "Controls") : $query, size: 18, color: $ink, maxW: 420 }
                     Cursor { width: 2, height: 20, color: $accent, when: !$panel.open, animation: blink 800ms linear infinite }
                     Text { text: "(ESC to exit)", size: 12, color: $muted, when: $panel.open }
                 }
@@ -32,9 +32,12 @@ Window {
             // Divider
             Box { width: 640, height: 1, fill: $surface-alt }
 
-            // Vertical Result List
+            // Top spacer for list padding
+            Box { height: 6 }
+
+            // Vertical Result List (inset with 8px margin from borders)
             List {
-                width: 640, height: 407
+                width: 624, height: 395
                 items: $panel.open ? $panel.rows : $results
                 selected: $panel.open ? $panel.focus : $selected
                 orientation: vertical
@@ -44,23 +47,23 @@ Window {
 
                 template {
                     Box {
-                        width: 640, height: 44, radius: 4
+                        width: 624, height: 44, radius: 6
                         state selected { fill: $surface-alt }
 
                         // Standard Search Item
                         Row {
                             when: $item.kind == ""
-                            width: 640, height: 44, gap: 12, align: center
+                            width: 624, height: 44, gap: 12, align: center
 
                             Box { width: 4 }
                             Icon { icon: $item.icon, glyph: $item.glyph, width: 24, height: 24 }
                             Column {
+                                grow: 1
                                 gap: 2
                                 justify: center
                                 Text { text: $item.title, size: 14, color: $ink }
                                 Text { text: $item.subtitle, size: 11, color: $muted, when: $item.subtitle != "" }
                             }
-                            Box { grow: 1 }
                             Pill { text: $item.status, when: $item.status != "", tone: $item.statusTone }
                             Pill { text: $item.badge, when: $item.badge != "", tone: neutral }
                             Box { width: 4 }
@@ -69,12 +72,11 @@ Window {
                         // Action row
                         Row {
                             when: $item.kind == "action"
-                            width: 640, height: 44, gap: 12, align: center
+                            width: 624, height: 44, gap: 12, align: center
 
                             Box { width: 4 }
                             Icon { glyph: "▶", size: 14, color: $accent }
-                            Text { text: $item.title, size: 14, color: $ink }
-                            Box { grow: 1 }
+                            Text { text: $item.title, size: 14, color: $ink, grow: 1 }
                             Pill { text: "ACTION", tone: accent }
                             Box { width: 4 }
                         }
@@ -82,13 +84,13 @@ Window {
                         // Range row (slider)
                         Row {
                             when: $item.kind == "range"
-                            width: 640, height: 44, gap: 12, align: center
+                            width: 624, height: 44, gap: 12, align: center
 
                             Box { width: 4 }
                             Box { width: 80, height: 24, radius: 4, fill: $surface-alt
-                                Text { text: $item.title, size: 11, color: $muted, uppercase: true, align: center }
+                                Text { text: $item.title, size: 11, color: $muted, uppercase: true, align: center, maxW: 76 }
                             }
-                            Meter { width: 440, height: 8, ratio: $item.ratio, variant: bar }
+                            Meter { width: 430, height: 8, ratio: $item.ratio, variant: bar }
                             Box { grow: 1 }
                             Row { gap: 2, align: center
                                 Text { text: ($item.ratio * 100).round(), size: 12, color: $muted }
@@ -100,11 +102,11 @@ Window {
                         // Toggle row
                         Row {
                             when: $item.kind == "toggle"
-                            width: 640, height: 44, gap: 12, align: center
+                            width: 624, height: 44, gap: 12, align: center
 
                             Box { width: 4 }
                             Box { width: 80, height: 24, radius: 4, fill: $surface-alt
-                                Text { text: $item.title, size: 11, color: $muted, uppercase: true, align: center }
+                                Text { text: $item.title, size: 11, color: $muted, uppercase: true, align: center, maxW: 76 }
                             }
                             Box { width: 36, height: 18, radius: 9, fill: $item.on ? $accent : $surface-alt }
                             Text { text: $item.on ? "ON" : "OFF", size: 12, color: $item.on ? $accent : $muted }
@@ -116,14 +118,13 @@ Window {
                         // Choice row
                         Row {
                             when: $item.kind == "choice"
-                            width: 640, height: 44, gap: 12, align: center
+                            width: 624, height: 44, gap: 12, align: center
 
                             Box { width: 4 }
                             Box { width: 80, height: 24, radius: 4, fill: $surface-alt
-                                Text { text: $item.title, size: 11, color: $muted, uppercase: true, align: center }
+                                Text { text: $item.title, size: 11, color: $muted, uppercase: true, align: center, maxW: 76 }
                             }
-                            Text { text: $item.text, size: 13, color: $ink }
-                            Box { grow: 1 }
+                            Text { text: $item.text, size: 13, color: $ink, grow: 1 }
                             Pill { text: "CHOICE", tone: neutral }
                             Box { width: 4 }
                         }
@@ -131,16 +132,16 @@ Window {
                         // Text input row
                         Row {
                             when: $item.kind == "text"
-                            width: 640, height: 44, gap: 12, align: center
+                            width: 624, height: 44, gap: 12, align: center
 
                             Box { width: 4 }
                             Box { width: 80, height: 24, radius: 4, fill: $surface-alt
-                                Text { text: $item.title, size: 11, color: $muted, uppercase: true, align: center }
+                                Text { text: $item.title, size: 11, color: $muted, uppercase: true, align: center, maxW: 76 }
                             }
                             Box { width: 380, height: 28, radius: 4, fill: $surface-alt, border: $muted
                                 Row { height: 28, gap: 2, align: center
                                     Box { width: 6 }
-                                    Text { text: $item.text, size: 13, color: $ink }
+                                    Text { text: $item.text, size: 13, color: $ink, maxW: 340 }
                                     Cursor { width: 2, height: 18, color: $accent, opacity: $panel.dirty ? 1 : 0, animation: blink 800ms linear infinite }
                                 }
                             }
@@ -152,8 +153,8 @@ Window {
 
                 empty {
                     Box {
-                        width: 640, height: 200
-                        Text { text: $searching ? "SEARCHING..." : ($panel.open ? "NO CONTROLS" : "NO RESULTS"), size: 13, color: $muted, width: 640, height: 200, align: center }
+                        width: 624, height: 200
+                        Text { text: $searching ? "SEARCHING..." : ($panel.open ? "NO CONTROLS" : "NO RESULTS"), size: 13, color: $muted, width: 624, height: 200, align: center }
                     }
                 }
             }

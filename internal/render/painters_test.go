@@ -114,6 +114,51 @@ func TestPaintListClipsChildrenToViewport(t *testing.T) {
 	}
 }
 
+func TestPaintTextTruncatesWithEllipsis(t *testing.T) {
+	th, err := theme.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer th.Close()
+	dc, img := testContext(t, 200, 40)
+	dc.ClearWithColor(gg.RGBA{})
+
+	// Node constrained to width 60 at X=10. Text is very long.
+	n := &eval.ResolvedNode{
+		Name: "Text",
+		Rect: eval.RectF{X: 10, Y: 10, W: 60, H: 20},
+		Props: map[string]eval.Value{
+			"text":  eval.Str("This is an extremely long string that definitely exceeds 60 pixels width"),
+			"size":  eval.Num(14),
+			"color": eval.Color{R: 0xFF, G: 0xFF, B: 0xFF, A: 0xFF},
+		},
+	}
+	painterFor("Text")(dc, th, n, &PainterDeps{})
+
+	// Check that no pixels were painted beyond X=75 (60px width + 10px X + 5px buffer for antialiasing)
+	for y := 0; y < 40; y++ {
+		for x := 75; x < 200; x++ {
+			if img.RGBAAt(x, y).A != 0 {
+				t.Fatalf("paintText painted past its allocated width at (%d, %d): %+v", x, y, img.RGBAAt(x, y))
+			}
+		}
+	}
+
+	// Verify that text pixels were painted inside X=10..70
+	painted := false
+	for y := 10; y < 30; y++ {
+		for x := 10; x < 70; x++ {
+			if img.RGBAAt(x, y).A != 0 {
+				painted = true
+				break
+			}
+		}
+	}
+	if !painted {
+		t.Errorf("paintText did not paint truncated text within bounds")
+	}
+}
+
 func anyColor(img *image.RGBA) bool {
 	for y := 4; y < img.Bounds().Dy(); y += 4 {
 		for x := 4; x < img.Bounds().Dx(); x += 4 {

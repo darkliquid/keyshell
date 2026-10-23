@@ -4,6 +4,7 @@ import (
 	"image"
 	"math"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/darkliquid/keyshell/internal/ksl/eval"
 	"github.com/darkliquid/keyshell/internal/theme"
@@ -42,10 +43,14 @@ func paintImage(dc *gg.Context, th *theme.Theme, n *eval.ResolvedNode, deps *Pai
 	}
 
 	if path == "" && glyph != "" {
-		drawGlyph(dc, th, n, glyph)
-		return
+		if utf8.RuneCountInString(glyph) <= 2 {
+			drawGlyph(dc, th, n, glyph)
+			return
+		}
+		path = mapGlyphToIcon(glyph)
 	}
-	if path == "" && glyph == "" {
+
+	if path == "" {
 		return
 	}
 
@@ -55,7 +60,7 @@ func paintImage(dc *gg.Context, th *theme.Theme, n *eval.ResolvedNode, deps *Pai
 		if ready && ok {
 			path = resolved
 		} else if !ready || !ok {
-			if glyph != "" {
+			if glyph != "" && utf8.RuneCountInString(glyph) <= 2 {
 				drawGlyph(dc, th, n, glyph)
 			} else {
 				drawFallbackMark(dc, th, n, path)
@@ -65,7 +70,7 @@ func paintImage(dc *gg.Context, th *theme.Theme, n *eval.ResolvedNode, deps *Pai
 	}
 
 	if deps == nil || deps.Images == nil {
-		if glyph != "" {
+		if glyph != "" && utf8.RuneCountInString(glyph) <= 2 {
 			drawGlyph(dc, th, n, glyph)
 		} else {
 			drawFallbackMark(dc, th, n, path)
@@ -74,7 +79,7 @@ func paintImage(dc *gg.Context, th *theme.Theme, n *eval.ResolvedNode, deps *Pai
 	}
 	img, ready := deps.Images.Get(path, int(r.W), int(r.H))
 	if !ready {
-		if glyph != "" {
+		if glyph != "" && utf8.RuneCountInString(glyph) <= 2 {
 			drawGlyph(dc, th, n, glyph)
 		} else {
 			drawFallbackMark(dc, th, n, path)
@@ -164,7 +169,7 @@ func drawGlyph(dc *gg.Context, th *theme.Theme, n *eval.ResolvedNode, glyph stri
 		}
 		_ = dc.Fill()
 	}
-	size := math.Min(r.W, r.H)
+	size := math.Min(r.W, r.H) * 0.7
 	if sv, ok := n.Props["size"].(eval.Num); ok && sv > 0 {
 		size = float64(sv)
 	}
@@ -189,9 +194,46 @@ func drawGlyph(dc *gg.Context, th *theme.Theme, n *eval.ResolvedNode, glyph stri
 		return
 	}
 
+	if glyph == "⚙" {
+		cx := r.X + r.W/2
+		cy := r.Y + r.H/2
+		rad := size * 0.45
+		dc.DrawCircle(cx, cy, rad)
+		_ = dc.Fill()
+		dc.SetColor(th.Slab)
+		dc.DrawCircle(cx, cy, rad*0.4)
+		_ = dc.Fill()
+		dc.SetColor(col)
+		return
+	}
+
 	face := th.Face(size)
 	dc.SetFont(face)
 	dc.DrawStringAnchored(glyph, r.X+r.W/2, r.Y+r.H/2, 0.5, 0.5)
+}
+
+// mapGlyphToIcon maps common backend glyph identifiers to standard desktop icon names.
+func mapGlyphToIcon(name string) string {
+	switch name {
+	case "command":
+		return "utilities-terminal"
+	case "power":
+		return "system-shutdown"
+	case "file":
+		return "text-x-generic"
+	case "folder":
+		return "folder"
+	case "window":
+		return "preferences-system-windows"
+	case "media":
+		return "multimedia-audio-player"
+	case "menu":
+		return "open-menu"
+	case "tray":
+		return "preferences-system"
+	default:
+		return name
+	}
 }
 
 // tintRect applies a tint colour over the region.

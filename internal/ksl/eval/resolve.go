@@ -340,6 +340,117 @@ func (r *resolver) resolveList(n *ksl.Node, bounds RectF) (*ResolvedNode, error)
 		return rn, nil
 	}
 
+	// When there are many items, virtualize the list so only the visible items
+	// are resolved and materialized, avoiding thousands of unnecessary AST allocations.
+	if limit > 20 && template != nil && (kwProp(props, "scroll") == "reveal" || kwProp(props, "scroll") == "center" || kwProp(props, "overflow") == "clamp") {
+		sel := selected
+		if sel < 0 {
+			sel = 0
+		}
+		if sel >= limit {
+			sel = limit - 1
+		}
+		savedEnv, savedCtx := r.env, r.ctx
+		itemEnv := r.env.ItemScope(&items[sel])
+		itemCtx := &CascadeCtx{Scene: r.ctx.Scene, Mode: r.ctx.Mode,
+			Pseudo: map[string]bool{"selected": true}}
+		r.env, r.ctx = itemEnv, itemCtx
+		sampleNode, err := r.resolveNode(template, rn.Rect)
+		r.env, r.ctx = savedEnv, savedCtx
+		if err != nil {
+			return nil, err
+		}
+		itemSpan := sampleNode.Rect.H
+		viewportLen := rn.Rect.H
+		if horizontal {
+			itemSpan = sampleNode.Rect.W
+			viewportLen = rn.Rect.W
+		}
+		if itemSpan <= 0 {
+			itemSpan = 44
+		}
+		stride := itemSpan + gap
+		contentLen := float64(limit)*stride - gap
+
+		shift := 0.0
+		scrollMode := kwProp(props, "scroll")
+		switch scrollMode {
+		case "center":
+			viewCenter := viewportLen / 2
+			selCenter := float64(sel)*stride + itemSpan/2
+			shift = viewCenter - selCenter
+		case "reveal":
+			selStart := float64(sel) * stride
+			selEnd := selStart + itemSpan
+			if selEnd > viewportLen {
+				shift = viewportLen - selEnd
+			}
+			if selStart+shift < 0 {
+				shift = -selStart
+			}
+		}
+
+		if contentLen > viewportLen && shift != 0 {
+			if shift > 0 {
+				shift = 0
+			}
+			minShift := -(contentLen - viewportLen)
+			if shift < minShift {
+				shift = minShift
+			}
+		}
+
+		first := int(math.Floor(-shift / stride))
+		if first < 0 {
+			first = 0
+		}
+		last := int(math.Ceil((viewportLen - shift) / stride))
+		if last >= limit {
+			last = limit - 1
+		}
+
+		for i := first; i <= last; i++ {
+			isSel := (i == sel)
+			var node *ResolvedNode
+			if isSel && sampleNode != nil {
+				node = sampleNode
+				stampItem(node, &items[i], true)
+			} else {
+				itEnv := r.env.ItemScope(&items[i])
+				itCtx := &CascadeCtx{Scene: r.ctx.Scene, Mode: r.ctx.Mode,
+					Pseudo: map[string]bool{"selected": false}}
+				r.env, r.ctx = itEnv, itCtx
+				n, err := r.resolveNode(template, rn.Rect)
+				r.env, r.ctx = savedEnv, savedCtx
+				if err != nil {
+					return nil, err
+				}
+				node = n
+				if node != nil {
+					stampItem(node, &items[i], false)
+				}
+			}
+			if node != nil {
+				pos := float64(i)*stride + shift
+				if horizontal {
+					translate(node, rn.Rect.X+pos-node.Rect.X, rn.Rect.Y-node.Rect.Y)
+				} else {
+					translate(node, rn.Rect.X-node.Rect.X, rn.Rect.Y+pos-node.Rect.Y)
+				}
+				rn.Children = append(rn.Children, node)
+			}
+		}
+
+		if summary != nil && limit < len(items) {
+			kids, err := r.resolveChildrenOf(rn, summary)
+			if err != nil {
+				return nil, err
+			}
+			rn.Children = append(rn.Children, kids...)
+		}
+		return rn, nil
+	}
+
 	savedEnv, savedCtx := r.env, r.ctx
 	for i := 0; i < limit; i++ {
 		if template == nil {

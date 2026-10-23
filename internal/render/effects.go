@@ -17,6 +17,12 @@ func paintImage(dc *gg.Context, th *theme.Theme, n *eval.ResolvedNode, deps *Pai
 	if r.W <= 0 || r.H <= 0 {
 		return
 	}
+	if deps != nil && deps.ClipRect != nil {
+		cr := deps.ClipRect
+		if r.X+r.W <= cr.X || r.X >= cr.X+cr.W || r.Y+r.H <= cr.Y || r.Y >= cr.Y+cr.H {
+			return
+		}
+	}
 	srcRaw, ok := n.Props["source"].(eval.Str)
 	if !ok {
 		srcRaw, ok = n.Props["name"].(eval.Str)

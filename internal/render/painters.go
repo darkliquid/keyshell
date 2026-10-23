@@ -23,6 +23,7 @@ type PainterDeps struct {
 	CardCfg     config.Reveal
 	Images      *ImageCache
 	Icons       *icons.Resolver
+	ClipRect    *eval.RectF
 }
 
 func painterFor(name string) Painter {
@@ -69,9 +70,10 @@ func paintList(dc *gg.Context, th *theme.Theme, n *eval.ResolvedNode, deps *Pain
 
 	if shouldClip && r.W > 0 && r.H > 0 {
 		dc.Push()
-		dc.DrawRectangle(r.X, r.Y, r.W, r.H)
-		dc.Clip()
-		paintChildren(dc, th, n, deps)
+		dc.ClipRect(r.X, r.Y, r.W, r.H)
+		childDeps := *deps
+		childDeps.ClipRect = &eval.RectF{X: r.X, Y: r.Y, W: r.W, H: r.H}
+		paintChildren(dc, th, n, &childDeps)
 		dc.Pop()
 		return
 	}
@@ -100,6 +102,15 @@ func paintThrough(dc *gg.Context, th *theme.Theme, n *eval.ResolvedNode, deps *P
 
 func paintChildren(dc *gg.Context, th *theme.Theme, n *eval.ResolvedNode, deps *PainterDeps) {
 	for _, c := range n.Children {
+		if deps != nil && deps.ClipRect != nil {
+			cr := deps.ClipRect
+			if c.Rect.W > 0 && c.Rect.H > 0 {
+				if c.Rect.X+c.Rect.W <= cr.X || c.Rect.X >= cr.X+cr.W ||
+					c.Rect.Y+c.Rect.H <= cr.Y || c.Rect.Y >= cr.Y+cr.H {
+					continue
+				}
+			}
+		}
 		painterFor(c.Name)(dc, th, c, deps)
 	}
 }
@@ -120,6 +131,13 @@ func opacityOf(props map[string]eval.Value) float64 {
 
 func paintBox(dc *gg.Context, th *theme.Theme, n *eval.ResolvedNode, deps *PainterDeps) {
 	applyEffects(dc, th, n, deps)
+	r := n.Rect
+	if deps != nil && deps.ClipRect != nil {
+		cr := deps.ClipRect
+		if r.X+r.W <= cr.X || r.X >= cr.X+cr.W || r.Y+r.H <= cr.Y || r.Y >= cr.Y+cr.H {
+			return
+		}
+	}
 	fill, hasFill := n.Props["fill"]
 	// a FuncVal fill is an effect (gradient) already handled by applyEffects.
 	effectFill := false
@@ -144,7 +162,6 @@ func paintBox(dc *gg.Context, th *theme.Theme, n *eval.ResolvedNode, deps *Paint
 	if op <= 0 {
 		return
 	}
-	r := n.Rect
 	if hasFill && !effectFill && col.A*op > 0 {
 		dc.SetColor(gg.RGBA{R: col.R, G: col.G, B: col.B, A: col.A * op})
 		if radius > 0 {
@@ -195,6 +212,12 @@ func paintText(dc *gg.Context, th *theme.Theme, n *eval.ResolvedNode, deps *Pain
 	dc.SetFont(face)
 	dc.SetColor(gg.RGBA{R: col.R, G: col.G, B: col.B, A: col.A * opacityOf(n.Props)})
 	r := n.Rect
+	if deps != nil && deps.ClipRect != nil {
+		cr := deps.ClipRect
+		if r.X+r.W <= cr.X || r.X >= cr.X+cr.W || r.Y+r.H <= cr.Y || r.Y >= cr.Y+cr.H {
+			return
+		}
+	}
 	ax := 0.0
 	x := r.X
 	if align, ok := n.Props["align"].(eval.Kw); ok {
@@ -289,6 +312,12 @@ func paintPill(dc *gg.Context, th *theme.Theme, n *eval.ResolvedNode, deps *Pain
 		size = float64(v)
 	}
 	r := n.Rect
+	if deps != nil && deps.ClipRect != nil {
+		cr := deps.ClipRect
+		if r.X+r.W <= cr.X || r.X >= cr.X+cr.W || r.Y+r.H <= cr.Y || r.Y >= cr.Y+cr.H {
+			return
+		}
+	}
 	face := th.Face(size)
 	dc.SetFont(face)
 	label := strings.ToUpper(rawTxt)

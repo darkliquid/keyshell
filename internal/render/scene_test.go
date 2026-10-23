@@ -263,3 +263,82 @@ func TestDropdownSceneRenders(t *testing.T) {
 		t.Errorf("found %d sampled painted pixels outside dropdown bounds [640..1280, 120..580]", outsideLeaks)
 	}
 }
+
+func TestDropdownSceneLargeResultVirtualizationAndClipping(t *testing.T) {
+	th, err := theme.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer th.Close()
+
+	cfg := config.Default()
+	cfg.UI.Scene = "../../scenes/dropdown.ksl"
+	s, err := LoadScene(cfg)
+	if err != nil {
+		t.Fatalf("LoadScene(dropdown.ksl): %v", err)
+	}
+
+	sr := NewSceneRenderer(New(), cfg)
+	sr.SetScene(s)
+
+	// Build 200 items to stress test virtualization and clipping
+	matches := make([]rank.Match, 200)
+	for i := range matches {
+		matches[i] = rank.Match{Item: backend.Item{
+			ID:       backend.ResultID("app" + itoa(i)),
+			Title:    "Application " + itoa(i),
+			Subtitle: "Description for item " + itoa(i),
+			Icon:     "application-x-executable",
+			Badge:    "APP",
+		}}
+	}
+
+	view := &fakeView{
+		open:     true,
+		query:    "app",
+		results:  matches,
+		selected: 0,
+	}
+
+	// Test case 1: selected = 0 (top)
+	start := time.Now()
+	dc, img := testContext(t, 1920, 1080)
+	sr.DrawFrame(dc, view, th, cfg.Reveal)
+	dur := time.Since(start)
+
+	if dur > 50*time.Millisecond {
+		t.Errorf("DrawFrame took %v, want < 50ms for virtualized dropdown", dur)
+	}
+
+	checkLeaks := func(t *testing.T, label string) {
+		t.Helper()
+		outsideLeaks := 0
+		for y := 0; y < 1080; y += 15 {
+			for x := 0; x < 1920; x += 15 {
+				if x >= 640 && x <= 1280 && y >= 120 && y <= 580 {
+					continue // inside dropdown box
+				}
+				if img.RGBAAt(x, y).A != 0 {
+					outsideLeaks++
+				}
+			}
+		}
+		if outsideLeaks > 0 {
+			t.Errorf("[%s] found %d sampled painted pixels outside dropdown bounds [640..1280, 120..580]", label, outsideLeaks)
+		}
+	}
+
+	checkLeaks(t, "selected=0")
+
+	// Test case 2: selected = 50 (middle of the list)
+	view.selected = 50
+	dc, img = testContext(t, 1920, 1080)
+	sr.DrawFrame(dc, view, th, cfg.Reveal)
+	checkLeaks(t, "selected=50")
+
+	// Test case 3: selected = 199 (bottom of the list)
+	view.selected = 199
+	dc, img = testContext(t, 1920, 1080)
+	sr.DrawFrame(dc, view, th, cfg.Reveal)
+	checkLeaks(t, "selected=199")
+}

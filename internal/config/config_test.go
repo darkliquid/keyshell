@@ -17,6 +17,7 @@ func TestCommandsReadFromToml(t *testing.T) {
 copy = ["wl-copy", "--type", "text/plain"]
 open_url = ["firefox", "--new-window"]
 focus_window = ["swaymsg", "[con_id={id}]", "focus"]
+terminal = ["foot", "kitty"]
 `
 	if err := os.WriteFile(path, []byte(toml), 0o644); err != nil {
 		t.Fatal(err)
@@ -33,6 +34,9 @@ focus_window = ["swaymsg", "[con_id={id}]", "focus"]
 	}
 	if !reflect.DeepEqual(cfg.Commands.FocusWindow, []string{"swaymsg", "[con_id={id}]", "focus"}) {
 		t.Errorf("Commands.FocusWindow = %v", cfg.Commands.FocusWindow)
+	}
+	if !reflect.DeepEqual(cfg.Commands.Terminal, []string{"foot", "kitty"}) {
+		t.Errorf("Commands.Terminal = %v", cfg.Commands.Terminal)
 	}
 }
 
@@ -103,7 +107,7 @@ func TestConfigShape(t *testing.T) {
 		"Reveal":    cfg.Reveal,
 		"Anim":      cfg.Anim,
 		"Overlay":   cfg.Overlay,
-		"Drinks":    cfg.Drinks,
+		"Commands":  cfg.Commands,
 		"Frecency":  cfg.Frecency,
 		"Instances": cfg.Instances,
 	}

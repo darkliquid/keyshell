@@ -13,7 +13,6 @@ This document provides a comprehensive guide to configuring **keyshell**, coveri
    - [`[reveal]` — Slanted Band Geometry & Procedural Randomization](#reveal--slanted-band-geometry--procedural-randomization)
    - [`[anim]` — Animation Durations](#anim--animation-durations)
    - [`[overlay]` — Search Limits & Process Timeouts](#overlay--search-limits--process-timeouts)
-   - [`[drinks]` — Preferred Terminal Emulators](#drinks--preferred-terminal-emulators)
    - [`[commands]` — Environment Action Overrides & Portability](#commands--environment-action-overrides--portability)
    - [`[frecency]` — Search Ranking & Historical Scoring](#frecency--search-ranking--historical-scoring)
    - [`[[instance]]` — Subprocess Plugin Declarations](#instance--subprocess-plugin-declarations)
@@ -135,28 +134,13 @@ idle_ms = 180000  # 3 minutes
 
 ---
 
-### `[drinks]` — Preferred Terminal Emulators
-
-Defines candidate terminal emulators used when running commands with `exec-terminal` (such as in `run` mode or terminal-based desktop applications).
-
-| Option | Type | Default | Description |
-| --- | --- | --- | --- |
-| `terminal` | `array of strings` | `["ghostty", "alacritty"]` | List of terminal emulator binary names. Keyshell searches `$PATH` in declaration order and uses the first binary found, executing it with `-e <command>`. |
-
-#### Example:
-```toml
-[drinks]
-terminal = ["foot", "kitty", "ghostty", "alacritty", "xterm"]
-```
-
----
-
 ### `[commands]` — Environment Action Overrides & Portability
 
-Allows overriding keyshell's host execution commands. This enables seamless portability across different Wayland compositors (Niri, Sway, Hyprland, River, Wayfire) and different operating systems (Linux, macOS, BSD, Windows).
+Allows overriding keyshell's host execution commands and terminal preference. This enables seamless portability across different Wayland compositors (Niri, Sway, Hyprland, River, Wayfire) and different operating systems (Linux, macOS, BSD, Windows).
 
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
+| `terminal` | `array of strings` | `["ghostty", "alacritty"]` | Candidate terminal emulators used when running commands with `exec-terminal` (in `run` mode or terminal applications). Keyshell searches `$PATH` in order and executes the first available binary with `-e <command>`. |
 | `copy` | `array of strings` | `["wl-copy"]` | Command executed to copy text to the clipboard. The text to copy is appended as the last argument. |
 | `open_url` | `array of strings` | `["xdg-open"]` | Command executed to open a URL or launch a file association. The URL/path is appended as the last argument. |
 | `focus_window` | `array of strings` | Auto-detected | Command executed to focus an existing window by its ID. Supports an `{id}` token anywhere in the arguments. If `{id}` is omitted, the ID is appended. |
@@ -327,13 +311,11 @@ max_results = 60          # Max ranked results shown
 settle_ms   = 80          # Optimistic control update settle debounce (ms)
 idle_ms     = 300000      # Lazy plugin idle reap timeout (5 minutes)
 
-# ---- Terminal Candidates -----------------------------------------------------
-[drinks]
-# Checked in order against $PATH when launching terminal commands
-terminal = ["ghostty", "foot", "kitty", "alacritty", "xterm"]
-
 # ---- Host Execution & Portability Overrides ----------------------------------
 [commands]
+# Preferred terminal emulators for running terminal commands (checked in order)
+terminal = ["ghostty", "foot", "kitty", "alacritty", "xterm"]
+
 # Custom clipboard copy command (defaults to wl-copy)
 copy = ["wl-copy"]
 

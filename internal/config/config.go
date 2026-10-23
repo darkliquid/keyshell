@@ -43,19 +43,15 @@ type Overlay struct {
 	IdleMs     int // idle teardown for lazy backends
 }
 
-// Drinks holds the terminal candidates for run-command, in preference order.
-type Drinks struct {
-	Terminal []string `toml:"terminal"`
-}
-
-// Commands holds the host-action executables, overriding the built-in tools
-// for portability across compositors and desktops. An empty entry keeps the
-// default. FocusWindow accepts an {id} placeholder anywhere in the argv;
-// without one the window id is appended.
+// Commands holds the host-action executables and terminal candidates,
+// overriding the built-in tools for portability across compositors and desktops.
+// An empty entry keeps the default. FocusWindow accepts an {id} placeholder
+// anywhere in the argv; without one the window id is appended.
 type Commands struct {
 	Copy        []string `toml:"copy"`
 	OpenURL     []string `toml:"open_url"`
 	FocusWindow []string `toml:"focus_window"`
+	Terminal    []string `toml:"terminal"`
 }
 
 // FrecencyBucket is one age/weight pair in the frecency score.
@@ -90,7 +86,6 @@ type Config struct {
 	Reveal    Reveal
 	Anim      Anim
 	Overlay   Overlay
-	Drinks    Drinks
 	Commands  Commands `toml:"commands"`
 	Frecency  Frecency
 	Instances []Instance `toml:"instance"`
@@ -126,7 +121,7 @@ func Default() Config {
 			SettleMs:   80,
 			IdleMs:     5 * 60 * 1000,
 		},
-		Drinks: Drinks{
+		Commands: Commands{
 			Terminal: []string{"ghostty", "alacritty"},
 		},
 		Frecency: Frecency{

@@ -186,7 +186,7 @@ func runDetached(bin string, args ...string) error {
 
 // resolveTerminal picks the first configured candidate present on PATH.
 func resolveTerminal(cfg config.Config) string {
-	for _, t := range cfg.Drinks.Terminal {
+	for _, t := range cfg.Commands.Terminal {
 		if p, err := exec.LookPath(t); err == nil {
 			return p
 		}

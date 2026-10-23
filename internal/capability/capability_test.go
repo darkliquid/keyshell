@@ -104,7 +104,7 @@ func TestFocusWindowCommandResolution(t *testing.T) {
 // TestResolveTerminalPicksCandidate verifies the terminal resolution order.
 func TestResolveTerminalPicksCandidate(t *testing.T) {
 	cfg := config.Default()
-	cfg.Drinks.Terminal = []string{"definitely-not-a-real-terminal-xyz", "sh"}
+	cfg.Commands.Terminal = []string{"definitely-not-a-real-terminal-xyz", "sh"}
 	got := resolveTerminal(cfg)
 	if got == "" {
 		t.Fatal("resolveTerminal = empty, want sh (existing candidate)")

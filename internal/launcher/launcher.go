@@ -157,6 +157,7 @@ func (l *Launcher) Close() {
 		l.cancelQuery()
 		l.cancelQuery = nil
 	}
+	l.closePanelLocked()
 	l.mu.Unlock()
 	l.changed()
 }
@@ -437,6 +438,7 @@ func (l *Launcher) currentLevelLocked() *Level {
 
 func (l *Launcher) resetToRootLocked() {
 	l.levels = []*Level{{Source: l.mode}}
+	l.closePanelLocked()
 }
 
 // Enter routes the primary action of the selected item.
@@ -482,17 +484,25 @@ func (l *Launcher) Enter() {
 }
 
 // performAction handles host actions and routes domain ("plugin") actions to
-// the backend that produced the item.
+// the backend that produced the item. An action execution (other than internal
+// set-query) closes the overlay.
 func (l *Launcher) performAction(a backend.Action, item backend.Item, source string) {
 	switch a.Type {
 	case "set-query":
 		l.SetQuery(a.Value)
 	case "plugin":
 		l.invokeDomain(a, item, source)
+		l.Close()
 	case "copy", "open-url", "exec", "exec-terminal", "focus-window":
 		// Queue for the host capability broker, then dismiss: the launched
 		// or focused window needs the keyboard back.
 		slog.Debug("host action queued", "type", a.Type, "value", a.Value)
+		l.mu.Lock()
+		l.hostActions = append(l.hostActions, a)
+		l.mu.Unlock()
+		l.Close()
+	default:
+		slog.Debug("host action queued (generic)", "type", a.Type, "value", a.Value)
 		l.mu.Lock()
 		l.hostActions = append(l.hostActions, a)
 		l.mu.Unlock()

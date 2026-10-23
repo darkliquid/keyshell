@@ -3,6 +3,7 @@ package mediaplugin
 import (
 	"context"
 	"os/exec"
+	"sort"
 	"strings"
 	"testing"
 
@@ -14,11 +15,13 @@ import (
 func stubPlayerctl(players map[string]string) *Backend {
 	return &Backend{playerctl: func(args ...string) *exec.Cmd {
 		if len(args) > 0 && args[0] == "--list-all" {
-			list := ""
+			names := make([]string, 0, len(players))
 			for p := range players {
-				list += p + "\n"
+				names = append(names, p)
 			}
-			return exec.Command("sh", "-c", "printf '%s' '"+strings.TrimSuffix(list, "\n")+"'")
+			sort.Strings(names)
+			list := strings.Join(names, "\n")
+			return exec.Command("sh", "-c", "printf '%s' '"+list+"'")
 		}
 		// -p <player> -f ... status
 		if len(args) >= 2 && args[0] == "-p" {

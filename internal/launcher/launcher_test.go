@@ -755,6 +755,76 @@ func TestEnterHostActionClosesOverlay(t *testing.T) {
 	}
 }
 
+// TestEnterPluginActionClosesOverlay checks activating a plugin domain action
+// (like a systray leaf item or applet trigger) dismisses the overlay.
+func TestEnterPluginActionClosesOverlay(t *testing.T) {
+	tray := &invokingBackend{listBackend: listBackend{
+		id: "tray",
+		items: []backend.Item{
+			{ID: "quit", Title: "Quit", Actions: []backend.Action{{Type: "plugin", Value: "invoke-menu"}}},
+		},
+	}}
+	prov := &fakeProvider{backends: map[string]backend.Backend{"tray": tray}}
+	l := New(prov, Options{Searchable: []string{"tray"}, RankOpts: rank.Options{Limit: 10}})
+	l.Open()
+	l.SetMode("tray")
+	if len(l.Results()) != 1 {
+		t.Fatalf("results len = %d, want 1", len(l.Results()))
+	}
+	l.Enter()
+	if len(tray.invocations) != 1 {
+		t.Fatalf("tray invocations = %d, want 1", len(tray.invocations))
+	}
+	if l.IsOpen() {
+		t.Error("overlay still open after a plugin action, want it closed")
+	}
+}
+
+// TestEnterDescendKeepsOverlayOpen proves that activating an item with sub-items
+// descends instead of closing the overlay.
+func TestEnterDescendKeepsOverlayOpen(t *testing.T) {
+	tray := &listBackend{id: "tray", items: []backend.Item{
+		{ID: "applet", Title: "Applet", HasChildren: true},
+	}}
+	prov := &fakeProvider{backends: map[string]backend.Backend{"tray": tray}}
+	l := New(prov, Options{Searchable: []string{"tray"}, RankOpts: rank.Options{Limit: 10}})
+	l.Open()
+	l.SetMode("tray")
+	l.Enter()
+	if !l.IsOpen() {
+		t.Error("overlay closed when descending into sub-items, want it open")
+	}
+	if depth := len(l.levels); depth != 2 {
+		t.Errorf("levels depth = %d, want 2", depth)
+	}
+}
+
+// TestPanelActionClosesOverlay proves activating an action row from a control
+// panel runs the action and closes the overlay.
+func TestPanelActionClosesOverlay(t *testing.T) {
+	l, prov := newTestLauncher()
+	prov.backends["apps"] = &listBackend{id: "apps", items: []backend.Item{
+		{
+			ID: "tool", Title: "Tool",
+			Actions:  []backend.Action{{Type: "exec", Value: "tool run"}},
+			Controls: []backend.Control{{ID: "c1", Kind: backend.ControlRange, Value: 0.5}},
+		},
+	}}
+	l.Open()
+	l.SetMode("apps")
+	l.Enter() // Opens the control panel because it has interactive controls
+	if !l.PanelOpen() {
+		t.Fatal("control panel should be open")
+	}
+	l.PanelActivate() // Activates row 0 (the action row)
+	if l.IsOpen() {
+		t.Error("overlay still open after panel action activation, want it closed")
+	}
+	if l.PanelOpen() {
+		t.Error("panel still open after action activation, want it closed")
+	}
+}
+
 // TestSetQueryActionStaysInternal guards the action queue: set-query changes
 // the query in place and must never reach the capability broker.
 func TestSetQueryActionStaysInternal(t *testing.T) {

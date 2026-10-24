@@ -23,6 +23,8 @@ type State struct {
 
 	// Theme tokens and font registry (spec §4).
 	Tokens map[string]Color
+	// Vars holds theme variables and host overrides (spec §4).
+	Vars   map[string]any
 	Fonts  map[string]string
 
 	// Summon is the per-open epoch for rand(); Seed feeds its draws;
@@ -106,22 +108,41 @@ type Env struct {
 	item   *Item
 	// RefPaths resolves #id.prop cross-node references, keyed "id.prop".
 	RefPaths map[string]Value
+	vars     map[string]Value
 }
 
 func NewEnv(st *State, parent *Env) *Env {
-	e := &Env{st: st, parent: parent, RefPaths: map[string]Value{}}
+	e := &Env{st: st, parent: parent, RefPaths: map[string]Value{}, vars: map[string]Value{}}
 	if parent != nil {
 		for k, v := range parent.RefPaths {
 			e.RefPaths[k] = v
+		}
+		for k, v := range parent.vars {
+			e.vars[k] = v
 		}
 	}
 	return e
 }
 
+// Set binds a variable into the environment.
+func (e *Env) Set(name string, v any) {
+	if e.vars == nil {
+		e.vars = make(map[string]Value)
+	}
+	if val, ok := toValue(v); ok {
+		e.vars[name] = val
+	}
+}
+
+// Get returns the value of a binding, if present.
+func (e *Env) Get(name string) (Value, bool) {
+	return e.lookupRef(name)
+}
+
 // ItemScope is the binding environment inside one List template
 // instantiation.
 func (e *Env) ItemScope(item *Item) *Env {
-	return &Env{st: e.st, parent: e, item: item, RefPaths: e.RefPaths}
+	return &Env{st: e.st, parent: e, item: item, RefPaths: e.RefPaths, vars: nil}
 }
 
 // ItemVal and ResultsVal wrap the structured bindings so member lookup
@@ -150,39 +171,55 @@ func (e *Env) lookupRef(name string) (Value, bool) {
 	if e.item != nil && name == "item" {
 		return ItemVal{e.item}, true
 	}
-	switch name {
-	case "open":
-		return Bool(e.st.Open), true
-	case "focused":
-		return Bool(e.st.Focused), true
-	case "query":
-		return Str(e.st.Query), true
-	case "results":
-		return e.results(), true
-	case "selected":
-		return Num(e.st.Selected), true
-	case "mode":
-		return Str(e.st.Mode), true
-	case "typing":
-		return Num(e.st.Typing), true
-	case "searching":
-		return Bool(e.st.Searching), true
-	case "active":
-		if e.st.Selected >= 0 && e.st.Selected < len(e.st.Results) {
-			return ItemVal{&e.st.Results[e.st.Selected]}, true
+	if e.st != nil {
+		switch name {
+		case "open":
+			return Bool(e.st.Open), true
+		case "focused":
+			return Bool(e.st.Focused), true
+		case "query":
+			return Str(e.st.Query), true
+		case "results":
+			return e.results(), true
+		case "selected":
+			return Num(e.st.Selected), true
+		case "mode":
+			return Str(e.st.Mode), true
+		case "typing":
+			return Num(e.st.Typing), true
+		case "searching":
+			return Bool(e.st.Searching), true
+		case "active":
+			if e.st.Selected >= 0 && e.st.Selected < len(e.st.Results) {
+				return ItemVal{&e.st.Results[e.st.Selected]}, true
+			}
+			return Bool(false), true
+		case "reveal":
+			return RevealVal{e.st.Reveal}, true
+		case "panel":
+			return PanelVal{e.st.Panel}, true
+		case "width":
+			return Num(e.st.Width), true
+		case "height":
+			return Num(e.st.Height), true
 		}
-		return Bool(false), true
-	case "reveal":
-		return RevealVal{e.st.Reveal}, true
-	case "panel":
-		return PanelVal{e.st.Panel}, true
-	case "width":
-		return Num(e.st.Width), true
-	case "height":
-		return Num(e.st.Height), true
 	}
-	if c, ok := e.st.Tokens[name]; ok {
-		return c, true
+	if e.vars != nil {
+		if v, ok := e.vars[name]; ok {
+			return v, true
+		}
+	}
+	if e.st != nil && e.st.Tokens != nil {
+		if c, ok := e.st.Tokens[name]; ok {
+			return c, true
+		}
+	}
+	if e.st != nil && e.st.Vars != nil {
+		if v, ok := e.st.Vars[name]; ok {
+			if val, ok := toValue(v); ok {
+				return val, true
+			}
+		}
 	}
 	if e.parent != nil {
 		return e.parent.lookupRef(name)

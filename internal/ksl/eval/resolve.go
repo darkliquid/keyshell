@@ -9,7 +9,9 @@ import (
 
 // Frame is one resolved scene, ready to paint.
 type Frame struct {
-	Root *ResolvedNode
+	Root  *ResolvedNode
+	// Nodes is a flat list of all resolved nodes in paint order.
+	Nodes []*ResolvedNode
 }
 
 // ResolvedNode is a node with concrete props, a rect and ordered
@@ -27,6 +29,10 @@ type ResolvedNode struct {
 	Item *Item
 	// Selected is true when this node belongs to the active List item.
 	Selected bool
+	// Text is the populated text string from props, if present.
+	Text     string
+	// Size is the populated font or element size from props, if present.
+	Size     float64
 }
 
 // Option configures resolution.
@@ -54,17 +60,28 @@ type resolver struct {
 // Resolve evaluates a scene against a state snapshot and returns the
 // paintable frame.
 func Resolve(scene *ksl.Scene, st State, opts ...Option) (*Frame, error) {
+	if scene == nil {
+		return nil, fmt.Errorf("scene is nil")
+	}
 	if st.Scale == 0 {
 		st.Scale = 1
 	}
 	// Host tokens are the defaults; a scene `theme` block overrides
-	// them (spec §4).
-	tokens := make(map[string]Color, len(st.Tokens)+8)
+	// them (spec §4). User-provided st.Vars overrides scene vars.
+	tokens := make(map[string]Color, len(st.Tokens)+len(st.Vars)+8)
 	for k, v := range st.Tokens {
 		tokens[k] = v
 	}
-	for k, v := range sceneTokens(scene) {
-		tokens[k] = v
+	scVars := sceneVars(scene)
+	for k, v := range scVars {
+		if c, ok := toColor(v); ok {
+			tokens[k] = c
+		}
+	}
+	for k, v := range st.Vars {
+		if c, ok := toColor(v); ok {
+			tokens[k] = c
+		}
 	}
 	st.Tokens = tokens
 	r := &resolver{st: &st, defs: map[string]*ksl.Def{}}
@@ -72,6 +89,12 @@ func Resolve(scene *ksl.Scene, st State, opts ...Option) (*Frame, error) {
 		r.defs[d.Name] = d
 	}
 	r.env = NewEnv(&st, nil)
+	for k, v := range scVars {
+		r.env.Set(k, v)
+	}
+	for k, v := range st.Vars {
+		r.env.Set(k, v)
+	}
 	for _, o := range opts {
 		o(r)
 	}
@@ -89,7 +112,18 @@ func Resolve(scene *ksl.Scene, st State, opts ...Option) (*Frame, error) {
 	if root == nil {
 		return nil, fmt.Errorf("scene root is hidden")
 	}
-	return &Frame{Root: root}, nil
+	return &Frame{Root: root, Nodes: []*ResolvedNode{root}}, nil
+}
+
+func populateNodeProps(rn *ResolvedNode, props map[string]Value) {
+	if s, ok := props["text"].(Str); ok {
+		rn.Text = string(s)
+	}
+	if n, ok := props["size"].(Num); ok {
+		rn.Size = float64(n)
+	} else if l, ok := props["size"].(Length); ok {
+		rn.Size = l.V
+	}
 }
 
 // resolveNode resolves a node in flow position: its rect derives from
@@ -106,6 +140,7 @@ func (r *resolver) resolveNode(n *ksl.Node, bounds RectF) (*ResolvedNode, error)
 		Name: n.Name, ID: n.ID, Classes: n.Classes,
 		Props: props, Rect: r.nodeRect(n, props, bounds), Z: int(numProp(props, "z")),
 	}
+	populateNodeProps(rn, props)
 	if err := r.layoutChildrenOf(rn, n); err != nil {
 		return nil, err
 	}
@@ -126,6 +161,7 @@ func (r *resolver) resolveNodeRect(n *ksl.Node, rect RectF) (*ResolvedNode, erro
 		Name: n.Name, ID: n.ID, Classes: n.Classes,
 		Props: props, Rect: r.refineRect(n, props, rect), Z: int(numProp(props, "z")),
 	}
+	populateNodeProps(rn, props)
 	if err := r.layoutChildrenOf(rn, n); err != nil {
 		return nil, err
 	}
@@ -175,22 +211,31 @@ func (r *resolver) layoutChildrenOfSurface(rn *ResolvedNode, n *ksl.Node) error 
 	}
 }
 
+// sceneVars extracts theme tokens and static variables from the scene's theme
+// blocks, in declaration order (a later variable overrides an earlier one).
+func sceneVars(scene *ksl.Scene) map[string]any {
+	out := map[string]any{}
+	if scene == nil {
+		return out
+	}
+	for _, th := range scene.ThemeBlocks() {
+		for _, pr := range th.Tokens {
+			if lit, err := literal(pr.Val); err == nil {
+				out[pr.Key] = lit
+			}
+		}
+	}
+	return out
+}
+
 // sceneTokens pulls theme tokens from the scene's theme blocks, in
 // declaration order (a later token overrides an earlier one).
 func sceneTokens(scene *ksl.Scene) map[string]Color {
 	out := map[string]Color{}
-	var walk func(props []*ksl.Prop)
-	walk = func(props []*ksl.Prop) {
-		for _, pr := range props {
-			if cv, ok := pr.Val.(*ksl.ColorVal); ok {
-				if c, err := hexColor(cv.Hex); err == nil {
-					out[pr.Key] = c
-				}
-			}
+	for k, v := range sceneVars(scene) {
+		if c, ok := toColor(v); ok {
+			out[k] = c
 		}
-	}
-	for _, th := range scene.ThemeBlocks() {
-		walk(th.Tokens)
 	}
 	return out
 }
@@ -221,6 +266,7 @@ func (r *resolver) resolveList(n *ksl.Node, bounds RectF) (*ResolvedNode, error)
 		Name: n.Name, ID: n.ID, Classes: n.Classes,
 		Props: props, Rect: r.refineRect(n, props, bounds), Z: int(numProp(props, "z")),
 	}
+	populateNodeProps(rn, props)
 
 	var template, empty, summary *ksl.Node
 	for _, c := range r.children(n) {

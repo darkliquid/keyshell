@@ -66,7 +66,7 @@ type Selector struct {
 	AttrVal  string
 }
 
-// ThemeBlock carries theme tokens, named font families and asset paths.
+// ThemeBlock carries theme tokens and variables, named font families and asset paths.
 type ThemeBlock struct {
 	Pos    Position
 	Tokens []*Prop

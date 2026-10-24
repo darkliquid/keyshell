@@ -101,3 +101,24 @@ Window {
 		t.Errorf("anim step = %+v", st)
 	}
 }
+
+func TestParseThemeVariousTypes(t *testing.T) {
+	src := `theme {
+		accent: #00FFC2
+		band_height: 320
+		min_tilt: 6.5
+		title: "Keyshell"
+		enabled: true
+	}`
+	s := mustParse(t, src)
+	th := s.ThemeBlocks()[0]
+	if len(th.Tokens) != 5 {
+		t.Fatalf("tokens len = %d, want 5", len(th.Tokens))
+	}
+	expected := []string{"accent", "band_height", "min_tilt", "title", "enabled"}
+	for i, exp := range expected {
+		if th.Tokens[i].Key != exp {
+			t.Errorf("token %d key = %q, want %q", i, th.Tokens[i].Key, exp)
+		}
+	}
+}

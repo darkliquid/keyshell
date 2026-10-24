@@ -132,6 +132,7 @@ func TestOrderedControls(t *testing.T) {
 func TestItemScope(t *testing.T) {
 	st := State{Results: []Item{{ID: "a", Title: "Firefox"}}}
 	env := NewEnv(&st, nil)
+	env.Set("parentVar", "fromParent")
 	inner := env.ItemScope(&st.Results[0])
 	if got, ok := inner.lookupRef("item"); !ok || got != (ItemVal{&st.Results[0]}) {
 		t.Errorf("$item = %v, %v", got, ok)
@@ -139,5 +140,16 @@ func TestItemScope(t *testing.T) {
 	// parent bindings stay visible through the item scope
 	if got, ok := inner.lookupRef("open"); !ok || got != Bool(false) {
 		t.Errorf("$open through scope = %v, %v", got, ok)
+	}
+	if got, ok := inner.Get("parentVar"); !ok || got != Str("fromParent") {
+		t.Errorf("parentVar through scope = %v, %v", got, ok)
+	}
+	// Setting variable in inner scope must not mutate parent
+	inner.Set("innerVar", "local")
+	if _, ok := env.Get("innerVar"); ok {
+		t.Error("innerVar leaked into parent scope")
+	}
+	if got, ok := inner.Get("innerVar"); !ok || got != Str("local") {
+		t.Errorf("innerVar in inner scope = %v, %v", got, ok)
 	}
 }

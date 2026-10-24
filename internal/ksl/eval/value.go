@@ -7,6 +7,7 @@ package eval
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/darkliquid/keyshell/internal/ksl"
 )
@@ -95,6 +96,7 @@ func literal(v ksl.Value) (Value, error) {
 // hexColor decodes 3/4/6/8-digit hex with CSS shorthand semantics
 // (Grammar Rule 20).
 func hexColor(h string) (Color, error) {
+	h = strings.TrimPrefix(h, "#")
 	n, err := strconv.ParseUint(h, 16, 32)
 	if err != nil {
 		return Color{}, fmt.Errorf("bad hex colour %q", h)
@@ -110,4 +112,75 @@ func hexColor(h string) (Color, error) {
 		return Color{uint8(n >> 24), uint8(n >> 16 & 0xFF), uint8(n >> 8 & 0xFF), uint8(n & 0xFF)}, nil
 	}
 	return Color{}, fmt.Errorf("hex colours have 3, 4, 6 or 8 digits, got %d", len(h))
+}
+
+// toColor attempts to convert a value (Color, Str, or hex string) into a Color.
+func toColor(v any) (Color, bool) {
+	switch c := v.(type) {
+	case Color:
+		return c, true
+	case Str:
+		if strings.HasPrefix(string(c), "#") {
+			if parsed, err := hexColor(string(c)); err == nil {
+				return parsed, true
+			}
+		}
+	case string:
+		if strings.HasPrefix(c, "#") {
+			if parsed, err := hexColor(c); err == nil {
+				return parsed, true
+			}
+		}
+	}
+	return Color{}, false
+}
+
+// toValue converts supported Go primitives or Values into a runtime Value.
+func toValue(v any) (Value, bool) {
+	if v == nil {
+		return nil, false
+	}
+	switch x := v.(type) {
+	case Color:
+		return x, true
+	case Str:
+		return x, true
+	case Value:
+		return x, true
+	case float64:
+		return Num(x), true
+	case float32:
+		return Num(float64(x)), true
+	case int:
+		return Num(float64(x)), true
+	case int8:
+		return Num(float64(x)), true
+	case int16:
+		return Num(float64(x)), true
+	case int32:
+		return Num(float64(x)), true
+	case int64:
+		return Num(float64(x)), true
+	case uint:
+		return Num(float64(x)), true
+	case uint8:
+		return Num(float64(x)), true
+	case uint16:
+		return Num(float64(x)), true
+	case uint32:
+		return Num(float64(x)), true
+	case uint64:
+		return Num(float64(x)), true
+	case string:
+		if strings.HasPrefix(x, "#") {
+			if c, err := hexColor(x); err == nil {
+				return c, true
+			}
+		}
+		return Str(x), true
+	case bool:
+		return Bool(x), true
+	default:
+		return nil, false
+	}
 }

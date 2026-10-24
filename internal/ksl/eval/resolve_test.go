@@ -1,6 +1,10 @@
 package eval
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/darkliquid/keyshell/internal/ksl"
+)
 
 func TestListMaterialisation(t *testing.T) {
 	scene := mustScene(t, `
@@ -211,5 +215,118 @@ func TestRandInSceneIsSummonScoped(t *testing.T) {
 	}
 	if r1 == r3 {
 		t.Errorf("rand across summons: %v vs %v", r1, r3)
+	}
+}
+
+func TestThemeVariablesResolve(t *testing.T) {
+	src := `
+theme {
+    accent: #00FFC2
+    band_height: 320
+    min_tilt: 6.5
+    title: "Keyshell"
+    enabled: true
+}
+Window {
+    Text { text: $title, size: $min_tilt, color: $accent }
+}
+`
+	sc, err := ksl.Parse("test.ksl", []byte(src))
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+	st := State{}
+	frame, err := Resolve(sc, st)
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+	if len(frame.Nodes) == 0 {
+		t.Fatal("expected resolved nodes in frame")
+	}
+	textNode := frame.Nodes[0].Children[0]
+	if textNode.Text != "Keyshell" {
+		t.Errorf("text = %q, want Keyshell", textNode.Text)
+	}
+	if textNode.Size != 6.5 {
+		t.Errorf("size = %v, want 6.5", textNode.Size)
+	}
+}
+
+func TestThemeVariablesCascadeAndOverride(t *testing.T) {
+	src := `
+theme {
+    accent: #00FFC2
+    band_height: 300
+}
+Window {
+    Box {
+        color: $accent
+        height: $band_height
+        label: $new_var
+        text: $query
+    }
+}
+`
+	sc, err := ksl.Parse("theme_override.ksl", []byte(src))
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+
+	tokens := map[string]Color{}
+	st := State{
+		Query:  "builtin query",
+		Tokens: tokens,
+		Vars: map[string]any{
+			"accent":      "#FF2E63",
+			"band_height": 350,
+			"new_var":     "custom",
+			"query":       "shadowed query",
+		},
+	}
+
+	frame, err := Resolve(sc, st)
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+	if frame == nil || frame.Root == nil || len(frame.Root.Children) == 0 {
+		t.Fatal("expected resolved node hierarchy")
+	}
+
+	box := frame.Root.Children[0]
+
+	// 1. $accent evaluates to Color #FF2E63 (Color, not Str)
+	wantAccent := Color{0xFF, 0x2E, 0x63, 0xFF}
+	if gotColor, ok := box.Props["color"].(Color); !ok || gotColor != wantAccent {
+		t.Errorf("box.Props[color] = %#v (%T), want %#v (Color)", box.Props["color"], box.Props["color"], wantAccent)
+	}
+
+	// 2. $band_height evaluates to 350
+	if gotHeight, ok := box.Props["height"].(Num); !ok || gotHeight != 350 {
+		t.Errorf("box.Props[height] = %#v, want Num(350)", box.Props["height"])
+	}
+
+	// 3. $new_var evaluates to "custom"
+	if gotLabel, ok := box.Props["label"].(Str); !ok || gotLabel != "custom" {
+		t.Errorf("box.Props[label] = %#v, want Str(\"custom\")", box.Props["label"])
+	}
+
+	// 4. Input st.Tokens map parameter was not mutated
+	if len(tokens) != 0 {
+		t.Errorf("caller st.Tokens was mutated: %#v", tokens)
+	}
+
+	// 5. Built-in state (e.g. $query) is NOT shadowed by a theme variable named query
+	if gotText, ok := box.Props["text"].(Str); !ok || gotText != "builtin query" {
+		t.Errorf("box.Props[text] = %#v, want Str(\"builtin query\")", box.Props["text"])
+	}
+}
+
+func TestResolveNilScene(t *testing.T) {
+	frame, err := Resolve(nil, State{})
+	if err == nil {
+		t.Fatal("expected error when scene is nil, got nil")
+	}
+	if frame != nil {
+		t.Fatalf("expected nil Frame when scene is nil, got %v", frame)
 	}
 }

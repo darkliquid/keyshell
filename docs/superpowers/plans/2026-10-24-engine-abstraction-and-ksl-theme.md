@@ -20,7 +20,7 @@
 - Test: `internal/ksl/decl_test.go`
 - Test: `internal/ksl/eval/resolve_test.go`
 
-- [ ] **Step 1: Write failing test for theme variables of various types**
+- [x] **Step 1: Write failing test for theme variables of various types**
 
 In `internal/ksl/eval/resolve_test.go`:
 ```go
@@ -59,12 +59,12 @@ Window {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/ksl/eval -run TestThemeVariablesResolve -v`
 Expected: FAIL (theme block parser expects only color hex or variables are not exposed in environment)
 
-- [ ] **Step 3: Update KSL theme parser and evaluator**
+- [x] **Step 3: Update KSL theme parser and evaluator**
 
 In `internal/ksl/ast.go`:
 Update `ThemeBlock`:
@@ -192,12 +192,12 @@ Populate `r.env` with `st.Vars` and `sceneVars(scene)`:
 	}
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./internal/ksl/eval -run TestThemeVariablesResolve -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit changes**
+- [x] **Step 5: Commit changes**
 
 ```bash
 git add internal/ksl/ast.go internal/ksl/decl.go internal/ksl/eval/

@@ -299,6 +299,7 @@ func (sr *SceneRenderer) state(l View, th *theme.Theme, rev Reveal, cfg config.R
 		Reveal: eval.Reveal{
 			Y: rev.Yc, H: minF(rev.HLeft, rev.HRight),
 			HLeft: rev.HLeft, HRight: rev.HRight,
+			YLeft: rev.YLeft, YRight: rev.YRight,
 			Angle: rev.Angle, Shear: rev.Shear, CardShear: rev.Shear,
 			D:  bandD(rev, cfg, sw),
 			Cw: contentW(rev, sw, sh), Ch: contentH(rev),
@@ -349,6 +350,42 @@ func bandD(rev Reveal, cfg config.Reveal, w float64) string {
 		rev.YLeft-halfL, w, rev.YRight-halfR, w, rev.YRight+halfR, rev.YLeft+halfL)
 }
 
+func sceneDefinesReveal(s *ksl.Scene) bool {
+	if s == nil {
+		return false
+	}
+	for _, it := range s.Items {
+		if l, ok := it.(*ksl.LetDecl); ok && l.Name == "reveal" {
+			return true
+		}
+	}
+	return false
+}
+
+func revealFromMapVal(m eval.MapVal) Reveal {
+	getF := func(k string) float64 {
+		if v, ok := m[k]; ok {
+			switch n := v.(type) {
+			case eval.Num:
+				return float64(n)
+			case eval.Length:
+				return n.V
+			}
+		}
+		return 0
+	}
+	deg := getF("angle")
+	return Reveal{
+		YLeft:  getF("yLeft"),
+		YRight: getF("yRight"),
+		HLeft:  getF("hLeft"),
+		HRight: getF("hRight"),
+		Angle:  deg * math.Pi / 180,
+		Shear:  getF("shear"),
+		Yc:     getF("y"),
+	}
+}
+
 // DrawFrame paints one frame of the scene. It owns the reveal
 // resample, the resolve, and the paint pass.
 func (sr *SceneRenderer) DrawFrame(dc *gg.Context, l View, th *theme.Theme, cfg config.Reveal) {
@@ -362,10 +399,16 @@ func (sr *SceneRenderer) DrawFrame(dc *gg.Context, l View, th *theme.Theme, cfg 
 		return
 	}
 
+	scene, prev := sr.snapshot()
+
 	sr.inner.mu.Lock()
 	if !sr.inner.wasOpen {
-		sr.summonEpoch++
-		sr.inner.reveal = Resample(w, h, cfg, sr.inner.rng)
+		if sr.inner.opened != (time.Time{}) {
+			sr.summonEpoch++
+		}
+		if !sceneDefinesReveal(scene) {
+			sr.inner.reveal = Resample(w, h, cfg, sr.inner.rng)
+		}
 		sr.inner.wasOpen = true
 		sr.inner.opened = time.Now()
 	}
@@ -373,8 +416,6 @@ func (sr *SceneRenderer) DrawFrame(dc *gg.Context, l View, th *theme.Theme, cfg 
 	sr.inner.surfaceW, sr.inner.surfaceH = w, h
 	elapsed := time.Since(sr.inner.opened)
 	sr.inner.mu.Unlock()
-
-	scene, prev := sr.snapshot()
 
 	dc.ClearWithColor(gg.RGBA{})
 	now := time.Now()
@@ -385,6 +426,16 @@ func (sr *SceneRenderer) DrawFrame(dc *gg.Context, l View, th *theme.Theme, cfg 
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "ksl: frame resolve: %v\n", err)
 		return
+	}
+	if sceneDefinesReveal(scene) && frame.Env != nil {
+		if v, ok := frame.Env.Get("reveal"); ok {
+			if m, ok := v.(eval.MapVal); ok {
+				rev = revealFromMapVal(m)
+				sr.inner.mu.Lock()
+				sr.inner.reveal = rev
+				sr.inner.mu.Unlock()
+			}
+		}
 	}
 	sr.applyAnimations(frame.Root, now, scene)
 	sr.clock.Tick(now, map[string]bool{"open": st.Open, "closed": !st.Open, "selected": st.Selected >= 0})

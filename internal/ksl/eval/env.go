@@ -52,6 +52,7 @@ type Panel struct {
 // Reveal mirrors the host's per-summon band geometry.
 type Reveal struct {
 	Y, H, HLeft, HRight float64
+	YLeft, YRight       float64
 	Angle, Shear        float64
 	CardShear           float64
 	D                   string // trapezoid outline for Path
@@ -124,6 +125,20 @@ func NewEnv(st *State, parent *Env) *Env {
 	return e
 }
 
+// State returns the environment's state snapshot.
+func (e *Env) State() *State {
+	if e == nil {
+		return nil
+	}
+	if e.st != nil {
+		return e.st
+	}
+	if e.parent != nil {
+		return e.parent.State()
+	}
+	return nil
+}
+
 // Set binds a variable into the environment.
 func (e *Env) Set(name string, v any) {
 	if e.vars == nil {
@@ -171,6 +186,14 @@ func (e *Env) lookupRef(name string) (Value, bool) {
 	if e.item != nil && name == "item" {
 		return ItemVal{e.item}, true
 	}
+	if e.vars != nil {
+		if v, ok := e.vars[name]; ok {
+			return v, true
+		}
+	}
+	if e.parent != nil {
+		return e.parent.lookupRef(name)
+	}
 	if e.st != nil {
 		switch name {
 		case "open":
@@ -204,11 +227,6 @@ func (e *Env) lookupRef(name string) (Value, bool) {
 			return Num(e.st.Height), true
 		}
 	}
-	if e.vars != nil {
-		if v, ok := e.vars[name]; ok {
-			return v, true
-		}
-	}
 	if e.st != nil && e.st.Tokens != nil {
 		if c, ok := e.st.Tokens[name]; ok {
 			return c, true
@@ -221,14 +239,25 @@ func (e *Env) lookupRef(name string) (Value, bool) {
 			}
 		}
 	}
-	if e.parent != nil {
-		return e.parent.lookupRef(name)
-	}
 	return nil, false
+}
+
+// Member resolves member access on a value (e.g. $reveal.cw).
+func (e *Env) Member(v any, name string) (Value, error) {
+	val, ok := toValue(v)
+	if !ok {
+		return nil, fmt.Errorf("cannot resolve member on %T", v)
+	}
+	return e.member(val, name)
 }
 
 func (e *Env) member(v Value, name string) (Value, error) {
 	switch x := v.(type) {
+	case MapVal:
+		if val, ok := x[name]; ok {
+			return val, nil
+		}
+		return nil, fmt.Errorf("no member %q on map", name)
 	case ResultsVal:
 		if name == "len" {
 			return Num(len(x.Items)), nil

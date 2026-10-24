@@ -106,6 +106,16 @@ func (p *parser) expectPunct(text string) bool {
 	return false
 }
 
+func (p *parser) expectOp(text string) bool {
+	if p.atOp(text) {
+		p.next()
+		return true
+	}
+	t := p.peek()
+	p.errf(t.pos, "expected %q, found %s", text, p.describe(t))
+	return false
+}
+
 func (p *parser) expectIdent(what string) string {
 	t := p.peek()
 	if t.kind != tIdent {
@@ -192,9 +202,26 @@ func (p *parser) parseTopItem() Item {
 		return p.parseDef()
 	case "include":
 		return p.parseTopInclude()
+	case "let":
+		return p.parseLet()
 	default:
 		return p.parseNodeOrStyle()
 	}
+}
+
+func (p *parser) parseLet() Item {
+	start := p.here()
+	p.next() // let
+	p.skipNL()
+	name := p.expectIdent("variable name after 'let'")
+	p.skipNL()
+	if !p.expectOp("=") {
+		p.sync()
+		return nil
+	}
+	p.skipNL()
+	val := p.parseValue()
+	return &LetDecl{Pos: start, Name: name, Val: val}
 }
 
 // parseNodeOrStyle implements Grammar Rule 13: a top-level block with

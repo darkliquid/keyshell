@@ -12,6 +12,7 @@ type Frame struct {
 	Root *ResolvedNode
 	// Nodes is a flat list of all resolved nodes in paint order.
 	Nodes []*ResolvedNode
+	Env   *Env
 }
 
 // ResolvedNode is a node with concrete props, a rect and ordered
@@ -83,17 +84,26 @@ func Resolve(scene *ksl.Scene, st State, opts ...Option) (*Frame, error) {
 			tokens[k] = c
 		}
 	}
+	mergedVars := make(map[string]any, len(scVars)+len(st.Vars))
+	for k, v := range scVars {
+		mergedVars[k] = v
+	}
+	for k, v := range st.Vars {
+		mergedVars[k] = v
+	}
+	st.Vars = mergedVars
 	st.Tokens = tokens
 	r := &resolver{st: &st, defs: map[string]*ksl.Def{}}
 	for _, d := range scene.Defs() {
 		r.defs[d.Name] = d
 	}
 	r.env = NewEnv(&st, nil)
-	for k, v := range scVars {
-		r.env.Set(k, v)
-	}
-	for k, v := range st.Vars {
-		r.env.Set(k, v)
+	for _, l := range scene.Lets() {
+		val, err := r.env.Eval(l.Val)
+		if err != nil {
+			return nil, fmt.Errorf("eval let %s: %w", l.Name, err)
+		}
+		r.env.Set(l.Name, val)
 	}
 	for _, o := range opts {
 		o(r)
@@ -112,7 +122,7 @@ func Resolve(scene *ksl.Scene, st State, opts ...Option) (*Frame, error) {
 	if root == nil {
 		return nil, fmt.Errorf("scene root is hidden")
 	}
-	return &Frame{Root: root, Nodes: []*ResolvedNode{root}}, nil
+	return &Frame{Root: root, Nodes: []*ResolvedNode{root}, Env: r.env}, nil
 }
 
 func populateNodeProps(rn *ResolvedNode, props map[string]Value) {

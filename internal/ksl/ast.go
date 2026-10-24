@@ -112,6 +112,13 @@ type Def struct {
 	States   []*StateBlock
 }
 
+// LetDecl is `let Name = Expr`, binding a scene-level variable.
+type LetDecl struct {
+	Pos  Position
+	Name string
+	Val  Value
+}
+
 func (n *Node) itemPos() Position       { return n.Pos }
 func (b *ThemeBlock) itemPos() Position { return b.Pos }
 func (b *StateBlock) itemPos() Position { return b.Pos }
@@ -119,6 +126,7 @@ func (b *StyleBlock) itemPos() Position { return b.Pos }
 func (t *Transition) itemPos() Position { return t.Pos }
 func (k *Keyframes) itemPos() Position  { return k.Pos }
 func (d *Def) itemPos() Position        { return d.Pos }
+func (l *LetDecl) itemPos() Position    { return l.Pos }
 
 // Typed accessors over the ordered item list.
 func (s *Scene) Nodes() []*Node { return itemsOf[*Node](s) }
@@ -129,6 +137,7 @@ func (s *Scene) Styles() []*StyleBlock      { return itemsOf[*StyleBlock](s) }
 func (s *Scene) Transitions() []*Transition { return itemsOf[*Transition](s) }
 func (s *Scene) Keyframes() []*Keyframes    { return itemsOf[*Keyframes](s) }
 func (s *Scene) Defs() []*Def               { return itemsOf[*Def](s) }
+func (s *Scene) Lets() []*LetDecl           { return itemsOf[*LetDecl](s) }
 
 func itemsOf[T Item](s *Scene) []T {
 	var out []T

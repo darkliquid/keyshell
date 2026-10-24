@@ -322,7 +322,7 @@ git commit -m "feat(config): replace hardcoded Reveal with generic overridable T
 - Delete/Refactor: `internal/render/reveal.go`
 - Modify: `internal/render/scene.go`
 
-- [ ] **Step 1: Write failing test for `band(...)` helper in KSL**
+- [x] **Step 1: Write failing test for `band(...)` helper in KSL**
 
 Create `internal/ksl/eval/band_test.go`:
 ```go
@@ -357,12 +357,12 @@ func TestBandHelperGeneratesGeometry(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/ksl/eval -run TestBandHelperGeneratesGeometry -v`
 Expected: FAIL with `undefined: callBandHelper`
 
-- [ ] **Step 3: Implement `band(...)` helper**
+- [x] **Step 3: Implement `band(...)` helper**
 
 Create `internal/ksl/eval/band.go`:
 ```go
@@ -469,12 +469,12 @@ func getFloat(args []any, idx int, def float64) float64 {
 Register `band` in `internal/ksl/eval/resolve.go` built-in function calls.
 Update `internal/render/default.ksl` to call `let reveal = band($band_height, $min_tilt, $center_spread, $taper_max, $shear_min, $shear_max)`.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `go test ./internal/ksl/eval -run TestBandHelperGeneratesGeometry -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit changes**
+- [x] **Step 5: Commit changes**
 
 ```bash
 git add internal/ksl/eval/ internal/render/

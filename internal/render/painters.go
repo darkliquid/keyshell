@@ -98,8 +98,11 @@ func paintThrough(dc *gg.Context, th *theme.Theme, n *eval.ResolvedNode, deps *P
 		// Map the group's local frame to the surface: translate the
 		// group's centre to its surface position, rotate about it.
 		dc.Translate(r.X+r.W/2, r.Y+r.H/2)
-		if v, ok := n.Props["rotate"].(eval.Length); ok {
+		switch v := n.Props["rotate"].(type) {
+		case eval.Length:
 			dc.Rotate(v.V * math.Pi / 180)
+		case eval.Num:
+			dc.Rotate(float64(v) * math.Pi / 180)
 		}
 		dc.Translate(-r.W/2, -r.H/2)
 	}

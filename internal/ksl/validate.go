@@ -10,7 +10,7 @@ var primitives = map[string]bool{
 
 var reservedNames = map[string]bool{
 	"theme": true, "state": true, "transition": true, "def": true,
-	"include": true, "font": true, "assets": true,
+	"include": true, "font": true, "assets": true, "let": true,
 }
 
 // stateNames is the v1 built-in set (spec §5).
@@ -41,6 +41,7 @@ type validator struct {
 	name  string
 	ids   map[string]Position
 	defs  map[string]bool
+	lets  map[string]bool
 	keyfs map[string]bool
 	extra map[string]bool
 	errs  ErrorList
@@ -53,6 +54,7 @@ func (v *validator) errf(pos Position, format string, args ...any) {
 func (v *validator) run(s *Scene) {
 	v.name = s.Name
 	v.defs = map[string]bool{}
+	v.lets = map[string]bool{}
 	v.keyfs = map[string]bool{}
 	var roots []*Node
 	for _, it := range s.Items {
@@ -65,6 +67,18 @@ func (v *validator) run(s *Scene) {
 				v.errf(x.Pos, "duplicate component %q", x.Name)
 			}
 			v.defs[x.Name] = true
+		case *LetDecl:
+			if x.Name == "" {
+				v.errf(x.Pos, "let declaration must have a name")
+			} else {
+				if reservedNames[x.Name] {
+					v.errf(x.Pos, "let variable name %q is reserved", x.Name)
+				}
+				if v.lets[x.Name] {
+					v.errf(x.Pos, "duplicate let variable %q", x.Name)
+				}
+				v.lets[x.Name] = true
+			}
 		case *Keyframes:
 			if v.keyfs[x.Name] {
 				v.errf(x.Pos, "duplicate @keyframes %q", x.Name)

@@ -13,6 +13,7 @@ import (
 	"github.com/darkliquid/keyshell/internal/backend"
 	"github.com/darkliquid/keyshell/internal/config"
 	"github.com/darkliquid/keyshell/internal/icons"
+	"github.com/darkliquid/keyshell/internal/ksl"
 	"github.com/darkliquid/keyshell/internal/rank"
 	"github.com/darkliquid/keyshell/internal/theme"
 	"github.com/gogpu/gg"
@@ -341,6 +342,35 @@ func TestDrawFrameClipsContentToTheBand(t *testing.T) {
 		Yc:    450,
 	}
 	r := New()
+	s, err := ksl.Parse("test.ksl", []byte(`
+Window {
+    mask: band
+    Path { d: $reveal.d, fill: $slab }
+    Group#content {
+        x: $reveal.frameX, y: $reveal.frameY
+        width: $reveal.cw, height: $reveal.ch
+        rotate: $reveal.angle
+        List {
+            x: 0, y: 68
+            width: $reveal.cw, height: $reveal.ch - 80
+            items: $results, selected: $selected
+            orientation: horizontal
+            gap: 16
+            scroll: center
+            overflow: cycle
+            template {
+                Group#card { width: 360, height: $reveal.ch - 80, minH: 130
+                    Card { }
+                }
+            }
+        }
+    }
+}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.SetScene(s)
 	r.wasOpen = true
 	r.reveal = rev
 

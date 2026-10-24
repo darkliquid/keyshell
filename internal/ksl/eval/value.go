@@ -43,6 +43,9 @@ type PropVal struct {
 	Val Value
 }
 
+// MapVal represents a map of values accessible by key.
+type MapVal map[string]Value
+
 func (Num) isValue()    {}
 func (Str) isValue()    {}
 func (Bool) isValue()   {}
@@ -51,6 +54,7 @@ func (Color) isValue()  {}
 func (Kw) isValue()     {}
 func (Array) isValue()  {}
 func (Props) isValue()  {}
+func (MapVal) isValue() {}
 
 // literal converts an AST literal to a runtime value. Bindings and
 // operators are Eval's job.
@@ -150,6 +154,16 @@ func toValue(v any) (Value, bool) {
 		return x, true
 	case Str:
 		return x, true
+	case map[string]Value:
+		return MapVal(x), true
+	case map[string]any:
+		mv := make(MapVal, len(x))
+		for k, val := range x {
+			if converted, ok := toValue(val); ok {
+				mv[k] = converted
+			}
+		}
+		return mv, true
 	case Value:
 		return x, true
 	case float64:

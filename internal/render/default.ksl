@@ -4,6 +4,25 @@
 // separate overlay below the band; it is painted *after* the band mask,
 // so it may extend beyond the band's trapezoid.
 
+theme {
+    slab: #0B0B0F
+    surface_alt: #121218
+    ink: #F2F2F7
+    accent: #FF2E63
+    accent_alt: #08F7FE
+    muted: #5A5A66
+
+    band_height: 290
+    min_tilt: 5.0
+    center_spread: 0.10
+    taper_max: 0.15
+    shear_min: 6.0
+    shear_max: 14.0
+    card_width: 360
+}
+
+let reveal = band($band_height, $min_tilt, $center_spread, $taper_max, $shear_min, $shear_max)
+
 Window {
     mask: band
     Path { d: $reveal.d, fill: $slab }

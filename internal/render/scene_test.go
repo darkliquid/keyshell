@@ -630,3 +630,67 @@ func TestSceneRendererSetConfig(t *testing.T) {
 		t.Errorf("vars[accent] = %#v (%T), want %#v", vars["accent"], vars["accent"], wantColor)
 	}
 }
+
+func TestMultiSummonBandRandomization(t *testing.T) {
+	th, err := theme.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer th.Close()
+
+	cfg := config.Default()
+	sr := NewSceneRenderer(New(), cfg)
+	if !sceneDefinesReveal(sr.scene) {
+		t.Fatal("expected default scene to define reveal")
+	}
+
+	dc, _ := testContext(t, 1920, 1080)
+	v := &fakeView{open: false, query: "keyshell"}
+
+	// 1. Initial closed state
+	sr.DrawFrame(dc, v, th, cfg.Reveal)
+
+	// 2. First summon (open)
+	v.open = true
+	sr.DrawFrame(dc, v, th, cfg.Reveal)
+
+	sr.inner.mu.Lock()
+	rev1 := sr.inner.reveal
+	sr.inner.mu.Unlock()
+
+	if rev1.HLeft == 0 && rev1.HRight == 0 {
+		t.Fatalf("expected non-zero reveal geometry after first summon, got %+v", rev1)
+	}
+
+	// Another frame in the same summon must be deterministic
+	sr.DrawFrame(dc, v, th, cfg.Reveal)
+	sr.inner.mu.Lock()
+	rev1Frame2 := sr.inner.reveal
+	sr.inner.mu.Unlock()
+	if rev1 != rev1Frame2 {
+		t.Fatalf("expected deterministic reveal within same summon, got %+v vs %+v", rev1, rev1Frame2)
+	}
+
+	// 3. Close launcher
+	v.open = false
+	sr.DrawFrame(dc, v, th, cfg.Reveal)
+
+	// 4. Second summon (open)
+	v.open = true
+	sr.DrawFrame(dc, v, th, cfg.Reveal)
+
+	sr.inner.mu.Lock()
+	rev2 := sr.inner.reveal
+	sr.inner.mu.Unlock()
+
+	if rev2.HLeft == 0 && rev2.HRight == 0 {
+		t.Fatalf("expected non-zero reveal geometry after second summon, got %+v", rev2)
+	}
+
+	if rev1 == rev2 {
+		t.Fatalf("expected different Reveal geometries across summons, got identical: %+v", rev1)
+	}
+	if rev1.Angle == rev2.Angle && rev1.YLeft == rev2.YLeft && rev1.YRight == rev2.YRight {
+		t.Fatalf("expected different angle/offsets across summons, got %+v vs %+v", rev1, rev2)
+	}
+}

@@ -61,3 +61,26 @@ func TestValidateKeyframesAndAnimations(t *testing.T) {
 		t.Errorf("valid animation produced %v", el)
 	}
 }
+
+func TestValidateLetDecl(t *testing.T) {
+	wantMsg(t, validateErrs(t, "let theme = 1\nWindow { }"), "reserved")
+	wantMsg(t, validateErrs(t, "let a = 1\nlet a = 2\nWindow { }"), "duplicate let")
+
+	// Empty name in AST
+	s := &Scene{
+		Name: "t.ksl",
+		Items: []Item{
+			&LetDecl{Pos: Position{Line: 1, Col: 1}, Name: "", Val: &Scalar{At: Position{Line: 1, Col: 1}, N: 1}},
+			&Node{Pos: Position{Line: 2, Col: 1}, Name: "Window"},
+		},
+	}
+	el, ok := Validate(s).(ErrorList)
+	if !ok {
+		t.Fatalf("expected ErrorList, got %v", Validate(s))
+	}
+	wantMsg(t, el, "must have a name")
+
+	if el := validateErrs(t, "let a = 1\nlet b = 2\nWindow { }"); len(el) != 0 {
+		t.Errorf("valid let declarations produced %v", el)
+	}
+}

@@ -55,6 +55,21 @@ func (e *Env) Eval(v ksl.Value) (Value, error) {
 		if x.Name == "jitter" {
 			return e.evalJitter(x, args)
 		}
+		if x.Name == "band" {
+			rawArgs := make([]any, len(args))
+			for i, a := range args {
+				rawArgs[i] = toRaw(a)
+			}
+			res, err := callBandHelper(e, rawArgs)
+			if err != nil {
+				return nil, fmt.Errorf("%s: band helper: %w", x.Pos(), err)
+			}
+			val, ok := toValue(res)
+			if !ok {
+				return nil, fmt.Errorf("%s: cannot convert band result to Value", x.Pos())
+			}
+			return val, nil
+		}
 		return FuncVal{At: x.Pos(), Name: x.Name, Args: args}, nil
 	case *ksl.Unary:
 		xv, err := e.Eval(x.X)
@@ -94,7 +109,7 @@ func (e *Env) Eval(v ksl.Value) (Value, error) {
 		if err != nil {
 			return nil, err
 		}
-		return e.member(xv, x.Name)
+		return e.Member(xv, x.Name)
 	case *ksl.MethodCall:
 		xv, err := e.Eval(x.X)
 		if err != nil {
@@ -289,4 +304,19 @@ func stringify(v Value) string {
 		return string(x)
 	}
 	return fmt.Sprintf("%v", v)
+}
+
+func toRaw(v Value) any {
+	switch x := v.(type) {
+	case Num:
+		return float64(x)
+	case Length:
+		return x.V
+	case Str:
+		return string(x)
+	case Bool:
+		return bool(x)
+	default:
+		return x
+	}
 }

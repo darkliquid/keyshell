@@ -5,6 +5,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -138,6 +139,23 @@ func loadConfig(hf hostFlags) (config.Config, error) {
 				cfg.Instances = append(cfg.Instances, config.Instance{ID: id, Mode: "hot"})
 			}
 		}
+	default:
+		// Auto-discover plugins from user and system plugin directories
+		discovered := scanPluginDirs(defaultPluginDirs()...)
+		existing := make(map[string]bool, len(cfg.Instances))
+		for _, inst := range cfg.Instances {
+			existing[inst.ID] = true
+		}
+		for _, inst := range discovered {
+			if !existing[inst.ID] {
+				cfg.Instances = append(cfg.Instances, inst)
+			}
+		}
+		for i := range cfg.Instances {
+			if cfg.Instances[i].Searchable == nil && len(cfg.Instances[i].Command) > 0 {
+				resolveInstanceSearchable(&cfg.Instances[i])
+			}
+		}
 	}
 	if hf.scene != "" {
 		cfg.UI.Scene = hf.scene
@@ -176,7 +194,20 @@ func buildProvider(cfg config.Config) *hybridProvider {
 		if len(cmd) == 0 {
 			cmd = []string{self, "plugin", inst.ID}
 		}
-		plugins[inst.ID] = plugin.Launch{Instance: inst.ID, Command: cmd}
+		var cfgBytes json.RawMessage
+		if inst.Config != nil {
+			b, err := json.Marshal(inst.Config)
+			if err != nil {
+				slog.Warn("failed to marshal plugin configuration", "instance", inst.ID, "err", err)
+			} else {
+				cfgBytes = b
+			}
+		}
+		plugins[inst.ID] = plugin.Launch{
+			Instance: inst.ID,
+			Command:  cmd,
+			Config:   cfgBytes,
+		}
 	}
 	return &hybridProvider{inproc: inproc, plugins: plugins}
 }

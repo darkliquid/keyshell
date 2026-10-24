@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"encoding/json"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -146,5 +147,70 @@ func TestHostAliveTracksClose(t *testing.T) {
 	}
 	if h.Alive() {
 		t.Error("Alive = true after Close")
+	}
+}
+
+// TestHostSearchableDefault checks that Searchable defaults to true when omitted.
+func TestHostSearchableDefault(t *testing.T) {
+	h := newFakeHost(t)
+	info := h.Info()
+	if !info.Searchable {
+		t.Errorf("Info().Searchable = false, want true by default")
+	}
+}
+
+// TestHostSearchableExplicitFalse checks that Searchable is false when hello.searchable is false.
+func TestHostSearchableExplicitFalse(t *testing.T) {
+	script := `
+import json, sys
+sys.stdout.write(json.dumps({"hello": {"protocol": 1, "id": "unsearchable", "name": "Unsearchable", "searchable": False}}) + "\n")
+sys.stdout.flush()
+for line in sys.stdin:
+    m = json.loads(line)
+    if "init" in m:
+        sys.stdout.write(json.dumps({"ready": {}}) + "\n")
+        sys.stdout.flush()
+`
+	h := &Host{cfg: Launch{Instance: "unsearchable", Command: []string{"python3", "-c", script}}}
+	if err := h.Start(); err != nil {
+		t.Fatalf("Start = err %v", err)
+	}
+	t.Cleanup(func() { _ = h.Close() })
+
+	info := h.Info()
+	if info.Searchable {
+		t.Errorf("Info().Searchable = true, want false")
+	}
+}
+
+// TestHostLaunchConfigForwarding verifies Launch.Config is forwarded in the init message.
+func TestHostLaunchConfigForwarding(t *testing.T) {
+	script := `
+import json, sys
+sys.stdout.write(json.dumps({"hello": {"protocol": 1, "id": "cfg_test", "name": "Config Test"}}) + "\n")
+sys.stdout.flush()
+for line in sys.stdin:
+    m = json.loads(line)
+    if "init" in m:
+        cfg = m["init"].get("config")
+        if cfg and cfg.get("key") == "val":
+            sys.stdout.write(json.dumps({"ready": {}}) + "\n")
+            sys.stdout.flush()
+        else:
+            sys.stderr.write(f"bad config: {cfg}\n")
+            sys.exit(1)
+`
+	h := &Host{cfg: Launch{
+		Instance: "cfg_test",
+		Command:  []string{"python3", "-c", script},
+		Config:   json.RawMessage(`{"key":"val"}`),
+	}}
+	if err := h.Start(); err != nil {
+		t.Fatalf("Start = err %v", err)
+	}
+	t.Cleanup(func() { _ = h.Close() })
+
+	if !h.Alive() {
+		t.Fatal("Alive = false on a started host with config")
 	}
 }

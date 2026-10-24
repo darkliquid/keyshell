@@ -44,13 +44,14 @@ func New(cfg StoreConfig) *Backend {
 // must run for the shell's whole lifetime.
 func (b *Backend) Info() sdk.Info {
 	return sdk.Info{
-		ID:        "clipboard",
-		Name:      "Clipboard",
-		Badge:     "CLIPBOARD",
-		Trigger:   ",cb",
-		Controls:  []string{"toggle", "choice"},
-		Hot:       true,
-		StableIDs: true,
+		ID:         "clipboard",
+		Name:       "Clipboard",
+		Badge:      "CLIPBOARD",
+		Trigger:    ",cb",
+		Controls:   []string{"toggle", "choice"},
+		Hot:        true,
+		StableIDs:  true,
+		Searchable: true,
 	}
 }
 

@@ -100,3 +100,23 @@ func TestLoadConfigMissingFileIsFine(t *testing.T) {
 		t.Fatalf("max results = %d, want the default", cfg.Overlay.MaxResults)
 	}
 }
+
+func TestBuildProviderWithInstanceConfig(t *testing.T) {
+	cfg := config.Config{
+		Instances: []config.Instance{
+			{
+				ID:      "test-plugin",
+				Command: []string{"test-cmd"},
+				Config:  map[string]any{"key": "value"},
+			},
+		},
+	}
+	p := buildProvider(cfg)
+	launch, ok := p.plugins["test-plugin"]
+	if !ok {
+		t.Fatal("expected test-plugin in plugins")
+	}
+	if string(launch.Config) != `{"key":"value"}` {
+		t.Fatalf("expected launch.Config to be %s, got %s", `{"key":"value"}`, string(launch.Config))
+	}
+}

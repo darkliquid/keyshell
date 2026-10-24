@@ -28,13 +28,14 @@ func New() *Backend {
 // Info implements sdk.Backend.
 func (b *Backend) Info() sdk.Info {
 	return sdk.Info{
-		ID:        "media",
-		Name:      "Media",
-		Badge:     "MEDIA",
-		Trigger:   ">",
-		Controls:  []string{"range", "choice"},
-		Hot:       true,
-		StableIDs: true, // player names are stable
+		ID:         "media",
+		Name:       "Media",
+		Badge:      "MEDIA",
+		Trigger:    ">",
+		Controls:   []string{"range", "choice"},
+		Hot:        true,
+		StableIDs:  true, // player names are stable
+		Searchable: true,
 	}
 }
 

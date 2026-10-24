@@ -115,3 +115,42 @@ func TestConfigShape(t *testing.T) {
 		t.Fatal("Config must be a struct")
 	}
 }
+
+func TestConfigInstanceSearchableAndConfig(t *testing.T) {
+	tomlStr := `
+[[instance]]
+id = "my-calc"
+command = ["keyshell-calc"]
+searchable = false
+[instance.config]
+precision = 10
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	if err := os.WriteFile(path, []byte(tomlStr), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	var found *Instance
+	for i := range cfg.Instances {
+		if cfg.Instances[i].ID == "my-calc" {
+			found = &cfg.Instances[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("my-calc instance not found")
+	}
+	if found.Searchable == nil || *found.Searchable != false {
+		t.Errorf("Searchable = %v, want false", found.Searchable)
+	}
+	cfgMap, ok := found.Config.(map[string]any)
+	if !ok || cfgMap["precision"] != int64(10) {
+		t.Errorf("Config = %+v, want precision: 10", found.Config)
+	}
+}

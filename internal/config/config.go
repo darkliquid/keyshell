@@ -74,6 +74,11 @@ type Instance struct {
 	Command []string `toml:"command"`
 	Mode    string   `toml:"mode"` // auto|hot|lazy
 	NoReap  bool     `toml:"noreap"`
+	// Searchable overrides whether the instance appears in global merged search
+	// (nil defers to the plugin's own declared searchability).
+	Searchable *bool `toml:"searchable,omitempty"`
+	// Config holds arbitrary instance configuration forwarded to the plugin on init.
+	Config any `toml:"config"`
 }
 
 // UI holds the scene override.

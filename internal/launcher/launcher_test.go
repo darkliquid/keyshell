@@ -1143,3 +1143,59 @@ func TestMergedQueryStreamsProgressiveResults(t *testing.T) {
 		t.Errorf("SelectedItem = %+v, want fast-1 preserved after progressive update", selectedItem)
 	}
 }
+
+func TestLauncherExternalPluginNonSearchable(t *testing.T) {
+	// Represents an external plugin declaring Searchable: false and Trigger: "="
+	extPlugin := &listBackend{
+		id:            "extcalc",
+		trigger:       "=",
+		nonSearchable: true,
+		items:         []backend.Item{{ID: "res", Title: "42", Subtitle: "External Calculator"}},
+	}
+	appsB := &listBackend{
+		id:    "apps",
+		items: []backend.Item{{ID: "app1", Title: "Terminal"}},
+	}
+
+	prov := &fakeProvider{backends: map[string]backend.Backend{
+		"extcalc": extPlugin,
+		"apps":    appsB,
+	}}
+
+	// In keyshell, non-searchable plugins are in Modes but NOT Searchable
+	l := New(prov, Options{
+		Searchable: []string{"apps"},
+		Modes:      []string{MergedMode, "apps", "extcalc"},
+		RankOpts:   rank.Options{Limit: 10},
+		SettleMs:   20 * time.Millisecond,
+	})
+	l.Open()
+
+	// 1. In merged search, querying should NOT query extcalc or return its items
+	l.SetQuery("42")
+	if extPlugin.query.Text == "42" {
+		t.Fatalf("extcalc backend was queried during merged search")
+	}
+	results := l.Results()
+	for _, m := range results {
+		if m.Source == "extcalc" || m.Item.ID == "res" {
+			t.Fatalf("merged search returned result from non-searchable plugin: %+v", m)
+		}
+	}
+
+	// 2. Typing the trigger prefix "=" should switch mode to extcalc and return its items
+	l.SetQuery("= 21 * 2")
+	if l.Mode() != "extcalc" {
+		t.Fatalf("Mode after trigger prefix = %q, want extcalc", l.Mode())
+	}
+	if l.Query() != "21 * 2" {
+		t.Errorf("Query after trigger = %q, want 21 * 2", l.Query())
+	}
+	calcResults := l.Results()
+	if len(calcResults) == 0 {
+		t.Fatal("expected results after trigger prefix, got none")
+	}
+	if calcResults[0].Item.Title != "42" {
+		t.Errorf("expected Title = 42, got %q", calcResults[0].Item.Title)
+	}
+}

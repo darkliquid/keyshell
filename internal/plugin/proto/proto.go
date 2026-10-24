@@ -31,20 +31,21 @@ type Message struct {
 
 // Hello is the plugin's first message (plugin → host).
 type Hello struct {
-	Protocol  int      `json:"protocol"`
-	ID        string   `json:"id"`
-	Name      string   `json:"name"`
-	Badge     string   `json:"badge"`
-	Trigger   string   `json:"trigger"`
-	Controls  []string `json:"controls"`
-	Hot       bool     `json:"hot"`
-	StableIDs bool     `json:"stable_ids"`
+	Protocol   int      `json:"protocol"`
+	ID         string   `json:"id"`
+	Name       string   `json:"name"`
+	Badge      string   `json:"badge"`
+	Trigger    string   `json:"trigger"`
+	Controls   []string `json:"controls"`
+	Hot        bool     `json:"hot"`
+	StableIDs  bool     `json:"stable_ids"`
+	Searchable *bool    `json:"searchable,omitempty"` // nil means default (true)
 }
 
 // Init is the host's reply to Hello (host → plugin).
 type Init struct {
 	Instance string          `json:"instance"`
-	Config   json.RawMessage `json:"config"`
+	Config   json.RawMessage `json:"config,omitempty"`
 }
 
 // Ready confirms the plugin's services are up (plugin → host).

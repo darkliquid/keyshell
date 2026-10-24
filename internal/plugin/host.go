@@ -6,6 +6,7 @@ package plugin
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -32,6 +33,7 @@ type Launch struct {
 	Instance string
 	Command  []string
 	Env      []string
+	Config   json.RawMessage
 }
 
 // Host is one plugin instance. It is not safe for concurrent Query calls; the
@@ -131,7 +133,10 @@ func (h *Host) startLocked() error {
 	h.hello = *msg.Hello
 
 	// Send init.
-	if err := h.writeLocked(proto.Message{Init: &proto.Init{Instance: h.cfg.Instance}}); err != nil {
+	if err := h.writeLocked(proto.Message{Init: &proto.Init{
+		Instance: h.cfg.Instance,
+		Config:   h.cfg.Config,
+	}}); err != nil {
 		_ = h.kill()
 		return err
 	}
@@ -157,12 +162,16 @@ func (h *Host) startLocked() error {
 func (h *Host) Info() backend.Info {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	searchable := true
+	if h.hello.Searchable != nil {
+		searchable = *h.hello.Searchable
+	}
 	return backend.Info{
 		ID:         h.hello.ID,
 		Name:       h.hello.Name,
 		Badge:      h.hello.Badge,
 		Trigger:    h.hello.Trigger,
-		Searchable: true,
+		Searchable: searchable,
 		Trackable:  h.hello.StableIDs,
 		StableIDs:  h.hello.StableIDs,
 	}

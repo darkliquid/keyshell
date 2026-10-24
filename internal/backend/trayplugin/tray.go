@@ -37,13 +37,14 @@ func New(conn *dbus.Conn, w *Watcher) *Backend {
 // Info implements sdk.Backend.
 func (b *Backend) Info() sdk.Info {
 	return sdk.Info{
-		ID:        "tray",
-		Name:      "Tray",
-		Badge:     "TRAY",
-		Trigger:   "^",
-		Controls:  nil,
-		Hot:       true,
-		StableIDs: true, // applet service names are stable for a session
+		ID:         "tray",
+		Name:       "Tray",
+		Badge:      "TRAY",
+		Trigger:    "^",
+		Controls:   nil,
+		Hot:        true,
+		StableIDs:  true, // applet service names are stable for a session
+		Searchable: true,
 	}
 }
 

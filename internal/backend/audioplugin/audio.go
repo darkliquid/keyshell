@@ -32,13 +32,14 @@ func New() *Backend {
 // Info implements sdk.Backend.
 func (b *Backend) Info() sdk.Info {
 	return sdk.Info{
-		ID:        "audio",
-		Name:      "Audio",
-		Badge:     "AUDIO",
-		Trigger:   "!",
-		Controls:  []string{"range", "toggle"},
-		Hot:       true,
-		StableIDs: true, // sink ids are stable
+		ID:         "audio",
+		Name:       "Audio",
+		Badge:      "AUDIO",
+		Trigger:    "!",
+		Controls:   []string{"range", "toggle"},
+		Hot:        true,
+		StableIDs:  true, // sink ids are stable
+		Searchable: true,
 	}
 }
 

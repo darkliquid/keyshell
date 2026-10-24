@@ -6,11 +6,14 @@ package sdk
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"os"
+	"slices"
 
 	"github.com/darkliquid/keyshell/internal/plugin/proto"
 )
@@ -101,13 +104,19 @@ type ChangeShape struct {
 
 // InfoShape is the plugin's static identity.
 type InfoShape struct {
-	ID        string
-	Name      string
-	Badge     string
-	Trigger   string
-	Controls  []string
-	Hot       bool
-	StableIDs bool
+	ID         string
+	Name       string
+	Badge      string
+	Trigger    string
+	Controls   []string
+	Hot        bool
+	StableIDs  bool
+	Searchable bool // true if plugin participates in merged search; must be explicitly set to true in Go
+}
+
+// Configurable is implemented by plugins that accept dynamic instance configuration.
+type Configurable interface {
+	Configure(instance string, config []byte) error
 }
 
 // StreamShape yields items.
@@ -159,9 +168,28 @@ func (s *sliceStream) Next() (Item, bool, error) {
 
 func (s *sliceStream) Close() error { return nil }
 
+func toHello(info Info) proto.Hello {
+	searchable := info.Searchable
+	return proto.Hello{
+		Protocol:   proto.Protocol,
+		ID:         info.ID,
+		Name:       info.Name,
+		Badge:      info.Badge,
+		Trigger:    info.Trigger,
+		Controls:   info.Controls,
+		Hot:        info.Hot,
+		StableIDs:  info.StableIDs,
+		Searchable: &searchable,
+	}
+}
+
 // Serve runs the plugin protocol until stdin closes. It returns an error only
 // for a fatal handshake failure; domain errors are reported per query.
 func Serve(info Info, backend Backend) error {
+	if slices.Contains(os.Args, "--info") {
+		return json.NewEncoder(os.Stdout).Encode(toHello(info))
+	}
+
 	if os.Getenv("KEYSHELL_PLUGIN") == "" {
 		return errors.New("sdk: not running as a plugin (KEYSHELL_PLUGIN not set)")
 	}
@@ -182,16 +210,8 @@ func Serve(info Info, backend Backend) error {
 	}
 
 	// 1. Hello.
-	if err := write(proto.Message{Hello: &proto.Hello{
-		Protocol:  proto.Protocol,
-		ID:        info.ID,
-		Name:      info.Name,
-		Badge:     info.Badge,
-		Trigger:   info.Trigger,
-		Controls:  info.Controls,
-		Hot:       info.Hot,
-		StableIDs: info.StableIDs,
-	}}); err != nil {
+	hello := toHello(info)
+	if err := write(proto.Message{Hello: &hello}); err != nil {
 		return err
 	}
 
@@ -201,8 +221,14 @@ func Serve(info Info, backend Backend) error {
 	if !sc.Scan() {
 		return errors.New("sdk: connection closed before init")
 	}
-	if msg, err := proto.Decode(sc.Bytes()); err != nil || msg.Init == nil {
+	msg, err := proto.Decode(sc.Bytes())
+	if err != nil || msg.Init == nil {
 		return errors.New("sdk: expected init")
+	}
+	if conf, ok := backend.(Configurable); ok && len(msg.Init.Config) > 0 && string(bytes.TrimSpace(msg.Init.Config)) != "null" {
+		if err := conf.Configure(msg.Init.Instance, msg.Init.Config); err != nil {
+			return fmt.Errorf("sdk: configure: %w", err)
+		}
 	}
 	if err := write(proto.Message{Ready: &proto.Ready{}}); err != nil {
 		return err

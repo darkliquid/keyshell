@@ -54,13 +54,14 @@ func New() *Backend {
 // Info implements sdk.Backend.
 func (b *Backend) Info() sdk.Info {
 	return sdk.Info{
-		ID:        "network",
-		Name:      "Network",
-		Badge:     "NET",
-		Trigger:   "&",
-		Controls:  []string{"toggle", "choice"},
-		Hot:       true,
-		StableIDs: true, // connection names are stable
+		ID:         "network",
+		Name:       "Network",
+		Badge:      "NET",
+		Trigger:    "&",
+		Controls:   []string{"toggle", "choice"},
+		Hot:        true,
+		StableIDs:  true, // connection names are stable
+		Searchable: true,
 	}
 }
 

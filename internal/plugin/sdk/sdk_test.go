@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -28,8 +30,32 @@ func (e *echoBackend) Control(_ context.Context, c Change) error {
 	return nil
 }
 
+type configurableBackend struct {
+	echoBackend
+	gotInstance     string
+	gotConfig       []byte
+	configureErr    error
+	configureCalled bool
+}
+
+func (c *configurableBackend) Configure(instance string, config []byte) error {
+	c.configureCalled = true
+	c.gotInstance = instance
+	c.gotConfig = config
+	return c.configureErr
+}
+
 // runServe feeds scripted stdin and returns captured stdout.
 func runServe(t *testing.T, input string, backend Backend) string {
+	t.Helper()
+	out, err := runServeWithInfo(t, Info{ID: "test", Name: "Test", Controls: []string{"copy"}}, backend, input)
+	if err != nil {
+		t.Fatalf("Serve returned error: %v", err)
+	}
+	return out
+}
+
+func runServeWithInfo(t *testing.T, info Info, backend Backend, input string) (string, error) {
 	t.Helper()
 	t.Setenv("KEYSHELL_PLUGIN", "1")
 	t.Setenv("KEYSHELL_PROTOCOL", "1")
@@ -42,6 +68,8 @@ func runServe(t *testing.T, input string, backend Backend) string {
 	}
 	os.Stdin = r
 	defer func() { os.Stdin = old }()
+	defer r.Close()
+	defer w.Close()
 
 	var out bytes.Buffer
 	stdout := os.Stdout
@@ -50,10 +78,13 @@ func runServe(t *testing.T, input string, backend Backend) string {
 		t.Fatal(err)
 	}
 	os.Stdout = ow
+	defer func() { os.Stdout = stdout }()
+	defer or.Close()
+	defer ow.Close()
 
 	done := make(chan error, 1)
 	go func() {
-		done <- Serve(Info{ID: "test", Name: "Test", Controls: []string{"copy"}}, backend)
+		done <- Serve(info, backend)
 	}()
 
 	go func() {
@@ -68,12 +99,10 @@ func runServe(t *testing.T, input string, backend Backend) string {
 		close(readDone)
 	}()
 
-	<-done
+	serveErr := <-done
 	_ = ow.Close()
 	<-readDone
-	_ = or.Close()
-	os.Stdout = stdout
-	return out.String()
+	return out.String(), serveErr
 }
 
 func TestServeHandshakeAndQuery(t *testing.T) {
@@ -129,5 +158,182 @@ func TestServeRejectsMismatchedProtocol(t *testing.T) {
 	err := Serve(Info{ID: "x"}, &echoBackend{})
 	if err == nil {
 		t.Fatal("Serve() with wrong protocol = nil error, want error")
+	}
+}
+
+func TestConfigurableDelivery(t *testing.T) {
+	backend := &configurableBackend{}
+	input := "{\"init\":{\"instance\":\"custom-inst\",\"config\":{\"key\":\"value\"}}}\n"
+	_ = runServe(t, input, backend)
+
+	if !backend.configureCalled {
+		t.Fatal("expected Configure to be called")
+	}
+	if backend.gotInstance != "custom-inst" {
+		t.Errorf("instance = %q, want custom-inst", backend.gotInstance)
+	}
+	wantConfig := `{"key":"value"}`
+	if string(backend.gotConfig) != wantConfig {
+		t.Errorf("config = %s, want %s", string(backend.gotConfig), wantConfig)
+	}
+}
+
+func TestConfigurableNotCalledWhenConfigOmittedOrNull(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{
+			name:  "no config field",
+			input: "{\"init\":{\"instance\":\"custom-inst\"}}\n",
+		},
+		{
+			name:  "config is null",
+			input: "{\"init\":{\"instance\":\"custom-inst\",\"config\":null}}\n",
+		},
+		{
+			name:  "config is whitespace null",
+			input: "{\"init\":{\"instance\":\"custom-inst\",\"config\": null }}\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			backend := &configurableBackend{}
+			_ = runServe(t, tt.input, backend)
+			if backend.configureCalled {
+				t.Errorf("Configure was called unexpectedly with config: %q", string(backend.gotConfig))
+			}
+		})
+	}
+}
+func TestConfigurableError(t *testing.T) {
+	backend := &configurableBackend{
+		configureErr: errors.New("boom"),
+	}
+	input := "{\"init\":{\"instance\":\"test\",\"config\":{\"invalid\":true}}}\n"
+	_, err := runServeWithInfo(t, Info{ID: "test"}, backend, input)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	wantErr := "sdk: configure: boom"
+	if err.Error() != wantErr {
+		t.Errorf("err = %q, want %q", err.Error(), wantErr)
+	}
+}
+
+func TestSearchablePropagation(t *testing.T) {
+	tests := []struct {
+		name       string
+		searchable bool
+	}{
+		{name: "searchable true", searchable: true},
+		{name: "searchable false", searchable: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			backend := &echoBackend{}
+			input := "{\"init\":{\"instance\":\"test\",\"config\":{}}}\n"
+			out, err := runServeWithInfo(t, Info{ID: "test", Searchable: tt.searchable}, backend, input)
+			if err != nil {
+				t.Fatalf("Serve error: %v", err)
+			}
+			sc := bufio.NewScanner(strings.NewReader(out))
+			if !sc.Scan() {
+				t.Fatal("expected hello message")
+			}
+			m, err := proto.Decode(sc.Bytes())
+			if err != nil {
+				t.Fatalf("decode hello: %v", err)
+			}
+			if m.Hello == nil {
+				t.Fatal("first message was not hello")
+			}
+			if m.Hello.Searchable == nil {
+				t.Fatal("expected Hello.Searchable to be set, got nil")
+			}
+			if *m.Hello.Searchable != tt.searchable {
+				t.Errorf("Hello.Searchable = %v, want %v", *m.Hello.Searchable, tt.searchable)
+			}
+		})
+	}
+}
+func TestInfoFlag(t *testing.T) {
+	tests := []struct {
+		name       string
+		searchable bool
+	}{
+		{name: "searchable true", searchable: true},
+		{name: "searchable false", searchable: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			oldArgs := os.Args
+			os.Args = []string{"keyshell-plugin", "--info"}
+			defer func() { os.Args = oldArgs }()
+
+			stdout := os.Stdout
+			or, ow, err := os.Pipe()
+			if err != nil {
+				t.Fatal(err)
+			}
+			os.Stdout = ow
+			defer func() { os.Stdout = stdout }()
+			defer or.Close()
+			defer ow.Close()
+
+			info := Info{
+				ID:         "plug-id",
+				Name:       "Plug Name",
+				Badge:      "PLUG",
+				Trigger:    ":p",
+				Controls:   []string{"copy"},
+				Hot:        true,
+				StableIDs:  true,
+				Searchable: tt.searchable,
+			}
+
+			serveErr := Serve(info, &echoBackend{})
+			_ = ow.Close()
+
+			if serveErr != nil {
+				t.Fatalf("Serve returned error: %v", serveErr)
+			}
+
+			var buf bytes.Buffer
+			_, _ = buf.ReadFrom(or)
+
+			var hello proto.Hello
+			if err := json.Unmarshal(buf.Bytes(), &hello); err != nil {
+				t.Fatalf("failed to unmarshal --info output %q: %v", buf.String(), err)
+			}
+
+			if hello.Protocol != proto.Protocol {
+				t.Errorf("Protocol = %d, want %d", hello.Protocol, proto.Protocol)
+			}
+			if hello.ID != "plug-id" {
+				t.Errorf("ID = %q, want plug-id", hello.ID)
+			}
+			if hello.Name != "Plug Name" {
+				t.Errorf("Name = %q, want Plug Name", hello.Name)
+			}
+			if hello.Badge != "PLUG" {
+				t.Errorf("Badge = %q, want PLUG", hello.Badge)
+			}
+			if hello.Trigger != ":p" {
+				t.Errorf("Trigger = %q, want :p", hello.Trigger)
+			}
+			if len(hello.Controls) != 1 || hello.Controls[0] != "copy" {
+				t.Errorf("Controls = %+v, want [copy]", hello.Controls)
+			}
+			if !hello.Hot {
+				t.Errorf("Hot = false, want true")
+			}
+			if !hello.StableIDs {
+				t.Errorf("StableIDs = false, want true")
+			}
+			if hello.Searchable == nil || *hello.Searchable != tt.searchable {
+				t.Errorf("Searchable = %v, want %v", hello.Searchable, tt.searchable)
+			}
+		})
 	}
 }

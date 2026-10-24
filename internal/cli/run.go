@@ -196,14 +196,20 @@ func newLauncher(cfg config.Config, provider backend.BackendProvider) *launcher.
 // newLauncherOptions derives the launcher options from the config.
 func newLauncherOptions(cfg config.Config) launcher.Options {
 	searchable := []string{"apps", "files", "windows"}
+	var nonSearchable []string
 	for _, inst := range cfg.Instances {
-		searchable = append(searchable, inst.ID)
+		if inst.Searchable != nil && !*inst.Searchable {
+			nonSearchable = append(nonSearchable, inst.ID)
+		} else {
+			searchable = append(searchable, inst.ID)
+		}
 	}
 	// Tab walks the merged search, then the searchable modes, then the
-	// trigger-only in-process backends (calc, run) so every mode is
-	// reachable from the keyboard.
+	// trigger-only in-process backends (calc, run) and any non-searchable
+	// plugins so every mode is reachable from the keyboard.
 	modes := append([]string{launcher.MergedMode}, searchable...)
 	modes = append(modes, "calc", "run")
+	modes = append(modes, nonSearchable...)
 	return launcher.Options{
 		SettleMs:   settleDuration(cfg.Overlay.SettleMs),
 		RankOpts:   rank.Options{Limit: cfg.Overlay.MaxResults},

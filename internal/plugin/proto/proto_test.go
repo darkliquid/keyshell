@@ -2,6 +2,7 @@ package proto
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -96,5 +97,71 @@ func TestItemCardFieldsUsePinnedWireNames(t *testing.T) {
 	}
 	if got.Item.Card[0].Kind != "meter" || got.Item.Card[0].Control != "volume" {
 		t.Errorf("card override lost: %+v", got.Item.Card)
+	}
+}
+
+func TestHelloSearchableSerialization(t *testing.T) {
+	tBool := true
+	fBool := false
+
+	tests := []struct {
+		name       string
+		hello      Hello
+		wantSubstr string
+	}{
+		{
+			name:       "nil searchable omitted",
+			hello:      Hello{Protocol: 1, ID: "test", Searchable: nil},
+			wantSubstr: `{"hello":{"protocol":1,"id":"test","name":"","badge":"","trigger":"","controls":null,"hot":false,"stable_ids":false}}`,
+		},
+		{
+			name:       "searchable true present",
+			hello:      Hello{Protocol: 1, ID: "test", Searchable: &tBool},
+			wantSubstr: `"searchable":true`,
+		},
+		{
+			name:       "searchable false present",
+			hello:      Hello{Protocol: 1, ID: "test", Searchable: &fBool},
+			wantSubstr: `"searchable":false`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			b, err := Encode(Message{Hello: &tt.hello})
+			if err != nil {
+				t.Fatalf("Encode: %v", err)
+			}
+			if !strings.Contains(string(b), tt.wantSubstr) {
+				t.Errorf("Encode() = %s, want to contain %s", string(b), tt.wantSubstr)
+			}
+			decoded, err := Decode(b)
+			if err != nil {
+				t.Fatalf("Decode: %v", err)
+			}
+			if decoded.Hello == nil {
+				t.Fatal("decoded Hello is nil")
+			}
+			if tt.hello.Searchable == nil {
+				if decoded.Hello.Searchable != nil {
+					t.Errorf("decoded Searchable = %v, want nil", *decoded.Hello.Searchable)
+				}
+			} else {
+				if decoded.Hello.Searchable == nil || *decoded.Hello.Searchable != *tt.hello.Searchable {
+					t.Errorf("decoded Searchable = %v, want %v", decoded.Hello.Searchable, *tt.hello.Searchable)
+				}
+			}
+		})
+	}
+}
+
+func TestInitConfigOmitEmpty(t *testing.T) {
+	msg := Message{Init: &Init{Instance: "inst"}}
+	b, err := Encode(msg)
+	if err != nil {
+		t.Fatalf("Encode: %v", err)
+	}
+	if strings.Contains(string(b), "config") {
+		t.Errorf("Encode() = %s, want config to be omitted", string(b))
 	}
 }

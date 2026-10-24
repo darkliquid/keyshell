@@ -415,3 +415,52 @@ func countOutsideBand(img *image.RGBA, quad [4][2]float64) int {
 	}
 	return leaks
 }
+
+func TestRendererContains(t *testing.T) {
+	th, err := theme.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer th.Close()
+
+	cfg := config.Default()
+	r := NewConfigured(cfg)
+	view := &fakeView{
+		open: true,
+		results: []rank.Match{
+			{Item: backend.Item{ID: "app1", Title: "Terminal"}},
+		},
+	}
+	dc := gg.NewContext(1920, 1080)
+	r.DrawFrame(dc, view, th, cfg.Reveal)
+
+	// In default scene, the band is centered vertically (~540)
+	if !r.Contains(960, 540) {
+		t.Error("Contains(960, 540) = false, want true for band center")
+	}
+	if r.Contains(100, 50) {
+		t.Error("Contains(100, 50) = true, want false outside band")
+	}
+	if !r.BandContains(960, 540) {
+		t.Error("BandContains(960, 540) = false, want true delegating to Contains")
+	}
+
+	// Now test fallback when scene == nil
+	rNoScene := New()
+	rNoScene.scene = nil
+	rNoScene.surfaceW = 1920
+	rNoScene.surfaceH = 1080
+	rNoScene.reveal = Reveal{
+		YLeft:  540,
+		YRight: 540,
+		HLeft:  200,
+		HRight: 200,
+	}
+
+	if !rNoScene.Contains(960, 540) {
+		t.Error("rNoScene.Contains(960, 540) = false, want true for fallback BandContains")
+	}
+	if rNoScene.Contains(960, 100) {
+		t.Error("rNoScene.Contains(960, 100) = true, want false outside quad")
+	}
+}

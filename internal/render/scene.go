@@ -148,9 +148,10 @@ type SceneRenderer struct {
 
 	// lastMu guards the most recently resolved frame, so the presenter can
 	// paint the panel overlay on top of the band mask in a second pass.
-	lastMu   sync.Mutex
-	lastRoot *eval.ResolvedNode
-	lastDeps *PainterDeps
+	lastMu    sync.Mutex
+	lastRoot  *eval.ResolvedNode
+	lastFrame *eval.Frame
+	lastDeps  *PainterDeps
 }
 
 // NewSceneRenderer builds a renderer for the configured scene.
@@ -444,6 +445,7 @@ func (sr *SceneRenderer) DrawFrame(dc *gg.Context, l View, th *theme.Theme, cfg 
 	deps := &PainterDeps{Reveal: rev, CardCfg: cfg, CursorAlpha: cursorAlpha(elapsed), Images: sr.inner.images, Icons: sr.inner.icons, SkipPanelOverlay: skipPanel}
 	sr.lastMu.Lock()
 	sr.lastRoot = frame.Root
+	sr.lastFrame = frame
 	sr.lastDeps = deps
 	sr.lastMu.Unlock()
 	painterFor("Window")(dc, th, frame.Root, deps)
@@ -509,21 +511,15 @@ func (sr *SceneRenderer) UsesBandMask() bool {
 	return false
 }
 
-// Contains reports whether (x, y) is inside any top-level node's bounding rectangle.
+// Contains reports whether (x, y) is inside any interactive element of the active scene frame.
 func (sr *SceneRenderer) Contains(x, y float64) bool {
 	sr.lastMu.Lock()
-	root := sr.lastRoot
+	frame := sr.lastFrame
 	sr.lastMu.Unlock()
-	if root == nil {
+	if frame == nil {
 		return false
 	}
-	for _, c := range root.Children {
-		r := c.Rect
-		if r.W > 0 && r.H > 0 && x >= r.X && x <= r.X+r.W && y >= r.Y && y <= r.Y+r.H {
-			return true
-		}
-	}
-	return false
+	return frame.Contains(x, y)
 }
 
 // findPanelNode returns the node (and its subtree) carrying the id "panel".

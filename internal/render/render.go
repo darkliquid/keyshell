@@ -221,12 +221,21 @@ func (r *Renderer) UsesBandMask() bool {
 	return r.scene.UsesBandMask()
 }
 
+// Contains reports whether a surface point lies inside any drawn interactive element
+// of the active scene frame or the reveal band.
+func (r *Renderer) Contains(x, y float64) bool {
+	if r.scene != nil {
+		return r.scene.Contains(x, y)
+	}
+	return r.BandContains(x, y)
+}
+
 // BandContains reports whether a surface point lies inside the band or the
 // active scene's top-level content, which is what separates a click on the
 // overlay from one on the dismiss scrim.
 func (r *Renderer) BandContains(x, y float64) bool {
-	if r.scene != nil && !r.UsesBandMask() {
-		return r.scene.Contains(x, y)
+	if r.scene != nil {
+		return r.Contains(x, y)
 	}
 	r.mu.Lock()
 	rev, w, h := r.reveal, r.surfaceW, r.surfaceH

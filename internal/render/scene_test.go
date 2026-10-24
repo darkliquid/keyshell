@@ -227,6 +227,12 @@ func TestDropdownSceneRenders(t *testing.T) {
 	// Verify hit testing: inside dropdown box (640..1280, 120..580) vs outside
 	rdr := NewConfigured(cfg)
 	rdr.scene = sr
+	if !rdr.Contains(960, 300) {
+		t.Error("Contains(960, 300) = false, want true for dropdown window")
+	}
+	if rdr.Contains(100, 100) {
+		t.Error("Contains(100, 100) = true, want false outside dropdown window")
+	}
 	if !rdr.BandContains(960, 300) {
 		t.Error("BandContains(960, 300) = false, want true for dropdown window")
 	}

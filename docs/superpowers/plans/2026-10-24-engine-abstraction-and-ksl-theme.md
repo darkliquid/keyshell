@@ -493,7 +493,7 @@ git commit -m "feat(ksl): implement band geometry helper function and move revea
 - Modify: `internal/cli/run.go:133-145`
 - Test: `internal/render/render_test.go`
 
-- [ ] **Step 1: Write failing test for `Frame.Contains(x, y)`**
+- [x] **Step 1: Write failing test for `Frame.Contains(x, y)`**
 
 Create `internal/ksl/eval/hittest_test.go`:
 ```go
@@ -525,12 +525,12 @@ func TestFrameContainsPointsInsideAndOutside(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/ksl/eval -run TestFrameContainsPointsInsideAndOutside -v`
 Expected: FAIL with `frame.Contains undefined`
 
-- [ ] **Step 3: Implement `Frame.Contains(x, y)`**
+- [x] **Step 3: Implement `Frame.Contains(x, y)`**
 
 Create `internal/ksl/eval/hittest.go`:
 ```go
@@ -593,17 +593,17 @@ In `internal/cli/run.go`:
 	})
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./internal/ksl/eval -run TestFrameContainsPointsInsideAndOutside -v`
 Expected: PASS
 
-- [ ] **Step 5: Run render tests**
+- [x] **Step 5: Run render tests**
 
 Run: `go test ./internal/render -v`
 Expected: PASS
 
-- [ ] **Step 6: Commit changes**
+- [x] **Step 6: Commit changes**
 
 ```bash
 git add internal/ksl/eval/hittest.go internal/ksl/eval/hittest_test.go internal/render/render.go internal/cli/run.go

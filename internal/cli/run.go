@@ -134,7 +134,7 @@ func runHost(args []string) int {
 		if !l.IsOpen() {
 			return
 		}
-		if !rdr.BandContains(x, y) {
+		if !rdr.Contains(x, y) {
 			l.Close()
 			return
 		}

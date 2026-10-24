@@ -68,7 +68,7 @@ Window {
             scroll: center
             overflow: cycle
             template {
-                Group#card { width: 360, height: $reveal.ch - 80, minH: 130
+                Group#card { width: $card_width, height: $reveal.ch - 80, minH: 130
                     Card { }
                 }
             }
@@ -85,20 +85,20 @@ Window {
     // reads as sliding out from under the reel. The explicit height makes
     // the group's centre the rotation pivot.
     Group#panel {
-        x: $reveal.frameX + ($reveal.cw - 360) / 2
+        x: $reveal.frameX + ($reveal.cw - $card_width) / 2
         y: $reveal.y + ($reveal.hLeft + $reveal.hRight) / 4 + 4
-        width: 360
+        width: $card_width
         height: $panel.rows.len * 46 - 6
         rotate: $reveal.angle
         when: $panel.open
         List {
-            width: 360
+            width: $card_width
             items: $panel.rows, selected: $panel.focus
             orientation: vertical
             gap: 6
             overflow: clamp
             template {
-                Group#prow { width: 360, height: 40
+                Group#prow { width: $card_width, height: 40
                     RowAction   { when: $item.kind == "action" }
                     RowRange    { when: $item.kind == "range" }
                     RowToggle   { when: $item.kind == "toggle" }
@@ -116,14 +116,14 @@ Window {
 
 def RowAction {
     Pill {
-        width: 360, height: 40, radius: 6
+        width: $card_width, height: 40, radius: 6
         text: $item.title, fill: $slab, color: $ink
         state selected { fill: $accent, color: $slab }
     }
 }
 
 def RowRange {
-    Box { width: 360, height: 40, radius: 6, fill: $slab, border: $muted
+    Box { width: $card_width, height: 40, radius: 6, fill: $slab, border: $muted
         state selected { border: $accent }
         Row { x: 10, width: 340, height: 40, gap: 10, align: center
             Box { width: 64, height: 24, radius: 4, fill: $surface-alt
@@ -139,7 +139,7 @@ def RowRange {
 }
 
 def RowToggle {
-    Box { width: 360, height: 40, radius: 6, fill: $slab, border: $muted
+    Box { width: $card_width, height: 40, radius: 6, fill: $slab, border: $muted
         state selected { border: $accent }
         Row { x: 10, width: 340, height: 40, gap: 10, align: center
             Box { width: 64, height: 24, radius: 4, fill: $surface-alt
@@ -152,7 +152,7 @@ def RowToggle {
 }
 
 def RowChoice {
-    Box { width: 360, height: 40, radius: 6, fill: $slab, border: $muted
+    Box { width: $card_width, height: 40, radius: 6, fill: $slab, border: $muted
         state selected { border: $accent }
         Row { x: 10, width: 340, height: 40, gap: 10, align: center
             Box { width: 64, height: 24, radius: 4, fill: $surface-alt
@@ -164,7 +164,7 @@ def RowChoice {
 }
 
 def RowText {
-    Box { width: 360, height: 40, radius: 6, fill: $slab, border: $muted
+    Box { width: $card_width, height: 40, radius: 6, fill: $slab, border: $muted
         state selected { border: $accent }
         Row { x: 10, width: 340, height: 40, gap: 10, align: center
             Box { width: 64, height: 24, radius: 4, fill: $surface-alt

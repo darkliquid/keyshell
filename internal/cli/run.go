@@ -166,7 +166,9 @@ func runHost(args []string) int {
 // covering the in-process backends plus every configured plugin instance.
 func newLauncher(cfg config.Config, provider backend.BackendProvider) *launcher.Launcher {
 	var reg *backend.ProviderRegistry
-	if rp, ok := provider.(interface{ Registry() *backend.ProviderRegistry }); ok {
+	if rp, ok := provider.(interface {
+		Registry() *backend.ProviderRegistry
+	}); ok {
 		reg = rp.Registry()
 	}
 	return launcher.New(provider, newLauncherOptions(cfg, reg))

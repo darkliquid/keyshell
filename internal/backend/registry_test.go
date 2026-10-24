@@ -9,13 +9,13 @@ import (
 )
 
 type dummyPlugin struct {
-	info        sdk.BackendInfo
-	items       []sdk.Item
-	queryErr    error
-	lastChange  sdk.Change
-	lastInvoke  sdk.Invoke
-	controlErr  error
-	invokeErr   error
+	info       sdk.BackendInfo
+	items      []sdk.Item
+	queryErr   error
+	lastChange sdk.Change
+	lastInvoke sdk.Invoke
+	controlErr error
+	invokeErr  error
 }
 
 func (d *dummyPlugin) Info() sdk.BackendInfo { return d.info }

@@ -218,4 +218,3 @@ func TestHybridProviderHotStartSpawnsHotPlugin(t *testing.T) {
 		t.Errorf("lazy-plugin should not be spawned by HotStart, got %v", lazyEntry)
 	}
 }
-

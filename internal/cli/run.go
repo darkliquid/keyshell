@@ -18,6 +18,7 @@ import (
 	"github.com/darkliquid/keyshell/internal/launcher"
 	"github.com/darkliquid/keyshell/internal/rank"
 	"github.com/darkliquid/keyshell/internal/render"
+	"github.com/darkliquid/keyshell/internal/surface"
 	"github.com/darkliquid/keyshell/internal/telemetry"
 	"github.com/darkliquid/keyshell/internal/theme"
 	"github.com/gogpu/gogpu"
@@ -57,14 +58,6 @@ func runHost(args []string) int {
 	}
 	defer th.Close()
 
-	// gogpu gates frames on the compositor's callback and drops a redraw that
-	// arrives while one is in flight. A close is exactly that case: the band
-	// stays on screen because nothing retries once the callback never comes
-	// for a surface the compositor sees as undamaged. Run without the gate.
-	if os.Getenv("GOGPU_WAYLAND_FRAME_CALLBACK") == "" {
-		_ = os.Setenv("GOGPU_WAYLAND_FRAME_CALLBACK", "0")
-	}
-
 	provider := buildProvider(cfg)
 	telemetry.PluginCountFunc = provider.ActiveCount
 	provider.HotStart(cfg)
@@ -91,32 +84,24 @@ func runHost(args []string) int {
 	})
 
 	screenW, screenH := display.Primary()
-	if screenW <= 0 || screenH <= 0 {
-		screenW, screenH = 1920, 1080
+	surfHost := surface.NewHost()
+	if err := surfHost.Init(surface.SurfaceConfig{
+		Width:       screenW,
+		Height:      screenH,
+		Title:       "keyshell",
+		Namespace:   "keyshell",
+		Transparent: true,
+	}); err != nil {
+		fmt.Fprintln(os.Stderr, "surface init:", err)
+		return 1
 	}
-	app := gogpu.NewApp(gogpu.DefaultConfig().
-		WithTitle("keyshell").
-		WithSize(screenW, screenH).
-		WithTransparent(true).
-		// The overlay animates while visible, so it renders every vsync
-		// instead of waiting for a redraw request; the presenter skips all
-		// drawing while it is hidden.
-		WithContinuousRender(true).
-		WithLayerShell(gogpu.LayerShellConfig{
-			Namespace:     "keyshell",
-			Layer:         gogpu.LayerShellOverlay,
-			Anchor:        gogpu.LayerShellAnchorTop | gogpu.LayerShellAnchorBottom | gogpu.LayerShellAnchorLeft | gogpu.LayerShellAnchorRight,
-			Width:         int32(screenW),
-			Height:        int32(screenH),
-			Keyboard:      gogpu.LayerShellKeyboardOnDemand,
-			ExclusiveZone: -1,
-		}))
+	app := surfHost.App()
 
 	rdr := render.NewConfigured(cfg)
 	watchScene(ctx, hf, cfg, rdr, app)
 
 	// Wire input.
-	in := input.New(l, app.EventSource())
+	in := input.New(l, surfHost.EventSource())
 
 	// Serve the IPC socket.
 	if ln, err := ipc.Listen(); err == nil {
@@ -131,23 +116,15 @@ func runHost(args []string) int {
 	// each show: exclusive while open, none while hidden. Exclusive is what
 	// makes a summon take typing immediately; a mapped layer surface cannot be
 	// focused by clicking it, so pointer presses re-request it below.
-	var keyboardMode atomic.Value
-	keyboardMode.Store(gogpu.LayerShellKeyboardNone)
+	var keyboardActive atomic.Bool
 	l.OnChange(func() {
-		want := gogpu.LayerShellKeyboardNone
-		interactive := false
-		if l.IsOpen() {
-			want = gogpu.LayerShellKeyboardExclusive
-			interactive = true
-		}
-		if keyboardMode.Load() == want {
+		open := l.IsOpen()
+		if !keyboardActive.CompareAndSwap(!open, open) {
 			return
 		}
-		keyboardMode.Store(want)
-		_ = app.SetLayerKeyboardInteractivity(want)
-		// A hidden fullscreen surface would otherwise keep swallowing every
-		// click: empty the input region, and restore it on show.
-		_ = app.SetInputRegion(interactive)
+		_ = surfHost.SetVisible(open)
+		_ = surfHost.SetKeyboardFocus(open)
+		_ = surfHost.SetInputRegion(open)
 	})
 
 	// A click on the scrim dismisses, and a click on the band asks the
@@ -161,8 +138,8 @@ func runHost(args []string) int {
 			l.Close()
 			return
 		}
-		_ = app.SetLayerKeyboardInteractivity(gogpu.LayerShellKeyboardNone)
-		_ = app.SetLayerKeyboardInteractivity(gogpu.LayerShellKeyboardExclusive)
+		_ = surfHost.SetKeyboardFocus(false)
+		_ = surfHost.SetKeyboardFocus(true)
 	})
 
 	// Run interactively from a terminal: show the overlay immediately so the
@@ -175,7 +152,7 @@ func runHost(args []string) int {
 	// A signal quits the loop, so the deferred telemetry shutdown can flush.
 	go func() {
 		<-ctx.Done()
-		app.Quit()
+		surfHost.Quit()
 	}()
 
 	if err := render.Present(app, l, th, render.PresentConfig{Width: screenW, Height: screenH, Namespace: "keyshell", Reveal: cfg.Reveal, Renderer: rdr}); err != nil {

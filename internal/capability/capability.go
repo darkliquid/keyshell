@@ -33,13 +33,13 @@ func New(cfg config.Config) *Broker {
 			if argv := cfg.Commands.Copy; len(argv) > 0 {
 				return runDetached(argv[0], append(argv[1:], s)...)
 			}
-			return exec.Command("wl-copy", s).Run()
+			return defaultCopy(s)
 		},
 		openURLCmd: func(url string) error {
 			if argv := cfg.Commands.OpenURL; len(argv) > 0 {
 				return runDetached(argv[0], append(argv[1:], url)...)
 			}
-			return runDetached("xdg-open", url)
+			return defaultOpenURL(url)
 		},
 		execCmd: func(argv []string) error {
 			return runDetached(argv[0], argv[1:]...)

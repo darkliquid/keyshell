@@ -5,13 +5,15 @@ package theme
 
 import (
 	"fmt"
+	"os"
 	"sync"
 
 	"github.com/gogpu/gg"
 	"github.com/gogpu/gg/text"
+	"golang.org/x/image/font/gofont/gobold"
 )
 
-// DefaultFace is the display face the design is built on. It is the Black
+// DefaultFace is the preferred display face when available. It is the Black
 // Italic instance of Red Hat Display, which is what the QML theme requests.
 const DefaultFace = "/usr/share/fonts/redhat/RedHatDisplay-BlackItalic.otf"
 
@@ -28,9 +30,51 @@ type Theme struct {
 	mu     sync.Mutex
 }
 
-// Load builds the theme from the default face.
+var fontCandidates = platformFontCandidates
+
+// ResolveFont returns the path of a font file on disk if found, or empty if fallback is used.
+func ResolveFont(preferred string) string {
+	if preferred != "" && fileExists(preferred) {
+		return preferred
+	}
+	for _, path := range fontCandidates() {
+		if fileExists(path) {
+			return path
+		}
+	}
+	return ""
+}
+
+// ResolveFontSource loads a font source from preferred path, platform candidates,
+// or the embedded Go Bold font fallback.
+func ResolveFontSource(preferred string) (*text.FontSource, error) {
+	path := ResolveFont(preferred)
+	if path != "" {
+		source, err := text.NewFontSourceFromFile(path)
+		if err == nil {
+			return source, nil
+		}
+	}
+	return loadEmbeddedFont()
+}
+
+func loadEmbeddedFont() (*text.FontSource, error) {
+	return text.NewFontSource(gobold.TTF)
+}
+
+func fileExists(p string) bool {
+	st, err := os.Stat(p)
+	return err == nil && !st.IsDir()
+}
+
+// Load builds the theme from the default font cascade.
 func Load() (*Theme, error) {
-	source, err := text.NewFontSourceFromFile(DefaultFace)
+	return LoadWithFont("")
+}
+
+// LoadWithFont builds the theme using a preferred font path or fallback cascade.
+func LoadWithFont(preferred string) (*Theme, error) {
+	source, err := ResolveFontSource(preferred)
 	if err != nil {
 		return nil, fmt.Errorf("load display face: %w", err)
 	}
@@ -56,10 +100,17 @@ func (t *Theme) Face(size float64) text.Face {
 
 // Close releases the font source.
 func (t *Theme) Close() error {
+	if t == nil {
+		return nil
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	if t.source == nil {
 		return nil
 	}
-	return t.source.Close()
+	err := t.source.Close()
+	t.source = nil
+	return err
 }
 
 // hex parses "#RRGGBB" into a gg colour.

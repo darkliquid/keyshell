@@ -9,6 +9,18 @@ import (
 	"github.com/darkliquid/keyshell/internal/config"
 )
 
+// TestDefaultCommandsConfigured verifies default copy and openURL handlers are initialized.
+func TestDefaultCommandsConfigured(t *testing.T) {
+	cfg := config.Config{}
+	b := New(cfg)
+	if b.copyCmd == nil {
+		t.Fatal("expected non-nil copyCmd")
+	}
+	if b.openURLCmd == nil {
+		t.Fatal("expected non-nil openURLCmd")
+	}
+}
+
 // TestExecuteCopyRoutesToCopyCmd verifies copy actions use the injected copy
 // command.
 func TestExecuteCopyRoutesToCopyCmd(t *testing.T) {
@@ -21,6 +33,21 @@ func TestExecuteCopyRoutesToCopyCmd(t *testing.T) {
 	}
 	if got != "hello" {
 		t.Errorf("copy got %q, want hello", got)
+	}
+}
+
+// TestExecuteOpenURLRoutesToOpenURLCmd verifies open-url actions use the injected
+// openURL command.
+func TestExecuteOpenURLRoutesToOpenURLCmd(t *testing.T) {
+	var got string
+	b := New(config.Default())
+	b.openURLCmd = func(url string) error { got = url; return nil }
+
+	if err := b.Execute(backend.Action{Type: "open-url", Value: "https://example.com"}); err != nil {
+		t.Fatalf("Execute = err %v", err)
+	}
+	if got != "https://example.com" {
+		t.Errorf("open-url got %q, want https://example.com", got)
 	}
 }
 

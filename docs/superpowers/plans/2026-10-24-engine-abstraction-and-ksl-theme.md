@@ -621,7 +621,7 @@ git commit -m "feat(render): scene-driven hit-testing replacing hardcoded BandCo
 - Modify: `internal/cli/run.go:167-200`
 - Modify: `internal/launcher/launcher.go:425-430`
 
-- [ ] **Step 1: Write failing test for `ProviderRegistry`**
+- [x] **Step 1: Write failing test for `ProviderRegistry`**
 
 Create `internal/backend/registry_test.go`:
 ```go
@@ -663,12 +663,12 @@ func TestRegistryDynamicModesAndSearchable(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/backend -run TestRegistryDynamicModesAndSearchable -v`
 Expected: FAIL with `undefined: NewRegistry`
 
-- [ ] **Step 3: Implement `ProviderRegistry` and `InProcAdapter`**
+- [x] **Step 3: Implement `ProviderRegistry` and `InProcAdapter`**
 
 Create `internal/backend/registry.go`:
 ```go
@@ -821,17 +821,17 @@ func newLauncherOptions(cfg config.Config, reg *backend.ProviderRegistry) launch
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./internal/backend -run TestRegistryDynamicModesAndSearchable -v`
 Expected: PASS
 
-- [ ] **Step 5: Run full CLI and launcher test suite**
+- [x] **Step 5: Run full CLI and launcher test suite**
 
 Run: `go test ./internal/backend ./internal/cli ./internal/launcher -v`
 Expected: PASS
 
-- [ ] **Step 6: Commit changes**
+- [x] **Step 6: Commit changes**
 
 ```bash
 git add internal/backend/registry.go internal/backend/registry_test.go internal/cli/ internal/launcher/

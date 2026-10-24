@@ -98,7 +98,7 @@ func queryOneShot(mode, text string, limit int, timeout time.Duration, configPat
 	}
 	provider := buildProvider(cfg)
 	provider.HotStart(cfg)
-	l := launcher.New(provider, newLauncherOptions(cfg))
+	l := launcher.New(provider, newLauncherOptions(cfg, provider.Registry()))
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	matches, err := l.QuerySync(ctx, mode, text, limit)

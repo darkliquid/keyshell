@@ -63,7 +63,7 @@ func runHost(args []string) int {
 	provider.HotStart(cfg)
 	l := newLauncher(cfg, provider)
 	l.Start()
-	provider.Warm(newLauncherOptions(cfg).Searchable...)
+	provider.Warm(newLauncherOptions(cfg, provider.Registry()).Searchable...)
 
 	// The launcher queues host actions on Enter; the capability broker
 	// performs them. Drain on every change so activation works in the GUI
@@ -165,32 +165,29 @@ func runHost(args []string) int {
 // newLauncher builds the launcher for a config, with the searchable set
 // covering the in-process backends plus every configured plugin instance.
 func newLauncher(cfg config.Config, provider backend.BackendProvider) *launcher.Launcher {
-	// Queries run on a worker and publish through channels, so a plugin that
-	// shells out never stalls the frame loop.
-	return launcher.New(provider, newLauncherOptions(cfg))
+	var reg *backend.ProviderRegistry
+	if rp, ok := provider.(interface{ Registry() *backend.ProviderRegistry }); ok {
+		reg = rp.Registry()
+	}
+	return launcher.New(provider, newLauncherOptions(cfg, reg))
 }
 
 // newLauncherOptions derives the launcher options from the config.
-func newLauncherOptions(cfg config.Config) launcher.Options {
-	searchable := []string{"apps", "files", "windows"}
-	var nonSearchable []string
-	for _, inst := range cfg.Instances {
-		if inst.Searchable != nil && !*inst.Searchable {
-			nonSearchable = append(nonSearchable, inst.ID)
-		} else {
-			searchable = append(searchable, inst.ID)
-		}
+func newLauncherOptions(cfg config.Config, regs ...*backend.ProviderRegistry) launcher.Options {
+	var reg *backend.ProviderRegistry
+	if len(regs) > 0 && regs[0] != nil {
+		reg = regs[0]
+	} else {
+		reg = buildProvider(cfg).Registry()
 	}
-	// Tab walks the merged search, then the searchable modes, then the
-	// trigger-only in-process backends (calc, run) and any non-searchable
-	// plugins so every mode is reachable from the keyboard.
-	modes := append([]string{launcher.MergedMode}, searchable...)
-	modes = append(modes, "calc", "run")
-	modes = append(modes, nonSearchable...)
+	modes := reg.Modes()
+	if len(modes) > 0 && modes[0] == "" {
+		modes = append([]string{launcher.MergedMode}, modes[1:]...)
+	}
 	return launcher.Options{
 		SettleMs:   settleDuration(cfg.Overlay.SettleMs),
 		RankOpts:   rank.Options{Limit: cfg.Overlay.MaxResults},
-		Searchable: searchable,
+		Searchable: reg.SearchableIDs(),
 		Modes:      modes,
 	}
 }

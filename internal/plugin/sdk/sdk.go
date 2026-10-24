@@ -21,16 +21,23 @@ import (
 // Re-exported backend shapes so plugins depend on the SDK, not the host.
 // (Aliases: the wire conversion in serve.go bridges these to proto types.)
 type (
-	Item    = ItemShape
-	Control = ControlSpecShape
-	Action  = ActionShape
-	Query   = QueryShape
-	Change  = ChangeShape
-	Info    = InfoShape
-	Stream  = StreamShape
-	Backend = BackendShape
-	Invoke  = InvokeShape
+	Item        = ItemShape
+	Control     = ControlSpecShape
+	Action      = ActionShape
+	Query       = QueryShape
+	Change      = ChangeShape
+	Info        = InfoShape
+	BackendInfo = InfoShape
+	Stream      = StreamShape
+	Backend     = BackendShape
+	Invoke      = InvokeShape
 )
+
+// Plugin is implemented by plugins that declare their identity alongside backend behavior.
+type Plugin interface {
+	Info() BackendInfo
+	Backend
+}
 
 // ItemShape is one result.
 type ItemShape struct {

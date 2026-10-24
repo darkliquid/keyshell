@@ -114,6 +114,17 @@ func New(provider backend.BackendProvider, opts Options) *Launcher {
 	if opts.SettleMs == 0 {
 		opts.SettleMs = 80 * time.Millisecond
 	}
+	if len(opts.Modes) > 0 {
+		modes := make([]string, len(opts.Modes))
+		for i, m := range opts.Modes {
+			if m == "" {
+				modes[i] = MergedMode
+			} else {
+				modes[i] = m
+			}
+		}
+		opts.Modes = modes
+	}
 	return &Launcher{provider: provider, opts: opts, mode: MergedMode, badge: "SEARCH"}
 }
 
@@ -430,7 +441,7 @@ func (l *Launcher) Select(delta int) {
 }
 
 func (l *Launcher) searchableIDs() []string {
-	if len(l.opts.Searchable) > 0 {
+	if l.opts.Searchable != nil {
 		return l.opts.Searchable
 	}
 	return []string{"apps", "files", "windows"}

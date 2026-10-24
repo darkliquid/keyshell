@@ -1307,3 +1307,38 @@ func TestLauncherExternalPluginNonSearchable(t *testing.T) {
 		t.Errorf("expected Title = 42, got %q", calcResults[0].Item.Title)
 	}
 }
+
+func TestEmptySearchable(t *testing.T) {
+	prov := &fakeProvider{backends: map[string]backend.Backend{}}
+	l := New(prov, Options{
+		Searchable: []string{},
+		RankOpts:   rank.Options{Limit: 10},
+	})
+	l.Open()
+	l.SetQuery("test")
+	results := l.Results()
+	if len(results) != 0 {
+		t.Errorf("expected 0 results with empty Searchable, got %d", len(results))
+	}
+	modes := l.Modes()
+	if len(modes) != 1 || modes[0] != MergedMode {
+		t.Errorf("Modes = %v, want [%q]", modes, MergedMode)
+	}
+}
+
+func TestLauncherModeNormalization(t *testing.T) {
+	prov := &fakeProvider{backends: map[string]backend.Backend{}}
+	l := New(prov, Options{
+		Modes: []string{"", "apps", "files"},
+	})
+	modes := l.Modes()
+	if len(modes) != 3 {
+		t.Fatalf("Modes len = %d, want 3", len(modes))
+	}
+	if modes[0] != MergedMode {
+		t.Errorf("modes[0] = %q, want %q", modes[0], MergedMode)
+	}
+	if modes[1] != "apps" || modes[2] != "files" {
+		t.Errorf("modes = %v, want [%s apps files]", modes, MergedMode)
+	}
+}

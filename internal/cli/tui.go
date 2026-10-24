@@ -57,15 +57,16 @@ func runTUI(args []string) int {
 
 	provider := buildProvider(cfg)
 	provider.HotStart(cfg)
-	l := launcher.New(provider, newLauncherOptions(cfg))
+	opts := newLauncherOptions(cfg, provider.Registry())
+	l := launcher.New(provider, opts)
 	l.Start()
-	provider.Warm(newLauncherOptions(cfg).Searchable...)
+	provider.Warm(opts.Searchable...)
 
 	st := &tuiState{
 		l:        l,
 		provider: provider,
 		broker:   capability.New(cfg),
-		modes:    append([]string{launcher.MergedMode}, newLauncherOptions(cfg).Searchable...),
+		modes:    append([]string{launcher.MergedMode}, opts.Searchable...),
 		maxShown: *maxShown,
 	}
 	if *mode != "" {

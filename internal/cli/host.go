@@ -163,26 +163,163 @@ func loadConfig(hf hostFlags) (config.Config, error) {
 	return cfg, nil
 }
 
+type inprocBackendFactory struct {
+	info backend.Info
+	make func(config.Config) (backend.Backend, error)
+}
+
+var inprocBackends = []inprocBackendFactory{
+	{
+		info: backend.Info{ID: "apps", Name: "Applications", Badge: "APPS", Searchable: true, Trackable: true, StableIDs: true},
+		make: apps.New,
+	},
+	{
+		info: backend.Info{ID: "files", Name: "Files", Badge: "FILES", Searchable: true, Trackable: true, StableIDs: true},
+		make: files.New,
+	},
+	{
+		info: backend.Info{ID: "windows", Name: "Windows", Badge: "WIN", Searchable: true, Trackable: true, StableIDs: false},
+		make: windows.New,
+	},
+	{
+		info: backend.Info{ID: "calc", Name: "Calculator", Badge: "CALC", Trigger: "=", Searchable: false, Trackable: false, StableIDs: false},
+		make: calc.New,
+	},
+	{
+		info: backend.Info{ID: "run", Name: "Run Command", Badge: "RUN", Trigger: "!", Searchable: false, Trackable: false, StableIDs: false},
+		make: run.New,
+	},
+}
+
+type lazyBackend struct {
+	info backend.Info
+	init func() (backend.Backend, error)
+	mu   sync.Mutex
+	b    backend.Backend
+}
+
+func (l *lazyBackend) Info() backend.Info { return l.info }
+
+func (l *lazyBackend) get() (backend.Backend, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.b != nil {
+		return l.b, nil
+	}
+	b, err := l.init()
+	if err != nil {
+		return nil, err
+	}
+	l.b = b
+	return b, nil
+}
+
+func (l *lazyBackend) Query(ctx context.Context, q backend.Query) (backend.Stream, error) {
+	b, err := l.get()
+	if err != nil {
+		return nil, err
+	}
+	return b.Query(ctx, q)
+}
+
+func (l *lazyBackend) Control(ctx context.Context, c backend.Change) error {
+	b, err := l.get()
+	if err != nil {
+		return err
+	}
+	return b.Control(ctx, c)
+}
+
+func (l *lazyBackend) Invoke(ctx context.Context, i backend.Invoke) error {
+	b, err := l.get()
+	if err != nil {
+		return err
+	}
+	if inv, ok := b.(backend.Invoker); ok {
+		return inv.Invoke(ctx, i)
+	}
+	return nil
+}
+
+func (l *lazyBackend) Close() error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.b != nil {
+		return l.b.Close()
+	}
+	return nil
+}
+
+type pluginInstanceBackend struct {
+	hp   *hybridProvider
+	id   string
+	info backend.Info
+}
+
+func (b *pluginInstanceBackend) Info() backend.Info {
+	b.hp.mu.Lock()
+	e, ok := b.hp.hosts[b.id]
+	b.hp.mu.Unlock()
+	if ok && e != nil {
+		select {
+		case <-e.ready:
+			if e.err == nil && e.host != nil && e.host.Alive() {
+				info := e.host.Info()
+				info.ID = b.id
+				info.Searchable = b.info.Searchable
+				return info
+			}
+		default:
+		}
+	}
+	return b.info
+}
+
+func (b *pluginInstanceBackend) Query(ctx context.Context, q backend.Query) (backend.Stream, error) {
+	h, err := b.hp.getHost(b.id)
+	if err != nil {
+		return nil, err
+	}
+	return h.Query(ctx, q)
+}
+
+func (b *pluginInstanceBackend) Control(ctx context.Context, c backend.Change) error {
+	h, err := b.hp.getHost(b.id)
+	if err != nil {
+		return err
+	}
+	return h.Control(ctx, c)
+}
+
+func (b *pluginInstanceBackend) Invoke(ctx context.Context, i backend.Invoke) error {
+	h, err := b.hp.getHost(b.id)
+	if err != nil {
+		return err
+	}
+	return h.Invoke(ctx, i)
+}
+
+func (b *pluginInstanceBackend) Close() error {
+	return nil
+}
+
 // buildProvider serves configured plugin instances as subprocesses and falls
 // back to in-process backends for the rest. Plugin instances start lazily on
 // first use. It returns the concrete provider so hosts can hot-start plugins
 // and report the active count without asserting through the interface.
 func buildProvider(cfg config.Config) *hybridProvider {
-	inproc := backend.NewInProc(func(id string, c config.Config) (backend.Backend, error) {
-		switch id {
-		case "apps":
-			return apps.New(c)
-		case "files":
-			return files.New(c)
-		case "windows":
-			return windows.New(c)
-		case "calc":
-			return calc.New(c)
-		case "run":
-			return run.New(c)
-		}
-		return nil, fmt.Errorf("unknown backend %q", id)
-	})
+	reg := backend.NewRegistry()
+
+	// Register in-process backends lazily.
+	for _, factory := range inprocBackends {
+		f := factory
+		reg.RegisterBackend(f.info.ID, &lazyBackend{
+			info: f.info,
+			init: func() (backend.Backend, error) {
+				return f.make(cfg)
+			},
+		})
+	}
 
 	plugins := map[string]plugin.Launch{}
 	self, err := os.Executable()
@@ -209,11 +346,32 @@ func buildProvider(cfg config.Config) *hybridProvider {
 			Config:   cfgBytes,
 		}
 	}
-	return &hybridProvider{inproc: inproc, plugins: plugins}
+
+	hp := &hybridProvider{
+		reg:     reg,
+		plugins: plugins,
+	}
+
+	for _, inst := range cfg.Instances {
+		searchable := true
+		if inst.Searchable != nil {
+			searchable = *inst.Searchable
+		}
+		reg.RegisterBackend(inst.ID, &pluginInstanceBackend{
+			hp: hp,
+			id: inst.ID,
+			info: backend.Info{
+				ID:         inst.ID,
+				Searchable: searchable,
+			},
+		})
+	}
+
+	return hp
 }
 
 type hybridProvider struct {
-	inproc  backend.BackendProvider
+	reg     *backend.ProviderRegistry
 	plugins map[string]plugin.Launch
 
 	// Plugin processes are started once and reused: spawning one per query
@@ -222,6 +380,11 @@ type hybridProvider struct {
 	// provider mutex, so one plugin's spawn never stalls another's query.
 	mu    sync.Mutex
 	hosts map[string]*hostEntry
+}
+
+// Registry returns the underlying backend provider registry.
+func (p *hybridProvider) Registry() *backend.ProviderRegistry {
+	return p.reg
 }
 
 // hostEntry is one plugin process slot. ready closes when its Start settles;
@@ -233,9 +396,13 @@ type hostEntry struct {
 }
 
 func (p *hybridProvider) Get(id string) (backend.Backend, error) {
+	return p.reg.Get(id)
+}
+
+func (p *hybridProvider) getHost(id string) (*plugin.Host, error) {
 	launch, ok := p.plugins[id]
 	if !ok {
-		return p.inproc.Get(id)
+		return nil, fmt.Errorf("unknown plugin %q", id)
 	}
 	for {
 		p.mu.Lock()
@@ -305,7 +472,7 @@ func (p *hybridProvider) HotStart(cfg config.Config) {
 			continue
 		}
 		go func(id string) {
-			_, _ = p.Get(id)
+			_, _ = p.getHost(id)
 		}(inst.ID)
 	}
 }
@@ -319,7 +486,11 @@ func (p *hybridProvider) Warm(ids ...string) {
 			continue
 		}
 		go func(id string) {
-			_, _ = p.inproc.Get(id)
+			if b, err := p.reg.Get(id); err == nil {
+				if lb, ok := b.(*lazyBackend); ok {
+					_, _ = lb.get()
+				}
+			}
 		}(id)
 	}
 }
@@ -331,37 +502,47 @@ type pluginBackend interface {
 	sdk.Backend
 }
 
-// runPlugin starts a plugin in SDK mode.
-func runPlugin(name string) int {
-	var b pluginBackend
-	switch name {
-	case "audio":
-		b = audioplugin.New()
-	case "media":
-		b = mediaplugin.New()
-	case "network":
+var builtinPlugins = map[string]func() (pluginBackend, error){
+	"audio": func() (pluginBackend, error) {
+		return audioplugin.New(), nil
+	},
+	"media": func() (pluginBackend, error) {
+		return mediaplugin.New(), nil
+	},
+	"network": func() (pluginBackend, error) {
 		nb := netplugin.New()
 		if conn, err := dbus.ConnectSessionBus(); err == nil {
-			defer func() { _ = conn.Close() }()
 			_ = netplugin.NewAgent(nb).Register(conn)
 		}
-		b = nb
-	case "power":
-		b = powerplugin.New()
-	case "clipboard":
-		b = clipplugin.New(clipplugin.StoreConfig{Path: clipplugin.DefaultStorePath()})
-	case "tray":
+		return nb, nil
+	},
+	"power": func() (pluginBackend, error) {
+		return powerplugin.New(), nil
+	},
+	"clipboard": func() (pluginBackend, error) {
+		return clipplugin.New(clipplugin.StoreConfig{Path: clipplugin.DefaultStorePath()}), nil
+	},
+	"tray": func() (pluginBackend, error) {
 		conn, err := dbus.ConnectSessionBus()
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "tray: session bus:", err)
-			return 1
+			return nil, fmt.Errorf("tray: session bus: %w", err)
 		}
-		defer func() { _ = conn.Close() }()
 		w := trayplugin.NewWatcher(conn)
 		_ = w.Serve()
-		b = trayplugin.New(conn, w)
-	default:
+		return trayplugin.New(conn, w), nil
+	},
+}
+
+// runPlugin starts a plugin in SDK mode.
+func runPlugin(name string) int {
+	factory, ok := builtinPlugins[name]
+	if !ok {
 		fmt.Fprintln(os.Stderr, "unknown plugin:", name)
+		return 1
+	}
+	b, err := factory()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
 	return servePlugin(b)

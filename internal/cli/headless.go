@@ -34,7 +34,7 @@ func runHeadless(args []string) int {
 	provider.HotStart(cfg)
 	l := newLauncher(cfg, provider)
 	l.Start()
-	provider.Warm(newLauncherOptions(cfg).Searchable...)
+	provider.Warm(newLauncherOptions(cfg, provider.Registry()).Searchable...)
 	_ = capability.New(cfg)
 
 	ln, err := ipc.Listen()

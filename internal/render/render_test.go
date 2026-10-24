@@ -92,10 +92,10 @@ func (v *fakeView) ModeBadge() string {
 	}
 	return "SEARCH"
 }
-func (v *fakeView) PanelOpen() bool        { return v.panelOpen }
+func (v *fakeView) PanelOpen() bool               { return v.panelOpen }
 func (v *fakeView) PanelRows() []backend.PanelRow { return v.panelRows }
-func (v *fakeView) PanelFocus() int        { return v.panelFocus }
-func (v *fakeView) PanelDirty() bool       { return v.panelDirty }
+func (v *fakeView) PanelFocus() int               { return v.panelFocus }
+func (v *fakeView) PanelDirty() bool              { return v.panelDirty }
 
 // TestDrawFrameSearchingIndicator proves an in-flight query paints the busy
 // strip: pixels just under the search row differ between an idle and a
@@ -175,8 +175,12 @@ func TestDrawFramePanelPaintsRows(t *testing.T) {
 			r.scene.DrawPanelOverlay(dc, th)
 		}
 		dur := time.Since(t0)
-		if dur > 40*time.Millisecond {
-			t.Errorf("frame took %v, want < 40ms", dur)
+		budget := 40 * time.Millisecond
+		if isRaceEnabled() {
+			budget = 500 * time.Millisecond
+		}
+		if dur > budget {
+			t.Errorf("frame took %v, want < %v", dur, budget)
 		}
 		return dc.Image().(*image.RGBA)
 	}

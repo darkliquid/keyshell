@@ -307,8 +307,12 @@ func TestDropdownSceneLargeResultVirtualizationAndClipping(t *testing.T) {
 	sr.DrawFrame(dc, view, th, cfg.Reveal)
 	dur := time.Since(start)
 
-	if dur > 50*time.Millisecond {
-		t.Errorf("DrawFrame took %v, want < 50ms for virtualized dropdown", dur)
+	budget := 50 * time.Millisecond
+	if isRaceEnabled() {
+		budget = 500 * time.Millisecond
+	}
+	if dur > budget {
+		t.Errorf("DrawFrame took %v, want < %v for virtualized dropdown", dur, budget)
 	}
 
 	checkLeaks := func(t *testing.T, label string) {
@@ -531,5 +535,98 @@ func TestDropdownSceneLongItemNoOverflow(t *testing.T) {
 	}
 	if outsideLeaks > 0 {
 		t.Errorf("long item caused %d painted pixels outside dropdown bounds", outsideLeaks)
+	}
+}
+
+func TestSceneThemeVariablesOverride(t *testing.T) {
+	th, err := theme.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer th.Close()
+
+	src := `
+theme {
+    accent: #00FFC2
+    card_width: 320
+    custom_label: "scene_val"
+}
+Window {
+    Box {
+        fill: $accent
+        width: $card_width
+        label: $custom_label
+    }
+}
+`
+	s, err := parseScene("override_test.ksl", []byte(src), nil)
+	if err != nil {
+		t.Fatalf("parseScene failed: %v", err)
+	}
+
+	cfg := config.Default()
+	cfg.Theme = map[string]any{
+		"accent":       "#08F7FE",
+		"card_width":   450.0,
+		"custom_label": "config_val",
+	}
+
+	sr := NewSceneRenderer(New(), cfg)
+	sr.SetScene(s)
+
+	v := &fakeView{open: true}
+	rev := Reveal{YLeft: 100, YRight: 120, HLeft: 64, HRight: 80, Angle: 0.02, Shear: -0.25}
+	st := sr.state(v, th, rev, cfg.Reveal)
+
+	// Check st.Vars contains coerced values from cfg.Theme
+	wantColor := eval.Color{R: 0x08, G: 0xF7, B: 0xFE, A: 0xFF}
+	if gotColor, ok := st.Vars["accent"].(eval.Color); !ok || gotColor != wantColor {
+		t.Errorf("st.Vars[accent] = %#v (%T), want %#v", st.Vars["accent"], st.Vars["accent"], wantColor)
+	}
+	if gotWidth, ok := st.Vars["card_width"].(float64); !ok || gotWidth != 450.0 {
+		t.Errorf("st.Vars[card_width] = %#v, want 450.0", st.Vars["card_width"])
+	}
+	if gotLabel, ok := st.Vars["custom_label"].(string); !ok || gotLabel != "config_val" {
+		t.Errorf("st.Vars[custom_label] = %#v, want config_val", st.Vars["custom_label"])
+	}
+
+	// Resolve the scene with st and verify properties were overridden
+	frame, err := eval.Resolve(s, st, eval.WithMeasurer(themeMeasurer{th}))
+	if err != nil {
+		t.Fatalf("eval.Resolve failed: %v", err)
+	}
+	if len(frame.Nodes) == 0 || len(frame.Root.Children) == 0 {
+		t.Fatal("expected resolved frame with children")
+	}
+	box := frame.Root.Children[0]
+	if c, ok := box.Props["fill"].(eval.Color); !ok || c != wantColor {
+		t.Errorf("box.Props[fill] = %#v, want %#v", box.Props["fill"], wantColor)
+	}
+	if w, ok := box.Props["width"].(eval.Num); !ok || w != 450 {
+		t.Errorf("box.Props[width] = %#v, want Num(450)", box.Props["width"])
+	}
+	if l, ok := box.Props["label"].(eval.Str); !ok || l != "config_val" {
+		t.Errorf("box.Props[label] = %#v, want Str(config_val)", box.Props["label"])
+	}
+}
+
+func TestSceneRendererSetConfig(t *testing.T) {
+	sr := NewSceneRenderer(New(), config.Default())
+	sr.SetConfig(config.Config{
+		Theme: map[string]any{
+			"card_width": int64(480),
+			"accent":     "#00FF00",
+		},
+	})
+	vars := sr.themeVars()
+	if vars == nil {
+		t.Fatal("expected non-nil vars")
+	}
+	if w, ok := vars["card_width"].(float64); !ok || w != 480.0 {
+		t.Errorf("vars[card_width] = %#v (%T), want float64(480)", vars["card_width"], vars["card_width"])
+	}
+	wantColor := eval.Color{R: 0x00, G: 0xFF, B: 0x00, A: 0xFF}
+	if c, ok := vars["accent"].(eval.Color); !ok || c != wantColor {
+		t.Errorf("vars[accent] = %#v (%T), want %#v", vars["accent"], vars["accent"], wantColor)
 	}
 }

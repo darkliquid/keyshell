@@ -9,7 +9,7 @@ import (
 
 // Frame is one resolved scene, ready to paint.
 type Frame struct {
-	Root  *ResolvedNode
+	Root *ResolvedNode
 	// Nodes is a flat list of all resolved nodes in paint order.
 	Nodes []*ResolvedNode
 }
@@ -30,9 +30,9 @@ type ResolvedNode struct {
 	// Selected is true when this node belongs to the active List item.
 	Selected bool
 	// Text is the populated text string from props, if present.
-	Text     string
+	Text string
 	// Size is the populated font or element size from props, if present.
-	Size     float64
+	Size float64
 }
 
 // Option configures resolution.

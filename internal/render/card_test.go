@@ -66,6 +66,7 @@ func TestDrawCardTrayGlyph(t *testing.T) {
 		t.Error("tray glyph visual box was completely empty")
 	}
 }
+
 // of the card rather than starting at the left.
 func TestDrawCardPillsAlignTopRight(t *testing.T) {
 	th, err := theme.Load()

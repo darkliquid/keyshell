@@ -88,6 +88,8 @@ type UI struct {
 
 // Config is the parsed host configuration.
 type Config struct {
+	// Theme holds arbitrary theme token overrides passed to KSL evaluation.
+	Theme     map[string]any `toml:"theme"`
 	Reveal    Reveal
 	Anim      Anim
 	Overlay   Overlay
@@ -101,6 +103,17 @@ type Config struct {
 // TOML overlay.
 func Default() Config {
 	return Config{
+		Theme: map[string]any{
+			"slab":        "#0B0B0F",
+			"surface_alt": "#121218",
+			"ink":         "#F2F2F7",
+			"accent":      "#FF2E63",
+			"accent_alt":  "#08F7FE",
+			"muted":       "#5A5A66",
+			"band_height": 290.0,
+			"min_tilt":    5.0,
+			"card_width":  360.0,
+		},
 		Reveal: Reveal{
 			MinTiltDeg:         5.0,
 			CenterSpreadFactor: 0.10,

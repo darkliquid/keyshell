@@ -215,7 +215,7 @@ git commit -m "feat(ksl): support arbitrary typed theme variables in scene theme
 - Modify: `internal/render/load.go`
 - Test: `internal/render/scene_test.go`
 
-- [ ] **Step 1: Write failing test for config theme cascading**
+- [x] **Step 1: Write failing test for config theme cascading**
 
 In `internal/config/config_test.go`:
 ```go
@@ -240,12 +240,12 @@ min_tilt = 7.5
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/config -run TestConfigThemeVariables -v`
 Expected: FAIL (field `Theme` not defined on `Config`)
 
-- [ ] **Step 3: Replace `config.Reveal` with generic `config.Theme`**
+- [x] **Step 3: Replace `config.Reveal` with generic `config.Theme`**
 
 In `internal/config/config.go`:
 Remove `type Reveal struct`.
@@ -294,17 +294,17 @@ Pass `cfg.Theme` into `eval.State.Vars`:
 ```
 Implement `coerceThemeVal(v any) any` to convert hex strings starting with `#` into `eval.Color`, numbers into `float64`, etc.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./internal/config -run TestConfigThemeVariables -v`
 Expected: PASS
 
-- [ ] **Step 5: Run render tests and ensure clean compilation**
+- [x] **Step 5: Run render tests and ensure clean compilation**
 
 Run: `go test ./internal/config ./internal/render -v`
 Expected: PASS
 
-- [ ] **Step 6: Commit changes**
+- [x] **Step 6: Commit changes**
 
 ```bash
 git add internal/config/ internal/render/

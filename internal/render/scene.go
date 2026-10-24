@@ -8,6 +8,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -134,6 +135,7 @@ func (m themeMeasurer) TextSize(text string, size float64, _ string) (float64, f
 // SceneRenderer drives the frame from a resolved scene. The scene can be
 // swapped live when the file changes on disk.
 type SceneRenderer struct {
+	cfg         config.Config
 	inner       *Renderer
 	scene       *ksl.Scene
 	sceneMu     sync.Mutex
@@ -163,7 +165,22 @@ func NewSceneRenderer(r *Renderer, cfg config.Config) *SceneRenderer {
 			panic(err) // the embedded default is a build-time invariant
 		}
 	}
-	return &SceneRenderer{inner: r, scene: s, seed: 1, randCache: &eval.RandCache{}, clock: anim.NewClock(time.Now()), prevProps: map[string]map[string]eval.Value{}}
+	return &SceneRenderer{
+		cfg:       cfg,
+		inner:     r,
+		scene:     s,
+		seed:      1,
+		randCache: &eval.RandCache{},
+		clock:     anim.NewClock(time.Now()),
+		prevProps: map[string]map[string]eval.Value{},
+	}
+}
+
+// SetConfig updates the configuration, including theme variable overrides.
+func (sr *SceneRenderer) SetConfig(cfg config.Config) {
+	sr.sceneMu.Lock()
+	defer sr.sceneMu.Unlock()
+	sr.cfg = cfg
 }
 
 // SetScene swaps the scene for every subsequent frame. Live scene editing
@@ -185,6 +202,65 @@ func (sr *SceneRenderer) snapshot() (*ksl.Scene, map[string]map[string]eval.Valu
 	defer sr.sceneMu.Unlock()
 	return sr.scene, sr.prevProps
 }
+
+// coerceThemeVal converts arbitrary theme values (from config or TOML)
+// into types expected by KSL evaluation: hex colors starting with '#'
+// into eval.Color, numbers into float64, etc.
+func coerceThemeVal(v any) any {
+	switch val := v.(type) {
+	case string:
+		if strings.HasPrefix(val, "#") {
+			if c, err := eval.HexColor(val); err == nil {
+				return c
+			}
+		}
+		return val
+	case float64:
+		return val
+	case float32:
+		return float64(val)
+	case int:
+		return float64(val)
+	case int64:
+		return float64(val)
+	case int32:
+		return float64(val)
+	case int16:
+		return float64(val)
+	case int8:
+		return float64(val)
+	case uint:
+		return float64(val)
+	case uint64:
+		return float64(val)
+	case uint32:
+		return float64(val)
+	case uint16:
+		return float64(val)
+	case uint8:
+		return float64(val)
+	default:
+		return v
+	}
+}
+
+// themeVars returns a thread-safe snapshot of theme variables coerced for KSL.
+func (sr *SceneRenderer) themeVars() map[string]any {
+	if sr == nil {
+		return nil
+	}
+	sr.sceneMu.Lock()
+	defer sr.sceneMu.Unlock()
+	if len(sr.cfg.Theme) == 0 {
+		return nil
+	}
+	vars := make(map[string]any, len(sr.cfg.Theme))
+	for k, v := range sr.cfg.Theme {
+		vars[k] = coerceThemeVal(v)
+	}
+	return vars
+}
+
 func (sr *SceneRenderer) state(l View, th *theme.Theme, rev Reveal, cfg config.Reveal) eval.State {
 	results := l.Results()
 	items := make([]eval.Item, len(results))
@@ -198,18 +274,19 @@ func (sr *SceneRenderer) state(l View, th *theme.Theme, rev Reveal, cfg config.R
 	if sw <= 0 {
 		sw, sh = 1600, 900
 	}
-mode := l.ModeBadge()
-if mode == "" {
-	mode = "SEARCH"
-}
-panel := eval.Panel{Open: l.PanelOpen(), Focus: l.PanelFocus(), Dirty: l.PanelDirty()}
-if rows := l.PanelRows(); len(rows) > 0 {
-	panel.Rows = make([]eval.Item, len(rows))
-	for i, r := range rows {
-		panel.Rows[i] = rowFromBackend(r)
+	mode := l.ModeBadge()
+	if mode == "" {
+		mode = "SEARCH"
 	}
-}
-return eval.State{
+	panel := eval.Panel{Open: l.PanelOpen(), Focus: l.PanelFocus(), Dirty: l.PanelDirty()}
+	if rows := l.PanelRows(); len(rows) > 0 {
+		panel.Rows = make([]eval.Item, len(rows))
+		for i, r := range rows {
+			panel.Rows[i] = rowFromBackend(r)
+		}
+	}
+	vars := sr.themeVars()
+	return eval.State{
 		Name:      "keyshell",
 		Open:      l.IsOpen(),
 		Focused:   true,
@@ -229,6 +306,7 @@ return eval.State{
 			FrameY: rev.Yc - contentH(rev)/2,
 		},
 		Tokens:    sr.stateTokens,
+		Vars:      vars,
 		Fonts:     map[string]string{"display": theme.DefaultFace},
 		Summon:    sr.summonEpoch,
 		Seed:      sr.seed,

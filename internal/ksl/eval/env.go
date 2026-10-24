@@ -24,8 +24,8 @@ type State struct {
 	// Theme tokens and font registry (spec §4).
 	Tokens map[string]Color
 	// Vars holds theme variables and host overrides (spec §4).
-	Vars   map[string]any
-	Fonts  map[string]string
+	Vars  map[string]any
+	Fonts map[string]string
 
 	// Summon is the per-open epoch for rand(); Seed feeds its draws;
 	// RandCache persists between frames of one summon.

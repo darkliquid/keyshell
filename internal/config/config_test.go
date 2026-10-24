@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+
+	"github.com/BurntSushi/toml"
 )
 
 // TestCommandsReadFromToml proves the [commands] table configures the host
@@ -152,5 +154,58 @@ precision = 10
 	cfgMap, ok := found.Config.(map[string]any)
 	if !ok || cfgMap["precision"] != int64(10) {
 		t.Errorf("Config = %+v, want precision: 10", found.Config)
+	}
+}
+
+func TestConfigThemeVariables(t *testing.T) {
+	raw := `
+[theme]
+accent = "#08F7FE"
+band_height = 320
+card_width = 380
+min_tilt = 7.5
+`
+	var cfg Config
+	if err := toml.Unmarshal([]byte(raw), &cfg); err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
+	}
+	if cfg.Theme["accent"] != "#08F7FE" {
+		t.Errorf("accent = %v, want #08F7FE", cfg.Theme["accent"])
+	}
+	if h, ok := cfg.Theme["band_height"].(int64); !ok || h != 320 {
+		t.Errorf("band_height = %v, want 320", cfg.Theme["band_height"])
+	}
+	if w, ok := cfg.Theme["card_width"].(int64); !ok || w != 380 {
+		t.Errorf("card_width = %v, want 380", cfg.Theme["card_width"])
+	}
+	if tilt, ok := cfg.Theme["min_tilt"].(float64); !ok || tilt != 7.5 {
+		t.Errorf("min_tilt = %v, want 7.5", cfg.Theme["min_tilt"])
+	}
+}
+
+func TestConfigThemeVariablesLoad(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	raw := `
+[theme]
+accent = "#08F7FE"
+band_height = 320
+`
+	if err := os.WriteFile(path, []byte(raw), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load = err %v", err)
+	}
+	if cfg.Theme["accent"] != "#08F7FE" {
+		t.Errorf("accent = %v, want #08F7FE", cfg.Theme["accent"])
+	}
+	if h, ok := cfg.Theme["band_height"].(int64); !ok || h != 320 {
+		t.Errorf("band_height = %v, want 320", cfg.Theme["band_height"])
+	}
+	// Verify defaults are preserved when not overridden:
+	if cfg.Theme["slab"] != "#0B0B0F" {
+		t.Errorf("slab = %v, want #0B0B0F", cfg.Theme["slab"])
 	}
 }

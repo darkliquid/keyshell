@@ -13,18 +13,18 @@ import (
 // stubEvents satisfies gpucontext.EventSource with no-ops.
 type stubEvents struct{}
 
-func (stubEvents) OnKeyPress(func(gpucontext.Key, gpucontext.Modifiers))        {}
-func (stubEvents) OnKeyRelease(func(gpucontext.Key, gpucontext.Modifiers))      {}
-func (stubEvents) OnTextInput(func(string))                                     {}
-func (stubEvents) OnMouseMove(func(float64, float64))                           {}
-func (stubEvents) OnMousePress(func(gpucontext.MouseButton, float64, float64))  {}
+func (stubEvents) OnKeyPress(func(gpucontext.Key, gpucontext.Modifiers))         {}
+func (stubEvents) OnKeyRelease(func(gpucontext.Key, gpucontext.Modifiers))       {}
+func (stubEvents) OnTextInput(func(string))                                      {}
+func (stubEvents) OnMouseMove(func(float64, float64))                            {}
+func (stubEvents) OnMousePress(func(gpucontext.MouseButton, float64, float64))   {}
 func (stubEvents) OnMouseRelease(func(gpucontext.MouseButton, float64, float64)) {}
-func (stubEvents) OnScroll(func(float64, float64))                              {}
-func (stubEvents) OnResize(func(int, int))                                      {}
-func (stubEvents) OnFocus(func(bool))                                           {}
-func (stubEvents) OnIMECompositionStart(func())                               {}
-func (stubEvents) OnIMECompositionUpdate(func(gpucontext.IMEState))             {}
-func (stubEvents) OnIMECompositionEnd(func(string))                             {}
+func (stubEvents) OnScroll(func(float64, float64))                               {}
+func (stubEvents) OnResize(func(int, int))                                       {}
+func (stubEvents) OnFocus(func(bool))                                            {}
+func (stubEvents) OnIMECompositionStart(func())                                  {}
+func (stubEvents) OnIMECompositionUpdate(func(gpucontext.IMEState))              {}
+func (stubEvents) OnIMECompositionEnd(func(string))                              {}
 
 type fakeBackend struct {
 	items []backend.Item
@@ -37,7 +37,7 @@ func (b *fakeBackend) Query(_ context.Context, q backend.Query) (backend.Stream,
 	return &sliceStream{items: b.items}, nil
 }
 func (b *fakeBackend) Control(_ context.Context, _ backend.Change) error { return nil }
-func (b *fakeBackend) Close() error                                       { return nil }
+func (b *fakeBackend) Close() error                                      { return nil }
 
 type sliceStream struct {
 	items []backend.Item

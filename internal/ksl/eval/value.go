@@ -93,6 +93,11 @@ func literal(v ksl.Value) (Value, error) {
 	return nil, fmt.Errorf("%s: not a literal: %s", v.Pos(), v)
 }
 
+// HexColor parses a 3/4/6/8-digit hex string into a Color with CSS shorthand semantics.
+func HexColor(h string) (Color, error) {
+	return hexColor(h)
+}
+
 // hexColor decodes 3/4/6/8-digit hex with CSS shorthand semantics
 // (Grammar Rule 20).
 func hexColor(h string) (Color, error) {

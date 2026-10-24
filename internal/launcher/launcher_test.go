@@ -459,6 +459,114 @@ func TestEnterDescendsWhenItemHasChildren(t *testing.T) {
 	}
 }
 
+type scopedBackend struct {
+	listBackend
+	childItems map[string][]backend.Item
+}
+
+func (b *scopedBackend) Query(_ context.Context, q backend.Query) (backend.Stream, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.query = q
+	if len(q.Scope) > 0 {
+		key := q.Scope[len(q.Scope)-1]
+		return &sliceStream{items: b.childItems[key]}, nil
+	}
+	return &sliceStream{items: b.items}, nil
+}
+
+func TestEnterDescendsInMergedMode(t *testing.T) {
+	apps := &listBackend{id: "apps", items: []backend.Item{
+		{ID: "app-1", Title: "Firefox"},
+	}}
+	tray := &scopedBackend{
+		listBackend: listBackend{id: "tray", items: []backend.Item{
+			{ID: "applet-1", Title: "Volume Applet", HasChildren: true},
+		}},
+		childItems: map[string][]backend.Item{
+			"applet-1": {
+				{ID: "menu-mute", Title: "Mute"},
+				{ID: "menu-settings", Title: "Sound Settings"},
+			},
+		},
+	}
+	prov := &fakeProvider{backends: map[string]backend.Backend{"apps": apps, "tray": tray}}
+	l := New(prov, Options{Searchable: []string{"apps", "tray"}, RankOpts: rank.Options{Limit: 10}})
+	l.Open()
+	// Stays in merged mode (l.mode == "")
+
+	results := l.Results()
+	trayIdx := -1
+	for i, r := range results {
+		if r.Item.ID == "applet-1" {
+			trayIdx = i
+			break
+		}
+	}
+	if trayIdx == -1 {
+		t.Fatalf("tray item applet-1 not found in merged results: %+v", results)
+	}
+
+	diff := trayIdx - l.Selected()
+	l.Select(diff)
+
+	l.Enter()
+
+	if depth := len(l.levels); depth != 2 {
+		t.Fatalf("levels depth = %d, want 2", depth)
+	}
+	if source := l.levels[1].Source; source != "tray" {
+		t.Errorf("level[1].Source = %q, want 'tray'", source)
+	}
+
+	res := l.Results()
+	if len(res) != 2 || res[0].Item.ID != "menu-mute" || res[1].Item.ID != "menu-settings" {
+		t.Fatalf("child results = %+v, want 2 menu items (Mute, Sound Settings)", res)
+	}
+	if badge := l.ModeBadge(); badge != "VOLUME APPLET" {
+		t.Errorf("ModeBadge = %q, want 'VOLUME APPLET'", badge)
+	}
+
+	// Filter child menu items by query
+	l.SetQuery("Sound")
+	filtered := l.Results()
+	if len(filtered) != 1 || filtered[0].Item.ID != "menu-settings" {
+		t.Fatalf("filtered results = %+v, want 1 menu item (Sound Settings)", filtered)
+	}
+
+	// Back out to root level
+	l.Back()
+	if depth := len(l.levels); depth != 1 {
+		t.Fatalf("levels depth after Back = %d, want 1", depth)
+	}
+	if badge := l.ModeBadge(); badge != "SEARCH" {
+		t.Errorf("ModeBadge after Back = %q, want 'SEARCH'", badge)
+	}
+	rootRes := l.Results()
+	if len(rootRes) != 2 {
+		t.Fatalf("results after Back = %+v, want 2 root items", rootRes)
+	}
+
+	// Descend again and test Escape
+	trayIdx = -1
+	for i, r := range rootRes {
+		if r.Item.ID == "applet-1" {
+			trayIdx = i
+			break
+		}
+	}
+	diff = trayIdx - l.Selected()
+	l.Select(diff)
+	l.Enter()
+	if depth := len(l.levels); depth != 2 {
+		t.Fatalf("levels depth after second Enter = %d, want 2", depth)
+	}
+	l.Escape()
+	if depth := len(l.levels); depth != 1 {
+		t.Fatalf("levels depth after Escape = %d, want 1", depth)
+	}
+}
+
 func TestEnterActivatesWhenItemHasNoChildren(t *testing.T) {
 	tray := &listBackend{id: "tray", items: []backend.Item{{
 		ID: "applet-1", Title: "Applet", HasChildren: false,

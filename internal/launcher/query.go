@@ -200,14 +200,18 @@ func (l *Launcher) jobLocked() Job {
 	l.cancelQuery = cancel
 
 	var scope []string
+	mode := l.mode
 	if level := l.currentLevelLocked(); level != nil {
 		scope = append([]string(nil), level.Scope...)
+		if len(level.Scope) > 0 && level.Source != "" {
+			mode = level.Source
+		}
 	}
 	return Job{
 		ctx:   ctx,
 		gen:   l.gen,
 		query: l.query,
-		mode:  l.mode,
+		mode:  mode,
 		scope: scope,
 		depth: len(l.levels),
 	}
@@ -277,6 +281,17 @@ func (l *Launcher) queryMode(ctx context.Context, mode, text string, scope []str
 		return res
 	}
 	res.items = items
+	if len(scope) > 0 && text == "" {
+		matches := make([]rank.Match, len(items))
+		for i, it := range items {
+			matches[i] = rank.Match{Item: it, Source: mode, Tier: 0}
+		}
+		res.matches = matches
+		if emit != nil {
+			emit(res)
+		}
+		return res
+	}
 	if b, bErr := l.provider.Get(mode); bErr == nil && !b.Info().Searchable {
 		matches := make([]rank.Match, len(items))
 		for i, it := range items {

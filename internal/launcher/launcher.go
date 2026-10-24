@@ -30,6 +30,7 @@ type Mode struct {
 type Level struct {
 	Scope    []string // scope path for scoped queries
 	Source   string   // backend id
+	Badge    string   // level badge (e.g. applet title or mode)
 	Items    []backend.Item
 	Matches  []rank.Match
 	Query    string
@@ -89,7 +90,7 @@ type Launcher struct {
 // excluded); focus indexes into it; edit is the live text buffer of the
 // focused text row while it is being edited.
 type panelState struct {
-	item backend.Item
+	item   backend.Item
 	source string
 	rows   []backend.PanelRow
 	focus  int
@@ -189,6 +190,9 @@ func (l *Launcher) Mode() string {
 func (l *Launcher) ModeBadge() string {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
+	if len(l.levels) > 0 && l.levels[len(l.levels)-1].Badge != "" {
+		return l.levels[len(l.levels)-1].Badge
+	}
 	return l.badge
 }
 
@@ -354,6 +358,9 @@ func (l *Launcher) tryTriggerLocked(text string) (newMode string, query string, 
 func (l *Launcher) Results() []rank.Match {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
+	if len(l.levels) > 0 {
+		return l.levels[len(l.levels)-1].Matches
+	}
 	return l.results
 }
 
@@ -431,13 +438,13 @@ func (l *Launcher) searchableIDs() []string {
 
 func (l *Launcher) currentLevelLocked() *Level {
 	if len(l.levels) == 0 {
-		l.levels = append(l.levels, &Level{Source: l.mode})
+		l.levels = append(l.levels, &Level{Source: l.mode, Badge: l.badge})
 	}
 	return l.levels[len(l.levels)-1]
 }
 
 func (l *Launcher) resetToRootLocked() {
-	l.levels = []*Level{{Source: l.mode}}
+	l.levels = []*Level{{Source: l.mode, Badge: l.badge}}
 	l.closePanelLocked()
 }
 
@@ -464,7 +471,7 @@ func (l *Launcher) Enter() {
 		}
 	}
 	if item.HasChildren {
-		l.descend(item)
+		l.descend(item, source)
 		return
 	}
 	if len(item.Actions) > 0 {
@@ -539,16 +546,31 @@ func (l *Launcher) invokeDomain(a backend.Action, item backend.Item, source stri
 }
 
 // descend pushes a scoped level for an item's children.
-func (l *Launcher) descend(item backend.Item) {
+func (l *Launcher) descend(item backend.Item, source string) {
 	l.mu.Lock()
 	parent := l.currentLevelLocked()
 	scope := append([]string{}, parent.Scope...)
 	scope = append(scope, string(item.ID))
-	l.levels = append(l.levels, &Level{
+	if source == "" {
+		source = parent.Source
+	}
+	if source == "" {
+		source = l.mode
+	}
+	badge := strings.ToUpper(item.Title)
+	if badge == "" && source != "" {
+		if b, err := l.provider.Get(source); err == nil {
+			badge = b.Info().Badge
+		}
+	}
+	newLevel := &Level{
 		Scope:  scope,
-		Source: l.mode,
-	})
+		Source: source,
+		Badge:  badge,
+	}
+	l.levels = append(l.levels, newLevel)
 	l.query = ""
+	l.results = nil
 	job := l.jobLocked()
 	l.mu.Unlock()
 	l.changed()
@@ -573,6 +595,10 @@ func (l *Launcher) Back() {
 	case depth > 1:
 		l.mu.Lock()
 		l.levels = l.levels[:len(l.levels)-1]
+		l.query = ""
+		if len(l.levels) > 0 {
+			l.results = l.levels[len(l.levels)-1].Matches
+		}
 		job := l.jobLocked()
 		l.mu.Unlock()
 		l.changed()

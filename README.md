@@ -5,6 +5,12 @@ results from in-process backends and subprocess plugins, cards, and a KSL
 theme language for the visual scene. Pure Go, single static binary, no Qt,
 no GTK.
 
+# Screenshots
+
+<img width="1186" height="678" alt="image" src="https://github.com/user-attachments/assets/d466e839-2124-45f7-bb5a-960dcef702bf" />
+
+<img width="3840" height="759" alt="image" src="https://github.com/user-attachments/assets/355fffec-73ef-4a39-b9b4-5bb3421a05d5" />
+
 ## Why Go
 
 - `gogpu/gg` already has the affine transform API the design is built on

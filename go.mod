@@ -6,9 +6,9 @@ require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/go-freedesktop/desktopentry v0.2.0
 	github.com/godbus/dbus/v5 v5.2.4
-	github.com/gogpu/gg v0.52.5
+	github.com/gogpu/gg v0.52.8-0.20261124143617-a59a9a304643
 	github.com/gogpu/gogpu v0.54.0
-	github.com/gogpu/gpucontext v0.31.3
+	github.com/gogpu/gpucontext v0.32.0
 	go.opentelemetry.io/otel v1.47.0
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v1.47.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.47.0
@@ -28,11 +28,11 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
-	github.com/go-webgpu/goffi v0.6.3 // indirect
+	github.com/go-webgpu/goffi v0.6.8 // indirect
 	github.com/go-webgpu/webgpu v0.5.5 // indirect
-	github.com/gogpu/gputypes v0.8.0 // indirect
-	github.com/gogpu/naga v0.19.0 // indirect
-	github.com/gogpu/wgpu v0.34.2 // indirect
+	github.com/gogpu/gputypes v0.9.2 // indirect
+	github.com/gogpu/naga v0.22.7 // indirect
+	github.com/gogpu/wgpu v0.35.5 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0 // indirect
 	github.com/rkoesters/xdg v0.0.1 // indirect
@@ -49,4 +49,4 @@ require (
 	google.golang.org/protobuf v1.36.12 // indirect
 )
 
-replace github.com/gogpu/gogpu => github.com/darkliquid/gogpu v0.54.1-0.20261020051850-68bbdcfe2e40
+replace github.com/gogpu/gogpu => github.com/darkliquid/gogpu v0.55.2-0.20261124201203-d5ca50e6b6fb
